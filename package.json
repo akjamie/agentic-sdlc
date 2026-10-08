@@ -1,7 +1,7 @@
 {
   "name": "agentic-sdlc",
   "version": "0.1.0",
-  "description": "Enterprise Agentic SDLC toolkit built on OpenSpec: repo setup, coordination store, manifests, approval records, context index and CI gates.",
+  "description": "Enterprise Agentic SDLC governance CLI: a 7-stage spec-driven flow on top of OpenSpec + Graphify, enforced by CI.",
   "type": "module",
   "bin": {
     "asdlc": "bin/asdlc.js"
