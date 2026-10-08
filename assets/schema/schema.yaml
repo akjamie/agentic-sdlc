@@ -1,0 +1,145 @@
+name: agentic-repo-change
+version: 1
+description: BU Agentic SDLC change flow - intent (proposal/specs/review) then, after approval, tasks
+artifacts:
+  - id: proposal
+    generates: proposal.md
+    description: WHY this change is needed
+    template: proposal.md
+    instruction: |
+      Create the proposal establishing WHY this change is needed.
+
+      Sections:
+      - **Why**: 1-2 sentences on the problem or opportunity, and why now.
+      - **What Changes**: specific changes; mark breaking changes with **BREAKING**.
+      - **Capabilities**: which spec deltas will be created/modified. Each needs a
+        corresponding specs/**/*.md file.
+      - **Impact**: affected code, APIs, dependencies, systems.
+      - **Out of Scope**: what this change explicitly does NOT cover.
+      - **Dependencies & Assumptions**: what this assumes about other systems/teams.
+      - **System Design refs**: reference any System Design / cross-repo contract
+        this change touches (e.g. payment-settlement@v2). Leave empty if none.
+
+      Ground yourself in the codebase first: `asdlc new` refreshed the knowledge
+      graph and wrote explore.md (structured queries against the real code, not
+      guesses). Read explore.md, then READ the specific files it points to (and
+      openspec/specs/**) before writing. If you need more detail, query the
+      graph directly: `graphify query "<q>"` / `graphify explain <node>` /
+      `graphify path <A> <B>`. The graph is a navigation map, never the truth.
+
+      Keep it 1-2 pages. Focus on WHY; HOW belongs in design.md.
+    requires: []
+
+  - id: specs
+    generates: "specs/**/*.md"
+    description: Approved intent - behavior contract for this repo
+    template: spec.md
+    instruction: |
+      Create the spec delta(s). This is the APPROVED INTENT artifact, not an
+      implementation plan. Enforced by `asdlc lint`:
+
+      Ground yourself in the codebase first: `asdlc new` refreshed the knowledge
+      graph and wrote explore.md. Read explore.md, then READ the files it points
+      to (and openspec/specs/**) before writing. The graph is a map, not the truth.
+
+      - Each requirement: `### Requirement: <name>` using SHALL/MUST.
+      - Each scenario: `#### Scenario: <name>` with GIVEN / WHEN / THEN (4 '#').
+      - Each requirement needs an `**Acceptance criteria**` block:
+        `- [ ] AC1: <concrete, testable assertion - not prose> (test: <path/to/test>)`
+      - Add a `## Constraints & NFRs` section: performance, security, compliance
+        as verifiable statements, not adjectives (e.g. "p99 < 200ms for read ops").
+      - Add a `## Out of Scope` section: what this change explicitly does NOT cover.
+      - Add a `## Test Strategy` section describing how every AC is verified.
+      - New capabilities: first section is `## Purpose` (50+ chars).
+      - Every requirement must reference its Jira story (the change ID is the key).
+
+      Exclude internal class/function names and implementation steps - those
+      belong in design.md or tasks.md.
+
+      IMPORTANT: once approved (PR merged) this is IMMUTABLE. Never edit it to
+      record execution state - that is what tasks.md is for.
+    requires:
+      - proposal
+
+  - id: review
+    generates: review.md
+    description: Independent fresh-context review output (read-only)
+    template: review.md
+    instruction: |
+      You are an INDEPENDENT reviewer with a FRESH CONTEXT, different from the
+      Draft agent. You MUST NOT modify proposal.md, specs/** or tasks.md. Your
+      only output is review.md.
+
+      Give a verdict per dimension (PASS / CONCERN / FAIL):
+      Completeness, Ambiguity, Cross-repo consistency, Contract impact,
+      Testability, Security.
+
+      Findings must have severity: blocker / major / minor.
+
+      Also produce a requirement -> implementation -> test mapping table
+      (implementation/test may be TBD pre-code; AC must be listed).
+
+      End with an overall verdict APPROVE / NEEDS_REVISION and the blocking
+      findings. Do not rubber-stamp.
+    requires:
+      - specs
+
+  - id: design
+    generates: design.md
+    description: Repo-internal technical design (HOW) - optional
+    template: design.md
+    instruction: |
+      Create only if the change is cross-cutting, introduces a new
+      pattern/dependency, or has migration/security/perf complexity.
+
+      Sections: Context; Goals / Non-Goals; Decisions (+alternatives);
+      Risks / Trade-offs ([Risk] -> Mitigation); Migration Plan.
+
+      Do NOT restate requirements. Do NOT make cross-repo design decisions here;
+      raise a System Design Amendment instead.
+    requires:
+      - proposal
+
+  - id: tasks
+    generates: tasks.md
+    description: Mutable execution checklist - generated AFTER approval
+    template: tasks.md
+    instruction: |
+      Create the implementation checklist from the APPROVED spec. tasks.md is
+      MUTABLE EXECUTION STATE and is NOT part of approved intent - never edit
+      the spec to record progress.
+
+      Format:
+      - Group related tasks under `## N. <group>` headings
+      - Every task is a checkbox: `- [ ] N.M <description> (AC<n>) <verify: how>`
+      - Each task states how to verify completion in its own description
+      - Order by dependency
+    requires:
+      - specs
+      - review
+
+apply:
+  requires: [tasks]
+  tracks: tasks.md
+  instruction: |
+    Work through the pending tasks in tasks.md. For EACH task, follow task-level
+    TDD (v6 5.2):
+      1. write a FAILING test that expresses the task's verification;
+      2. implement the minimum to make it pass;
+      3. run the tests and PASTE the output before claiming the task is done;
+      4. before moving on, a fresh-context reviewer checks the task against the
+         approved spec first, code quality second.
+    Mark each task complete only after its verification passes.
+
+    NEVER modify the spec (approved intent: proposal.md, specs/**).
+
+    CONVERGE = Report First (v6 6). When reality disagrees with the spec, first
+    classify the gap and NEVER silently absorb it into code:
+      A implementation error  -> write a reproducing test, append a fix task, stay in this PR
+      B missing test          -> add the test, stay in this PR
+      C spec gap/conflict     -> STOP the affected tasks and report a SPEC_GAP
+                                 (needs the spec approver; see asdlc review/lint)
+      D post-merge defect     -> new Jira bug; spec said the right thing -> fast fix,
+                                 spec itself wrong -> new change
+    Cross-repo contract changes are always C: stop and raise a System Design
+    Amendment - never absorb them here.

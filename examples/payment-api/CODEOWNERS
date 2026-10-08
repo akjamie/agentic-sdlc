@@ -1,0 +1,4 @@
+# Sample CODEOWNERS
+* @payment-platform
+/api/ @payment-api-team
+/openapi.yaml @payment-platform

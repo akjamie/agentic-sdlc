@@ -1,0 +1,36 @@
+# Platform-owned SDLC policy (v6 §7.3). Teams must NOT edit this file; protect
+# it with CODEOWNERS. `asdlc init` writes a default; the platform team tunes it.
+#
+# PR type is decided by PATHS ONLY (the `asdlc verify` check `pr-type`).
+
+# Paths that carry APPROVED INTENT: any change here needs the spec approver +
+# AI review, and defines the "approved commit" (git log -1 <main> -- these).
+locked_paths:
+  - "openspec/changes/*/proposal.md"
+  - "openspec/changes/*/specs/**"
+
+# Paths under design control (design owner approves).
+controlled:
+  - "openspec/changes/*/design.md"
+
+# Fast path: no change dir, and every changed path is whitelisted.
+fast_path:
+  allow_paths:
+    - "docs/**"
+    - "**/*.md"
+  allow_kinds: [typo, config-value, dependency-patch]
+
+# Reviewers (CODEOWNERS-style handles).
+reviewers:
+  spec: null
+  design: null
+
+# AI review trigger policy (cost control).
+ai_review:
+  trigger: on-ready-and-push
+  debounce_seconds: 120
+
+# Rollout: per-check block|advisory (v6 §11 "先参考模式,再阻断").
+# Check names match the `asdlc verify` rows, e.g. schema-managed, spec-quality,
+# pr-type, approved-spec. Missing => block.
+rollout_mode: {}

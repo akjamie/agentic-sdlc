@@ -1,0 +1,11 @@
+node_modules/
+graphify-out/
+*.tgz
+openspec/
+.sdlc/
+.githooks/
+AGENTS.md
+Jenkinsfile
+verify-report.json
+.DS_Store
+Thumbs.db

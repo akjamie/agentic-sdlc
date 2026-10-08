@@ -1,0 +1,11 @@
+openapi: 3.0.3
+info:
+  title: Payment API
+  version: 2.4.0
+paths:
+  /settlements/{id}:
+    get:
+      summary: Get a settlement
+  /settlements/{id}/export:
+    get:
+      summary: Export a settlement as a signed CSV

@@ -1,0 +1,103 @@
+import path from 'node:path';
+import { exists, readText, walkFiles } from '../lib/fs.js';
+import { changeDir } from '../lib/paths.js';
+import { requireRepo, toChangeSlug, readLintConfig, jsonOut } from '../lib/cliutil.js';
+import { lintSpecText, countBlockers } from '../lib/speclint.js';
+import { log, dim } from '../lib/log.js';
+
+// THE spec check (v10: lint absorbed review). Deterministic:
+//   - required artifacts (explore.md + proposal.md + >=1 spec delta)
+//   - the review record (review.md) exists, verdict APPROVE, no blocking findings
+//   - BDD + Acceptance-Criteria quality
+export function verdictOf(text) {
+  const m = text.match(/##\s*Verdict[^\n]*\n+\s*([A-Za-z_]+)/);
+  return m ? m[1].toUpperCase() : null;
+}
+
+export function hasBlockingFindings(text) {
+  const m = text.match(/##\s*Blocking Findings[^\n]*\n([\s\S]*?)(?:\n##\s|\s*$)/i);
+  if (!m) return false;
+  const body = m[1].replace(/<!--[\s\S]*?-->/g, '').trim();
+  return Boolean(body) && !/^\(?\s*none\s*\)?\.?$/i.test(body);
+}
+
+function finish(results, { json, changeId }) {
+  const blockers = results.filter((r) => r.status === 'fail');
+  if (json) {
+    jsonOut({ changeId, pass: blockers.length === 0, results });
+    return blockers.length ? 1 : 0;
+  }
+  log.info('');
+  for (const r of results) {
+    const badge = { pass: 'PASS', fail: 'FAIL', skip: 'SKIP' }[r.status];
+    log.plain(`  [${badge}] ${r.name}`);
+    if (r.detail) log.plain(`        ${dim(r.detail)}`);
+  }
+  log.info('');
+  if (blockers.length) {
+    log.plain(`lint failed: ${blockers.length} check(s)`);
+    return 1;
+  }
+  log.plain('lint passed');
+  return 0;
+}
+
+export function runLint(changeId, opts = {}) {
+  const repoRoot = requireRepo(opts);
+  const slug = toChangeSlug(changeId);
+  const cdir = changeDir(repoRoot, slug);
+  const results = [];
+  const add = (name, status, detail) => results.push({ name, status, detail });
+
+  if (!exists(cdir)) {
+    add('change', 'fail', `change '${slug}' not found`);
+    return finish(results, { json: opts.json, changeId });
+  }
+  add('change', 'pass', slug);
+  add('explore.md (stage 1)', exists(path.join(cdir, 'explore.md')) ? 'pass' : 'fail',
+    exists(path.join(cdir, 'explore.md')) ? '' : 'run `asdlc new <ID>` (explore is the first stage)');
+  add('proposal.md', exists(path.join(cdir, 'proposal.md')) ? 'pass' : 'fail',
+    exists(path.join(cdir, 'proposal.md')) ? '' : 'proposal.md missing');
+
+  const reviewPath = path.join(cdir, 'review.md');
+  if (!exists(reviewPath)) {
+    add('review.md', 'fail', 'review.md missing (independent review required)');
+    add('review verdict', 'fail', 'no review.md');
+  } else {
+    const text = readText(reviewPath);
+    add('review.md', 'pass', '');
+    const verdict = verdictOf(text);
+    add('review verdict', verdict === 'APPROVE' ? 'pass' : 'fail', verdict ? `verdict: ${verdict}` : 'no verdict found');
+    add('blocking findings', hasBlockingFindings(text) ? 'fail' : 'pass', hasBlockingFindings(text) ? 'blocking findings present' : '');
+  }
+
+  const specFiles = exists(path.join(cdir, 'specs'))
+    ? walkFiles(path.join(cdir, 'specs')).filter((f) => f.endsWith('spec.md'))
+    : [];
+  add('spec delta', specFiles.length > 0 ? 'pass' : 'fail', specFiles.length > 0 ? `${specFiles.length} file(s)` : 'no spec delta present');
+
+  const { rules } = readLintConfig(repoRoot);
+  const findings = [];
+  for (const file of specFiles) {
+    // Spec stage: check the AC->test MAPPING exists, but not that the test file
+    // exists yet (the test is written during implementation; `asdlc verify`
+    // enforces existence).
+    for (const fnd of lintSpecText(readText(path.join(cdir, 'specs', file)), { rules })) findings.push({ ...fnd, file });
+  }
+  const blockers = countBlockers(findings);
+  add('BDD + acceptance criteria', blockers === 0 ? 'pass' : 'fail',
+    blockers === 0 ? `${findings.length} advisory finding(s)` : `${blockers} blocker(s)`);
+
+  return finish(results, { json: opts.json, changeId });
+}
+
+export function register(program) {
+  program
+    .command('lint <changeId>')
+    .description('check the spec: artifacts + review record + BDD/acceptance criteria')
+    .option('--repo-root <path>')
+    .option('--json', 'stable JSON output for CI')
+    .action((changeId, opts) => {
+      process.exitCode = runLint(changeId, opts);
+    });
+}

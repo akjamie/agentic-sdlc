@@ -1,0 +1,17 @@
+#!/bin/sh
+# asdlc pre-push: trigger the Jenkins gate for this change. With a real SCM
+# webhook + multibranch pipeline this is optional (demonstration/local use).
+JENKINS_URL="${ASDLC_JENKINS_URL:-http://localhost:8080}"
+BRANCH="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)"
+case "$BRANCH" in main|master) exit 0 ;; esac
+
+CHANGE_ID="$(printf '%s' "${BRANCH##*/}" | tr '[:lower:]' '[:upper:]')"
+MODE="lint"
+case "$BRANCH" in *impl*) MODE="gate" ;; esac
+
+echo "[asdlc] push: branch=$BRANCH change=$CHANGE_ID mode=$MODE"
+curl -s -o /dev/null -w "[asdlc] jenkins trigger http=%{http_code}\n" -X POST \
+  "$JENKINS_URL/job/asdlc-pr/buildWithParameters" \
+  --data-urlencode "CHANGE_ID=$CHANGE_ID" \
+  --data-urlencode "MODE=$MODE" 2>/dev/null || echo "[asdlc] jenkins unreachable"
+exit 0

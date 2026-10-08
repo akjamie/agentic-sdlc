@@ -1,0 +1,37 @@
+{
+  "name": "agentic-sdlc",
+  "version": "0.1.0",
+  "description": "Enterprise Agentic SDLC toolkit built on OpenSpec: repo setup, coordination store, manifests, approval records, context index and CI gates.",
+  "type": "module",
+  "bin": {
+    "asdlc": "bin/asdlc.js"
+  },
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "files": [
+    "bin",
+    "src",
+    "assets",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "lint": "node --check bin/asdlc.js"
+  },
+  "keywords": [
+    "openspec",
+    "sdlc",
+    "spec-driven-development",
+    "agentic",
+    "governance"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.1.0",
+    "yaml": "^2.6.1"
+  }
+}

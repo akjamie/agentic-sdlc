@@ -1,0 +1,22 @@
+#!/bin/sh
+# asdlc post-merge: a merged spec PR IS the human approval (no store needed).
+# Derive the approved SHA from the merge and stamp READY_FOR_IMPL so that task
+# generation / implementation can start automatically.
+#
+# No global `asdlc` install is assumed: we try a local devDependency, then PATH,
+# then an explicit toolkit checkout (ASDLC_TOOLKIT).
+BRANCH="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)"
+case "$BRANCH" in main|master) ;; *) exit 0 ;; esac
+
+run() { "$@" approve || echo "[asdlc] approval stamp skipped"; }
+
+if [ -x node_modules/.bin/asdlc ]; then
+  run node_modules/.bin/asdlc
+elif command -v asdlc >/dev/null 2>&1; then
+  run asdlc
+elif [ -n "${ASDLC_TOOLKIT:-}" ] && [ -f "$ASDLC_TOOLKIT/bin/asdlc.js" ]; then
+  run node "$ASDLC_TOOLKIT/bin/asdlc.js"
+else
+  echo "[asdlc] asdlc not found (local bin / PATH / ASDLC_TOOLKIT); skipping approval stamp"
+fi
+exit 0
