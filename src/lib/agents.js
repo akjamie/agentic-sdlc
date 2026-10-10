@@ -17,19 +17,18 @@ const ROUTING_BLOCK = `${ROUTING_MARKER}
 Everything runs through \`asdlc\` - do NOT call \`openspec ...\` directly. There is no
 raw escape hatch: the wrappers ARE the guards (graph refresh, approval, checks).
 
-1. **new** - \`asdlc new <ID>\`: scaffold the change + refresh the knowledge graph +
-   write \`explore.md\` + seed \`clarifications.md\`. This is stage 1.
-2. **grill** - run the **grilling** skill with the author (a relentless design-tree
-   interview, in rounds: ask the whole frontier, recommend an answer, look facts up
+1. **new** - \`asdlc new "<requirement>"\`: scaffold the change (derives slug from intent) +
+   refresh the knowledge graph + write \`explore.md\` + seed \`clarifications.md\`. This is stage 1.
+2. **grill** - run the **grilling** skill with the author using the **batch-grill-me** protocol
+   (evaluate the full frontier in 1-2 structured batches with recommendations, looking facts up
    yourself) and record the settled decisions in \`clarifications.md\`. THEN author
    **proposal.md -> specs/** -> review.md**, grounded in \`explore.md\`.
-3. **lint** - \`asdlc lint <ID>\`: artifacts + review record + BDD/acceptance criteria.
-4. **approve** - a human merges the spec PR; then \`asdlc approve <ID>\` records the
-   path-limited approved SHA + READY_FOR_IMPL.
+3. **lint** - \`asdlc lint <ID>\`: artifacts + BDD/acceptance criteria. Open Spec PR via \`asdlc pr <ID> <targetBranch>\`.
+4. **approve** - human/TL approves (via PR merge, on PR, or in-place); \`asdlc approve <ID>\` records approved SHA + READY_FOR_IMPL.
 5. **apply** - \`asdlc apply <ID>\` (guard: the spec must be approved), then
    \`/opsx-apply\` with task-level TDD + task-level converge.
 6. **verify** - \`asdlc verify <ID>\`: approved SHA, artifacts, tasks complete, tests, AI.
-7. **archive** - \`asdlc archive <ID>\`: refresh the graph + this file.
+7. **archive** - \`asdlc archive <ID>\`: sync specs to openspec/specs/ + update README.md (updates AGENTS.md only for constitutional changes).
 
 Need orientation? \`asdlc status <ID>\` (where am I / next command) and \`asdlc doctor\`
 (environment health). A bad spec is never edited: close it and \`asdlc new\` again.`;

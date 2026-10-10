@@ -11,6 +11,55 @@ export function toChangeSlug(changeId) {
     .replace(/^-+|-+$/g, '');
 }
 
+export function extractRequirementTerms(text) {
+  const s = String(text ?? '')
+    .replace(/\b[A-Za-z]{2,10}-\d+\b[:\s-]*/g, '')
+    .toLowerCase()
+    .replace(/\b(i\s+want\s+to\s+build|i\s+want\s+to\s+add|i\s+want\s+to|we\s+need\s+to|please\s+add|build|create|add|implement)\b/gi, '')
+    .replace(/\b(a|an|the|of|for|with|in|on|to|and|by)\b/gi, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .trim();
+  const words = s.split(/\s+/).filter(Boolean);
+  return words.slice(0, 5).join(' ');
+}
+
+export function deriveChangeSlug(input, opts = {}) {
+  if (opts.id) return toChangeSlug(opts.id);
+  const text = String(input ?? '').trim();
+  if (!text) return 'change';
+
+  // If already a short alphanumeric ID or slug (e.g. TECH-1234 or rate-limiting) without spaces
+  if (!text.includes(' ') && text.length <= 40 && /^[a-zA-Z0-9_-]+$/.test(text)) {
+    return toChangeSlug(text);
+  }
+
+  // Extract ticket ID if present (e.g. "TECH-1234: i want to build...")
+  const ticketMatch = text.match(/\b([A-Za-z]{2,10}-\d+)\b/);
+  const ticket = ticketMatch ? ticketMatch[1].toLowerCase() : null;
+
+  // Strip filler phrases and ticket prefix
+  let cleaned = text
+    .replace(/\b[A-Za-z]{2,10}-\d+\b[:\s-]*/g, '')
+    .toLowerCase()
+    .replace(/\b(i\s+want\s+to\s+build|i\s+want\s+to\s+add|i\s+want\s+to|we\s+need\s+to|please\s+add|build|create|add|implement)\b/gi, '')
+    .replace(/\b(a|an|the|of|for|with|in|on|to|and|by)\b/gi, '')
+    .trim();
+
+  if (!cleaned) cleaned = text.toLowerCase();
+
+  const words = cleaned
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 4);
+
+  const keywords = words.join('-');
+  if (ticket && keywords) return `${ticket}-${keywords}`.slice(0, 40).replace(/-+$/, '');
+  if (ticket) return ticket;
+  if (keywords) return keywords.slice(0, 40).replace(/-+$/, '');
+  return toChangeSlug(text).slice(0, 40);
+}
+
 export function requireRepo(opts = {}) {
   const repoRoot = resolveRepoRoot(opts);
   if (!exists(openspecDir(repoRoot))) {

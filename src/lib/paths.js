@@ -10,6 +10,7 @@ export const configAssetFile = path.join(assetsDir, 'config', 'config.yaml');
 export const ciAssetDir = path.join(assetsDir, 'ci');
 export const githooksAssetDir = path.join(assetsDir, 'githooks');
 export const policyAssetFile = path.join(assetsDir, 'policy', 'policy.yaml');
+export const skillsAssetDir = path.join(assetsDir, 'skills');
 
 // The BU-managed OpenSpec schema: installed ONCE per machine into OpenSpec's
 // global schemas dir. Repos carry NO copy and must not override it.

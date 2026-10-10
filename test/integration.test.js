@@ -6,6 +6,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { runLint } from '../src/commands/lint.js';
 import { applyGuard } from '../src/commands/apply.js';
+import { mergeChange } from '../src/commands/approve.js';
 
 function tmpRepo() {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'asdlc-int-'));
@@ -66,4 +67,33 @@ test('apply: passes when spec is approved (merged to main)', () => {
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'spec'], { cwd: repo });
   const exit = applyGuard('TECH-1', { repoRoot: repo, protectedBranch: 'main' });
   assert.equal(exit, 0);
+});
+
+test('lint: passes when review.md is absent pre-merge', () => {
+  const repo = tmpRepo();
+  const dir = scaffold(repo, 'TECH-1');
+  fs.rmSync(path.join(dir, 'review.md'));
+  const exit = runLint('TECH-1', { repoRoot: repo, json: true });
+  assert.equal(exit, 0);
+});
+
+test('approve: auto-creates review.md with APPROVE and specSha upon spec merge', () => {
+  const repo = tmpRepo();
+  const dir = scaffold(repo, 'TECH-1');
+  fs.rmSync(path.join(dir, 'review.md'));
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'feat(spec): add TECH-1'], { cwd: repo });
+
+  const slugs = mergeChange('TECH-1', { repoRoot: repo });
+  assert.deepEqual(slugs, ['tech-1']);
+
+  const reviewPath = path.join(dir, 'review.md');
+  assert.ok(fs.existsSync(reviewPath), 'review.md should be auto-created by mergeChange');
+  const reviewContent = fs.readFileSync(reviewPath, 'utf8');
+  assert.match(reviewContent, /## Verdict\s+APPROVE/);
+  assert.match(reviewContent, /## Approval Record/);
+  assert.match(reviewContent, /specSha:/);
+
+  const metaText = fs.readFileSync(path.join(dir, '.openspec.yaml'), 'utf8');
+  assert.match(metaText, /status: ready_for_impl/);
 });

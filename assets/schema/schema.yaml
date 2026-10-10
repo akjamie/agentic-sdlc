@@ -111,8 +111,11 @@ artifacts:
 
       Format:
       - Group related tasks under `## N. <group>` headings
-      - Every task is a checkbox: `- [ ] N.M <description> (AC<n>) <verify: how>`
-      - Each task states how to verify completion in its own description
+      - Follow task-level TDD structure: pair test creation with implementation
+        (`- [ ] N.M [TEST] ... (AC<n>) verify: <command>`) followed by
+        (`- [ ] N.M+1 [IMPL] ... (AC<n>) evidence: <pass-evidence>`)
+      - Every task references the AC it implements and states its verification method
+      - Include test execution output under completed tasks as immutable evidence
       - Order by dependency
     requires:
       - specs
@@ -126,10 +129,10 @@ apply:
     TDD (v6 5.2):
       1. write a FAILING test that expresses the task's verification;
       2. implement the minimum to make it pass;
-      3. run the tests and PASTE the output before claiming the task is done;
+      3. run the tests and PASTE the output under the task before claiming it is done;
       4. before moving on, a fresh-context reviewer checks the task against the
          approved spec first, code quality second.
-    Mark each task complete only after its verification passes.
+    Mark each task complete only after its verification passes and test evidence is recorded.
 
     NEVER modify the spec (approved intent: proposal.md, specs/**).
 
@@ -143,3 +146,17 @@ apply:
                                  spec itself wrong -> new change
     Cross-repo contract changes are always C: stop and raise a System Design
     Amendment - never absorb them here.
+
+archive:
+  description: Sync living specs, update README, and conditionally update AGENTS.md
+  instruction: |
+    Archive the verified change:
+    1. Living Specs (Knowledge Layer):
+       Merge delta specs into `openspec/specs/` and record the capability in `README.md`.
+       Do NOT touch `AGENTS.md` for standard business or feature specs (zero prompt pollution).
+    2. Constitutional Changes (Governance Layer):
+       Automatically detected when the change modifies governance policies, SDLC rules,
+       or workflow contracts (`.sdlc/policy.yaml`, `openspec/config.yaml`, `AGENTS.md`, `governance/**`).
+       In these cases, `AGENTS.md` is automatically refreshed so all agent IDE sessions
+       immediately adhere to the updated constitution.
+

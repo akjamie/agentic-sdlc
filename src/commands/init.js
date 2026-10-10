@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { exists, ensureDir, copyTree, readText, writeText } from '../lib/fs.js';
-import { openspecDir, configAssetFile, ciAssetDir, githooksAssetDir, schemaAssetDir, policyAssetFile, SCHEMA_NAME } from '../lib/paths.js';
+import { exists, ensureDir, copyTree, readText, writeText, listDir } from '../lib/fs.js';
+import { openspecDir, configAssetFile, ciAssetDir, githooksAssetDir, schemaAssetDir, policyAssetFile, skillsAssetDir, SCHEMA_NAME } from '../lib/paths.js';
 import { installSchema, builtinSchemaVersion, localOverride } from '../lib/schema.js';
 import { log } from '../lib/log.js';
 import { runOpenspec, openspecVersion, ensureOpenspec } from '../lib/openspec.js';
@@ -117,6 +117,10 @@ export function initRepo(opts = {}) {
     }
   }
 
+  // 4.5) Bundled Agent Skills: install out-of-the-box skills (grilling, asdlc-apply)
+  //      into the project's agent tools directory (.agents/skills, .claude/skills, etc.)
+  installSkills(repoRoot, detectTools(repoRoot));
+
   // 5) AGENTS.md: the routing layer the agentic IDE reads (workflow + system
   //    status derived from the graph). Written after the graph so status has nodes.
   refreshAgents(repoRoot);
@@ -124,11 +128,26 @@ export function initRepo(opts = {}) {
 
   log.info('');
   log.info('Next:');
-  log.info('  1. start a spec:       asdlc new <CHANGE-ID>');
+  log.info('  1. start a spec:       asdlc new "<requirement>"');
   log.info('  2. check the spec:     asdlc lint <CHANGE-ID>');
   log.info('  3. after the spec PR merges: asdlc approve <CHANGE-ID>');
   log.info('  4. implementation PR:  asdlc verify <CHANGE-ID> --repo <name>');
   return repoRoot;
+}
+
+export function installSkills(repoRoot, tools = []) {
+  if (!exists(skillsAssetDir)) return;
+  const targetDirs = ['.agents'];
+  for (const t of tools) {
+    if (t === 'claude') targetDirs.push('.claude');
+    if (t === 'opencode') targetDirs.push('.opencode');
+  }
+  const count = listDir(skillsAssetDir).filter((d) => d.isDirectory()).length;
+  for (const dir of new Set(targetDirs)) {
+    const dest = path.join(repoRoot, dir, 'skills');
+    copyTree(skillsAssetDir, dest);
+    log.ok(`installed bundled skills (${count} skills) -> ${dir}/skills/`);
+  }
 }
 
 function installHooks(repoRoot) {

@@ -1,126 +1,120 @@
 # agentic-sdlc
 
-> **BLUF** — One command installs an enterprise-grade, spec-driven development
-> flow. Seven stages take a Jira story from idea to production, with governance
-> **enforced by CI**, not by hope. Built on [OpenSpec](https://openspec.dev) and
-> [Graphify](https://github.com/safishamsi/graphify); the governance plane is yours.
+> **BLUF** — Enterprise-grade Agentic Software Development Lifecycle (SDLC) governance.
+> Seven stages take a feature from natural language intent to production, with governance
+> **enforced by deterministic gates**, not by hope. Built on [OpenSpec](https://openspec.dev)
+> and [Graphify](https://github.com/safishamsi/graphify); the governance plane is yours.
 
 ---
 
 ## Contents
 
 - [What problem this solves](#what-problem-this-solves)
-- [Architecture](#architecture)
-- [Install](#install)
-- [The seven stages](#the-seven-stages)
-- [What `asdlc verify` checks](#what-asdlc-verify-checks)
-- [Governance principles](#governance-principles)
-- [Documentation](#documentation)
-- [Development](#development)
+- [Three-Plane Architecture](#three-plane-architecture)
+- [Bundled Out-of-the-Box Skills](#bundled-out-of-the-box-skills)
+- [Install & Setup](#install--setup)
+- [The Seven Stages](#the-seven-stages)
+- [What `asdlc verify` Checks](#what-asdlc-verify-checks)
+- [Governance Principles](#governance-principles)
+- [Documentation Hub](#documentation-hub)
+- [Development & Verification](#development--verification)
 
 ---
 
 ## What problem this solves
 
-Spec-driven development works — until you scale it past one team. OpenSpec
-manages spec artifacts beautifully, but it **enforces nothing**. Nothing stops a
-developer from merging code that contradicts an approved spec, skipping the
-review, or silently editing the spec to match the code.
+Spec-driven development works — until you scale it past one team or turn AI agents loose on production code. OpenSpec manages spec documents, but it **enforces nothing** at runtime. Nothing stops a developer or an autonomous agent from merging code that contradicts the approved spec, shipping without tests, or silently editing the spec after the fact.
 
-`asdlc` closes that gap. It adds a governance plane *on top of* the engine:
+`asdlc` closes that gap. It adds a deterministic governance plane *on top of* the engines:
 
-- **The spec is the authority.** Once approved and merged, it is immutable. If
-  reality disagrees, you supersede the change — you never edit the spec.
-- **CI enforces; agents suggest.** `asdlc lint` and `asdlc verify` run the *same*
-  checks locally and in CI. AI verification uses a different model than the
-  authoring agent (player ≠ referee).
-- **The knowledge graph is a compass, not the territory.** Graphify builds a
-  deterministic code graph (AST, no LLM) so specs are grounded in the real
-  system. It is rebuilt on demand — never trusted blindly.
+- **Intent-Driven Start**: Developers start with natural language requirements (`asdlc new "i want to build..."`), not artificial ticket IDs. Canonical slugs are automatically derived, and knowledge graph queries are seeded with real domain terms.
+- **High-Efficiency Batch Grilling**: A bundled interview engine (**`batch-grill-me`**) stress-tests the entire decision frontier in 1-2 structured batches with recommended defaults *before* writing specs. Decisions are recorded in `clarifications.md`.
+- **The Spec is the Authority**: Merged to the protected branch, the spec is immutable. If reality diverges during implementation, the Converge protocol halts affected work (`SPEC_GAP`) — you never silently mutate an approved spec.
+- **Enforced Task-Level TDD**: Unlocking implementation (`asdlc apply`) requires approved spec commits, while `asdlc verify` deterministically checks `test-presence` (rejects code changes without test changes in diff) and `tdd-evidence` (validates recorded test outputs).
+- **Player ≠ Referee**: Independent AI verification uses a different model and a fresh context than the authoring agent.
 
 ---
 
-## Architecture
+## Three-Plane Architecture
 
-```mermaid
-graph TB
-    subgraph gov ["Governance Plane — asdlc (yours, enforced by CI)"]
-        asdlc["asdlc CLI<br/>init · new · lint · approve<br/>apply · verify · archive"]
-        policy[".sdlc/policy.yaml<br/>locked paths · rollout mode"]
-        hooks[".githooks<br/>pre-push · post-merge"]
-    end
-
-    subgraph engine ["Engine Layer — adopted, not forked"]
-        openspec["OpenSpec<br/>spec lifecycle<br/>validate · archive"]
-        graphify["Graphify<br/>code knowledge graph<br/>query · path · explain"]
-    end
-
-    subgraph agent ["Agent Layer — pluggable"]
-        ide["Agentic IDE<br/>Copilot · Codex · Claude Code"]
-        reviewer["Independent Reviewer<br/>(different model)"]
-    end
-
-    subgraph platform ["Platform"]
-        git["Git<br/>branch protection"]
-        jenkins["Jenkins<br/>CI gate"]
-        jira["Jira<br/>traceability"]
-    end
-
-    ide -->|"new / lint / review"| asdlc
-    asdlc -->|"delegates to"| openspec
-    asdlc -->|"refreshes + queries"| graphify
-    asdlc -->|"enforces"| policy
-    asdlc -->|"gate"| jenkins
-    jenkins -->|"commit status"| git
-    asdlc -->|"stamp + tag"| git
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PLANE 3: Agentic IDE Skills & Commands (.agents/skills, .claude/skills, ...)│
+│  ● asdlc:new  ● asdlc:lint  ● asdlc:review  ● asdlc:apply  ● asdlc:verify  │
+│  ● Bundled Engines: grilling (batch-grill-me), asdlc-apply (TDD Red-Green)  │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │ runs CLI with --json
+┌──────────────────────────────────────▼──────────────────────────────────────┐
+│ PLANE 2: Governance CLI & CI Gate (asdlc init/new/lint/approve/apply/verify)│
+│  ● Path-limited approval evidence  ● Deterministic BDD/AC linters           │
+│  ● Diff-based test presence gate   ● Schema version pin & override guard    │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │ calls pure functions
+┌──────────────────────────────────────▼──────────────────────────────────────┐
+│ PLANE 1: Core Library (src/lib/ — zero side-effects, fully unit-tested)     │
+│  ● speclint  ● tdd  ● prtype  ● policy  ● graphify  ● schema  ● agents      │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**What `asdlc` owns vs. what it doesn't:**
-
-| Layer | Owner | Surface |
-|---|---|---|
-| Authoring (propose, continue, apply, archive) | **OpenSpec** | `/opsx-*` |
-| Governance (lint, approve, verify) | **asdlc** | `asdlc …` |
-| Code knowledge graph | **Graphify** | behind the scenes |
-| Navigation & health | **asdlc** | `asdlc status / doctor` |
-
-`asdlc` deliberately does **not** re-implement OpenSpec's authoring: it wraps the
-governance *around* it. Graphify and the managed schema run behind the scenes —
-there are no `graph` or `schema` commands.
+For complete technical specifications of each plane, see [docs/architecture.md](docs/architecture.md).
 
 ---
 
-## Install
+## Bundled Out-of-the-Box Skills (The 11-Skill Suite)
 
-`asdlc` is **not published to the public npm registry**. Two supported paths
-(v10 §3):
+`asdlc` does not assume or require external user-level skills to be pre-installed. All critical agent harnesses are **packaged inside `asdlc` and installed automatically upon `asdlc init`**:
 
-| Path | Command | When |
+| Skill | Role / Stage | Purpose & Behavior |
 |---|---|---|
-| **Internal tarball** (start here) | `npm install -g https://internal-artifactory/asdlc/asdlc-<version>.tgz` | Phase 0–2 |
-| **Private registry** | `npm install -g asdlc` (with `.npmrc` pointed at your internal registry) | Phase 3+ |
+| **[`asdlc-init`](assets/skills/asdlc-init/SKILL.md)** | Stage 1 · Init | Bootstraps repository: installs OpenSpec devDependency, Graphify AST engine, governance schema, policies, git hooks, and bundled skills. |
+| **[`asdlc-doctor`](assets/skills/asdlc-doctor/SKILL.md)** | Health Check | Evaluates 12 toolchain/governance invariants; provides automated 1-click remediation playbooks for drifts. |
+| **[`asdlc-new`](assets/skills/asdlc-new/SKILL.md)** | Stage 2 · New | Accepts natural language requirement, derives canonical slug, generates code-grounded `explore.md`, launches batch grilling, and drafts specs. |
+| **[`grilling`](assets/skills/grilling/SKILL.md)** | Stage 2 · Engine | High-throughput **`batch-grill-me`** interview engine: settles the entire decision tree frontier in 1-2 structured batches with recommended defaults. |
+| **[`asdlc-lint`](assets/skills/asdlc-lint/SKILL.md)** | Stage 3 · Lint | Pure deterministic BDD / Acceptance Criteria verification (R0–R8) and `review.md` verdict checker. Zero LLM jitter. |
+| **[`asdlc-review`](assets/skills/asdlc-review/SKILL.md)** | Stage 3 · Review | Independent fresh-context reviewer role (Player ≠ Referee): evaluates 6 dimensions and records authoritative `review.md`. |
+| **[`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md)** | Stage 4 · Approve | Verifies Spec PR merge on main; records path-limited `specSha` + `READY_FOR_IMPL`, tags `approved/<ID>`, and scaffolds TDD task plan. |
+| **[`asdlc-apply`](assets/skills/asdlc-apply/SKILL.md)** | Stage 5 · Apply | Guard-protected task-level TDD engine: enforces the 5-phase **Red -> Green -> Refactor -> Evidence -> Converge** cycle per task. |
+| **[`asdlc-verify`](assets/skills/asdlc-verify/SKILL.md)** | Stage 6 · Verify | 12-gate implementation verification: test presence, task evidence, AC test mapping, external tests, and independent AI verifier. |
+| **[`asdlc-archive`](assets/skills/asdlc-archive/SKILL.md)** | Stage 7 · Archive | Deliberate human-confirmed closeout: archives change, refreshes code AST graph on new HEAD, and updates `AGENTS.md` system status. |
+| **[`asdlc-status`](assets/skills/asdlc-status/SKILL.md)** | Lifecycle & Dashboard | Provides instant orientation on single change progress, next actionable command, or full repository portfolio dashboard. |
 
-> `asdlc init` then installs the *engines* for you — OpenSpec (as a pinned
-> devDependency) and Graphify (via uv/pip) — so the developer never needs to
-> install them by hand.
+---
 
-Verify:
+## Install & Setup
+
+`asdlc` supports multiple installation methods depending on your environment:
 
 ```bash
-asdlc --version
+# Option A: Directly from remote Git repository
+npm install -g git+https://github.com/akjamie/agentic-sdlc.git
+
+# Option B: Internal artifact store / tarball
+npm install -g https://internal-artifactory/asdlc/asdlc-<version>.tgz
+
+# Option C: Local development repository
+npm install -g .
+
+# Initialize repository (installs OpenSpec engine, Graphify, policy, and bundled skills)
+asdlc init --ci jenkins
+```
+
+Verify setup health at any time:
+
+```bash
+asdlc doctor
 ```
 
 ---
 
-## The seven stages
+## The Seven Stages
 
 ```mermaid
 flowchart LR
-    S1["1 · init<br/>set up repo"] --> S2["2 · new<br/>scaffold + explore.md"]
-    S2 --> G["grill<br/>grilling skill"] --> S3["3 · lint<br/>BDD + AC + review"]
+    S1["1 · init<br/>setup + skills"] --> S2["2 · new<br/>intent + explore"]
+    S2 --> G["grill<br/>decision tree"] --> S3["3 · lint<br/>BDD + AC + review"]
     S3 --> PR["Spec PR<br/>merge = approval"] --> S4["4 · approve<br/>record SHA + READY"]
-    S4 --> S5["5 · apply<br/>TDD + converge"] --> PR2["Impl PR"]
-    PR2 --> S6["6 · verify<br/>full check + AI"] --> S7["7 · archive<br/>refresh graph + AGENTS.md"]
+    S4 --> S5["5 · apply<br/>TDD loop"] --> PR2["Impl PR"]
+    PR2 --> S6["6 · verify<br/>gates + AI"] --> S7["7 · archive<br/>refresh graph"]
 
     style S1 fill:#e8f4fd,stroke:#2196f3
     style S2 fill:#e8f4fd,stroke:#2196f3
@@ -133,92 +127,76 @@ flowchart LR
 
 | Stage | Command | What it does |
 |---|---|---|
-| 1 · init | `asdlc init --ci jenkins` | install OpenSpec + Graphify, write schema/config/policy/hooks/CI |
-| 2 · new | `asdlc new <ID>` | scaffold the change + refresh the knowledge graph + write `explore.md` + seed `clarifications.md` |
-| 3 · lint | `asdlc lint <ID>` | check artifacts + review record + BDD/acceptance criteria |
-| 4 · approve | `asdlc approve <ID>` | record the path-limited approved SHA + `READY_FOR_IMPL` (run on main after the spec PR merges) |
-| 5 · apply | `asdlc apply <ID>` | guard, then `/opsx-apply` (the spec must be approved) |
-| 6 · verify | `asdlc verify <ID> --repo <R>` | full check: approved SHA, artifacts, tasks complete, BDD/AC, `openspec validate`, AI verification |
-| 7 · archive | `asdlc archive <ID>` | finish: refresh the graph + `AGENTS.md` |
+| **1 · init** | `asdlc init [--ci jenkins]` | Installs OpenSpec + Graphify, governance schema, policy, and bundled skills (`grilling`, `asdlc-apply`). |
+| **2 · new** | `asdlc new "<requirement>"` | Derives canonical slug, queries code graph, generates `explore.md`, and seeds `clarifications.md`. |
+| **3 · lint** | `asdlc lint <ID>` | Pure deterministic lint: verifies BDD scenarios, AC-to-test mappings, and independent review record. |
+| **4 · approve**| `asdlc approve <ID>` | Validates spec PR merge on protected branch; records immutable `specSha` + `READY_FOR_IMPL`. |
+| **5 · apply** | `asdlc apply <ID>` | Enforces approval guard, then launches `/asdlc:apply` task-level TDD Red-Green loop. |
+| **6 · verify** | `asdlc verify <ID> --repo <R>`| Deterministic gates: test-presence, task evidence, AC test existence, schema pin, external checks, AI verifier. |
+| **7 · archive**| `asdlc archive <ID>` | Human-confirmed close: refreshes code knowledge graph and `AGENTS.md` context. |
 
-**Navigation & health** (not stages):
-
-| Command | What it does |
-|---|---|
-| `asdlc status <ID>` | where a change is in the seven stages + the next command |
-| `asdlc doctor` | environment + repo setup health check |
-
-A spec that needs authoring starts with:
-
-1. `asdlc new TECH-1234` — scaffold + graph + `explore.md` + `clarifications.md`
-2. **Grill** the author (the `grilling` skill — a relentless design-tree interview,
-   in rounds) and record settled decisions in `clarifications.md`
-3. Author `proposal.md` → `specs/**` → `review.md`, grounded in `explore.md`
-4. `asdlc lint TECH-1234` — then open the spec PR
-
-Spec requirements must carry:
-
-- a **GIVEN/WHEN/THEN** scenario,
-- an **Acceptance Criteria** block: `- [ ] AC1: concrete assertion (test: path)`,
-- a **Test Strategy** section,
-- a **Constraints & NFRs** section (performance/security/compliance as verifiable
-  statements, not adjectives),
-- an **Out of Scope** section.
+**Navigation & Diagnostics:**
+- `asdlc status <ID>`: Instant orientation on current stage and exact next command.
+- `asdlc doctor`: Comprehensive environment, toolchain, and policy health diagnostics.
 
 ---
 
-## What `asdlc verify` checks
+## What `asdlc verify` Checks
+
+`asdlc verify` executes in local developer terminals and on CI (Jenkins) without drift:
 
 ```mermaid
 flowchart TB
-    V["asdlc verify"] --> C1["pr-type<br/>paths only"]
+    V["asdlc verify"] --> C1["pr-type<br/>paths only discrimination"]
     V --> C2["artifacts<br/>proposal + review + tasks + explore + spec"]
-    V --> C3["approved-spec<br/>path-limited git log"]
-    V --> C4["flow-state<br/>READY_FOR_IMPL"]
-    V --> C5["tasks-complete<br/>no unchecked boxes"]
-    V --> C6["BDD + AC<br/>GIVEN/WHEN/THEN + AC→test"]
-    V --> C7["openspec validate<br/>--all --strict"]
-    V --> C8["schema-managed<br/>central install + version pin"]
-    V --> C9["external<br/>tests · contract · security"]
-    V --> C10["AI verification<br/>independent model"]
+    V --> C3["approved-spec<br/>git log verification on target branch"]
+    V --> C3b["spec-tamper<br/>locked spec paths unmodified in impl PR"]
+    V --> C4["flow-state<br/>READY_FOR_IMPL verification"]
+    V --> C5["tasks-complete<br/>all checkboxes resolved"]
+    V --> C6["test-presence<br/>code diff mandates test diff"]
+    V --> C7["tdd-evidence<br/>verified task output annotations"]
+    V --> C8["BDD + AC<br/>GIVEN/WHEN/THEN + AC→test mapping"]
+    V --> C9["openspec validate<br/>--all --strict"]
+    V --> C10["schema-managed<br/>central install + version pin"]
+    V --> C11["external<br/>unit tests · contract · security"]
+    V --> C12["AI verification<br/>independent referee model"]
 ```
 
 ---
 
-## Governance principles
+## Governance Principles
 
-1. **Adopt the engines, own the governance plane.** OpenSpec and Graphify are
-   adopted, not forked. Approvals, gates, and evidence are ours.
-2. **Approval is git.** A merged spec PR *is* the human approval; the gate proves
-   it with a path-limited `git log`.
-3. **Fail-closed.** A verify without an approved commit fails.
-4. **Deterministic where possible.** The linter is pure (no LLM) so it can be a
-   hard check; semantics stay with the independent reviewer.
-5. **Ground specs in a code map.** Graphify (code-only AST, HEAD-bound, gitignored)
-   is a BU-standard authoring aid — advisory, never a gate.
-6. **Pin CI tool versions.** Never `@latest`.
-7. **Untrusted PRs must not reach secrets.** External checks run in a scrubbed
-   environment.
-8. **A bad spec is never edited.** Close it and start fresh.
+1. **Adopt the engines, own the governance plane.** OpenSpec and Graphify are adopted, not forked.
+2. **Approval is git.** A merged spec PR *is* the human approval; the gate proves it with a path-limited `git log`.
+3. **Fail-closed.** Any verification without an approved commit fails.
+4. **Deterministic first.** Linters, diff analyzers, and schema validators are pure functions (no LLM jitter).
+5. **Enforced TDD.** Implementation diffs touching production code without tests are rejected by `test-presence`.
+6. **Ground specs in code.** Graphify AST queries ground specifications in real code structure.
+7. **One front door.** Everything runs through `asdlc` — no raw escape hatches.
 
 ---
 
-## Documentation
+## Documentation Hub
 
-| Document | Content |
+| Document | Purpose |
 |---|---|
-| [USAGE.md](USAGE.md) | concrete step-by-step user guide |
-| [V10-PLAN.html](V10-PLAN.html) | the full enterprise design (v10) |
-| [GLOSSARY.md](GLOSSARY.md) | locked terminology |
+| [docs/usage.md](docs/usage.md) | Practical command-line and developer walkthrough. |
+| [docs/architecture.md](docs/architecture.md) | Complete 3-Plane Architecture & IDE Skill design specification. |
+| [docs/solution-review.md](docs/solution-review.md) | Solution review, gap analysis, and architectural evaluation. |
+| [docs/glossary.md](docs/glossary.md) | Formally locked domain model and SDLC vocabulary. |
+| [docs/blueprint.html](docs/blueprint.html) | Enterprise Agentic SDLC Blueprint (English). |
+| [docs/blueprint.zh.html](docs/blueprint.zh.html) | Enterprise Agentic SDLC Blueprint (Chinese). |
 
 ---
 
-## Development
+## Development & Verification
 
 ```bash
 npm install
-npm test        # 35 tests
+npm test        # 44 unit and integration tests
 ```
+
+---
 
 ## License
 

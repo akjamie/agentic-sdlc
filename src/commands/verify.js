@@ -8,8 +8,9 @@ import { runShell } from '../lib/exec.js';
 import { lastCommitTouching, changeOnRef, git } from '../lib/git.js';
 import { lintSpecText, countBlockers } from '../lib/speclint.js';
 import { checkSchema } from '../lib/schema.js';
-import { loadPolicy, isAdvisory, DEFAULT_POLICY } from '../lib/policy.js';
+import { loadPolicy, isAdvisory, DEFAULT_POLICY, matchesAny } from '../lib/policy.js';
 import { classifyPR } from '../lib/prtype.js';
+import { checkTestPresence, checkTaskEvidence } from '../lib/tdd.js';
 import { log, dim } from '../lib/log.js';
 
 // THE implementation check (v10: gate absorbed verify). Deterministic checks
@@ -140,6 +141,14 @@ export function runVerify(changeId, opts = {}) {
   else if (specSha && specSha !== approvedSha) add('approved-spec', 'fail', `declared specSha ${specSha.slice(0, 8)} != approved commit ${approvedSha.slice(0, 8)}`);
   else add('approved-spec', 'pass', `approved commit ${approvedSha.slice(0, 8)} on ${branch}`);
 
+  // Lightweight tamper guard: in an implementation PR, locked spec files MUST NOT be modified
+  const lockedModified = changedFiles.filter((f) => matchesAny(f, policy?.locked_paths ?? DEFAULT_POLICY.locked_paths));
+  if (pr.type === 'impl' && lockedModified.length > 0) {
+    add('spec-tamper', 'fail', `${lockedModified.length} locked spec file(s) modified in implementation PR (${lockedModified.join(', ')})`);
+  } else {
+    add('spec-tamper', 'pass', 'locked spec paths unmodified');
+  }
+
   add('flow-state', status === 'ready_for_impl' ? 'pass' : 'fail',
     status === 'ready_for_impl' ? 'READY_FOR_IMPL' : `status is ${status ?? 'unset'} (run: asdlc approve ${changeId})`);
 
@@ -147,6 +156,14 @@ export function runVerify(changeId, opts = {}) {
   const unchecked = exists(tasksPath) ? countUncheckedTasks(readText(tasksPath)) : Infinity;
   add('tasks-complete', unchecked === 0 ? 'pass' : 'fail',
     unchecked === 0 ? 'all tasks checked' : (Number.isFinite(unchecked) ? `${unchecked} unchecked task(s)` : 'tasks.md missing'));
+
+  const testDiff = checkTestPresence(changedFiles);
+  add('test-presence', testDiff.ok ? 'pass' : 'fail', testDiff.detail);
+
+  if (exists(tasksPath)) {
+    const evidence = checkTaskEvidence(readText(tasksPath));
+    add('tdd-evidence', evidence.ok ? 'pass' : 'fail', evidence.detail);
+  }
 
   const { rules } = readLintConfig(repoRoot);
   const findings = [];

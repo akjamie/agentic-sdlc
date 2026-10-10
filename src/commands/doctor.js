@@ -1,9 +1,10 @@
 import path from 'node:path';
-import { exists, readText } from '../lib/fs.js';
-import { openspecDir, resolveRepoRoot } from '../lib/paths.js';
+import { exists, readText, writeText, copyTree, ensureDir } from '../lib/fs.js';
+import { openspecDir, resolveRepoRoot, policyAssetFile, githooksAssetDir } from '../lib/paths.js';
 import { openspecVersion, OPENSPEC_PINNED, findOpenspec } from '../lib/openspec.js';
-import { graphifyAvailable, graphStatus, GITIGNORE_LINE } from '../lib/graphify.js';
-import { readInstalledVersion, builtinSchemaVersion, localOverride } from '../lib/schema.js';
+import { graphifyAvailable, graphStatus, GITIGNORE_LINE, ensureGraphify } from '../lib/graphify.js';
+import { readInstalledVersion, builtinSchemaVersion, localOverride, installSchema } from '../lib/schema.js';
+import { refreshAgents } from '../lib/agents.js';
 import { readYaml } from '../lib/yaml.js';
 import { git } from '../lib/git.js';
 import { log, dim } from '../lib/log.js';
@@ -66,6 +67,63 @@ export function doctor(opts = {}) {
     if (r.detail) log.plain(`        ${dim(r.detail)}`);
   }
   log.info('');
+
+  if (opts.fix) {
+    log.step('attempting automated remediation (--fix)...');
+
+    // 1. Managed schema
+    if (!schemaV) {
+      try { installSchema(); log.ok('fixed: installed managed schema'); } catch (e) { log.warn(`fix failed for schema: ${e.message}`); }
+    }
+
+    // 2. .gitignore graphify-out
+    if (!ignored) {
+      try {
+        const text = exists(gi) ? readText(gi) : '';
+        writeText(gi, `${text.trimEnd()}\n${GITIGNORE_LINE}\n`);
+        log.ok('fixed: added graphify-out/ to .gitignore');
+      } catch (e) { log.warn(`fix failed for .gitignore: ${e.message}`); }
+    }
+
+    // 3. .sdlc/policy.yaml
+    if (!policy && exists(policyAssetFile)) {
+      try {
+        const pdir = path.join(repoRoot, '.sdlc');
+        ensureDir(pdir);
+        copyTree(policyAssetFile, path.join(pdir, 'policy.yaml'));
+        log.ok('fixed: created .sdlc/policy.yaml from template');
+      } catch (e) { log.warn(`fix failed for policy: ${e.message}`); }
+    }
+
+    // 4. .githooks
+    if (hooksPath !== '.githooks') {
+      try {
+        if (exists(githooksAssetDir)) {
+          copyTree(githooksAssetDir, path.join(repoRoot, '.githooks'));
+        }
+        git(['config', 'core.hooksPath', '.githooks'], repoRoot);
+        log.ok('fixed: configured git core.hooksPath -> .githooks');
+      } catch (e) { log.warn(`fix failed for githooks: ${e.message}`); }
+    }
+
+    // 5. AGENTS.md routing
+    if (!hasRouting) {
+      try {
+        refreshAgents(repoRoot);
+        log.ok('fixed: refreshed AGENTS.md routing');
+      } catch (e) { log.warn(`fix failed for AGENTS.md: ${e.message}`); }
+    }
+
+    // 6. Graphify install
+    if (!graphifyAvailable()) {
+      try {
+        const g = ensureGraphify();
+        if (g.installed) log.ok('fixed: installed graphify CLI');
+      } catch (e) { log.warn(`fix failed for graphify: ${e.message}`); }
+    }
+    log.info('');
+  }
+
   log.plain(failed ? `doctor: ${failed} critical issue(s)` : 'doctor: ok');
   return failed ? 1 : 0;
 }
@@ -82,7 +140,8 @@ function openNav(repoRoot) { return openspecVersion(repoRoot); }
 export function register(program) {
   program
     .command('doctor')
-    .description('check the environment + repo setup health')
+    .description('check the environment + repo setup health (with optional --fix)')
+    .option('--fix', 'automatically remediate fixable environment and configuration drift')
     .option('--repo-root <path>')
     .action((opts) => {
       process.exitCode = doctor(opts);

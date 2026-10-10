@@ -12,11 +12,15 @@
 tarball or registry:
 
 ```bash
-# A. internal tarball (the recommended start)
+# A. directly from remote git repository
+npm install -g git+https://github.com/akjamie/agentic-sdlc.git
+
+# B. internal tarball
 npm install -g https://internal-artifactory/asdlc/asdlc-0.1.0.tgz
 
-# B. internal private registry (once you run one)
-npm install -g asdlc
+# C. local development / private registry
+npm install -g .
+# or: npm install -g asdlc
 ```
 
 The engines (OpenSpec, Graphify) are installed by `asdlc init`, not by hand.
@@ -33,28 +37,35 @@ This one command:
 1. installs OpenSpec (a pinned devDependency) and Graphify (uv/pip)
 2. runs `openspec init` and wires your agentic IDE (auto-detected)
 3. installs the managed schema centrally — no per-repo copy
-4. writes `openspec/config.yaml` (governance rules + lint policy)
-5. writes `.sdlc/policy.yaml` (platform-owned; protect with CODEOWNERS)
-6. installs `.githooks/` (pre-push, post-merge) + `core.hooksPath`
-7. writes a `Jenkinsfile` (CI gate pipeline)
-8. writes `AGENTS.md` routing (workflow + system status from the code graph)
+4. installs bundled skills (`grilling`, `asdlc-apply`) into `.agents/skills/`
+5. writes `openspec/config.yaml` (governance rules + lint policy)
+6. writes `.sdlc/policy.yaml` (platform-owned; protect with CODEOWNERS)
+7. installs `.githooks/` (pre-push, post-merge) + `core.hooksPath`
+8. writes a `Jenkinsfile` (CI gate pipeline)
+9. writes `AGENTS.md` routing (workflow + system status from the code graph)
 
 ## The seven stages
 
-### 1. Start a spec — `asdlc new <ID>`
+### 1. Start a spec — `asdlc new "<requirement>"`
+<!-- Note: Stage 1 is numbered 2 in the 7-stage pipeline (init is 1). -->
 
 ```bash
-asdlc new TECH-1234
+asdlc new "i want to build jwt authentication for payment api"
+# or with a Jira ticket:
+asdlc new "TECH-1234: add rate limiting"
+# or with explicit ID override:
+asdlc new "add rate limiting" --id tech-1234
 ```
 
-Scaffolds `openspec/changes/tech-1234/`, refreshes the knowledge graph, writes
-`explore.md` (affected modules / call chains), and seeds `clarifications.md`.
+Derives a clean canonical slug (e.g. `jwt-authentication-payment-api` or `tech-1234-rate-limiting`),
+scaffolds `openspec/changes/<slug>/`, refreshes the knowledge graph, writes `explore.md`
+(grounded in queries using the requirement terms), and seeds `clarifications.md`.
 
 Then:
 
-1. **Grill the author.** Your IDE agent runs the `grilling` skill (a relentless
-   design-tree interview, in rounds) and records settled decisions in
-   `clarifications.md`.
+1. **Batch-Grill the author.** Your IDE agent runs the `grilling` skill using the
+   **`batch-grill-me`** protocol (evaluating the entire decision frontier in 1-2 structured
+   batches with recommended defaults) and records settled decisions in `clarifications.md`.
 2. **Author the spec.** Write `proposal.md`, `specs/<capability>/spec.md`, and
    `review.md`, grounded in `explore.md`.
 

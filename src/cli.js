@@ -3,12 +3,14 @@ import { Command } from 'commander';
 import { register as registerInit } from './commands/init.js';
 import { register as registerNew } from './commands/new.js';
 import { register as registerLint } from './commands/lint.js';
+import { register as registerPr } from './commands/pr.js';
 import { register as registerApprove } from './commands/approve.js';
 import { register as registerApply } from './commands/apply.js';
 import { register as registerVerify } from './commands/verify.js';
 import { register as registerArchive } from './commands/archive.js';
 import { register as registerStatus } from './commands/status.js';
 import { register as registerDoctor } from './commands/doctor.js';
+import { register as registerUpgrade } from './commands/upgrade.js';
 import { AsdlcError } from './lib/errors.js';
 import { log } from './lib/log.js';
 
@@ -25,29 +27,32 @@ export function buildCli() {
   registerInit(program); //    1. set up the repo
   registerNew(program); //     2. start a spec (scaffold + graph refresh + explore.md)
   registerLint(program); //    3. check the spec
-  registerApprove(program); // 4. record approval (after the spec PR merges)
+  registerPr(program); //      3.5 open the Spec PR automatically
+  registerApprove(program); // 4. record approval (after the spec PR merges or in-place)
   registerApply(program); //   5. start implementing
   registerVerify(program); //  6. check the implementation
-  registerArchive(program); // 7. finish (refresh graph + AGENTS.md)
+  registerArchive(program); // 7. finish (sync living specs to openspec/specs/)
 
-  // Navigation + health (not stages).
+  // Navigation + health + maintenance (not stages).
   registerStatus(program); // where am I / what's next
   registerDoctor(program); // environment + setup health
+  registerUpgrade(program); // upgrade toolchain (asdlc, openspec, graphify, schema)
 
   program.addHelpText('after', `
-The flow (7 stages):
+The flow:
   asdlc init                     set up the repo (installs OpenSpec + Graphify, wires CI)
-  asdlc new <ID>                 start a spec: scaffold + refresh the graph + explore.md
-                                 (+ seed clarifications.md for the grilling interview)
-  asdlc lint <ID>                check the spec (artifacts + review + BDD/acceptance criteria)
-  <merge the spec PR>  asdlc approve <ID>   record the approved SHA + mark READY_FOR_IMPL
-  asdlc apply <ID>               guard, then /opsx-apply (the spec must be approved)
-  asdlc verify <ID>              check the implementation (approved SHA, tasks, tests, AI)
-  asdlc archive <ID>             finish: refresh the graph + AGENTS.md
+  asdlc new "<requirement>"     start a spec: scaffold + refresh graph + explore.md + grilling
+  asdlc lint <ID>                check the spec (artifacts + BDD + acceptance criteria)
+  asdlc pr <ID> <targetBranch>   open the Spec PR (pushes branch + auto-creates PR via CLI or API)
+  asdlc approve <ID>             record approval (on PR / merge / in-place) + mark READY_FOR_IMPL
+  asdlc apply <ID>               guard, then /opsx-apply (task-level TDD loop)
+  asdlc verify <ID>              check the implementation (artifacts, tasks, tests, AI)
+  asdlc archive <ID>             finish: archive change + sync living specs to openspec/specs/
 
-Navigation + health:
+Navigation, health & maintenance:
   asdlc status <ID>              where a change is in the 7 stages + the next command
   asdlc doctor                   environment + repo setup health
+  asdlc upgrade                  upgrade asdlc CLI, openspec, graphify & managed schema
 
 A bad spec is not edited: close it and run \`asdlc new\` again.`);
   return program;

@@ -9,6 +9,11 @@
   "exports": {
     ".": "./src/index.js"
   },
+  "preferGlobal": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akjamie/agentic-sdlc.git"
+  },
   "engines": {
     "node": ">=20.19.0"
   },

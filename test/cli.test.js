@@ -14,7 +14,7 @@ test('asdlc --version prints the package version', () => {
 
 test('asdlc is a minimal surface: 7 stages + navigation + health', () => {
   const names = buildCli().commands.map((c) => c.name());
-  const expected = ['init', 'new', 'lint', 'approve', 'apply', 'verify', 'archive', 'status', 'doctor'];
+  const expected = ['init', 'new', 'lint', 'pr', 'approve', 'apply', 'verify', 'archive', 'status', 'doctor', 'upgrade'];
   for (const cmd of expected) assert.ok(names.includes(cmd), `missing command: ${cmd}`);
   // Folded / removed commands must not resurface (note: no raw `openspec` escape hatch).
   for (const bad of ['explore', 'propose', 'review', 'gate', 'gap', 'supersede', 'schema', 'graph', 'merge', 'change', 'openspec']) {
@@ -22,3 +22,16 @@ test('asdlc is a minimal surface: 7 stages + navigation + health', () => {
   }
   assert.equal(names.length, expected.length, `unexpected extra commands: ${names.join(', ')}`);
 });
+
+test('deriveChangeSlug: derives clean slug from natural language requirement', async () => {
+  const { deriveChangeSlug, extractRequirementTerms } = await import('../src/lib/cliutil.js');
+
+  assert.equal(deriveChangeSlug('TECH-1234'), 'tech-1234');
+  assert.equal(deriveChangeSlug('user-auth'), 'user-auth');
+  assert.equal(deriveChangeSlug('i want to build jwt authentication'), 'jwt-authentication');
+  assert.equal(deriveChangeSlug('TECH-5678: add rate limiting to payment api'), 'tech-5678-rate-limiting-payment-api');
+  assert.equal(deriveChangeSlug('i want to build redis caching', { id: 'custom-cache' }), 'custom-cache');
+
+  assert.equal(extractRequirementTerms('i want to build jwt authentication for payment api'), 'jwt authentication payment api');
+});
+
