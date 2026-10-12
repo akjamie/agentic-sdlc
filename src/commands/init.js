@@ -135,12 +135,23 @@ export function initRepo(opts = {}) {
   return repoRoot;
 }
 
+// All supported tools and their skills directory name (tools that use a 'skills/' subdir convention)
+const TOOL_SKILLS_DIRS = {
+  claude:    '.claude',
+  opencode:  '.opencode',
+  cursor:    '.cursor',
+  gemini:    '.gemini',
+  windsurf:  '.windsurf',
+  trae:      '.trae',
+  codex:     '.codex',
+  zed:       '.zed',
+};
+
 export function installSkills(repoRoot, tools = []) {
   if (!exists(skillsAssetDir)) return;
   const targetDirs = ['.agents'];
   for (const t of tools) {
-    if (t === 'claude') targetDirs.push('.claude');
-    if (t === 'opencode') targetDirs.push('.opencode');
+    if (TOOL_SKILLS_DIRS[t]) targetDirs.push(TOOL_SKILLS_DIRS[t]);
   }
   const count = listDir(skillsAssetDir).filter((d) => d.isDirectory()).length;
   for (const dir of new Set(targetDirs)) {

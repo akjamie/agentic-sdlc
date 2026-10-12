@@ -14,8 +14,12 @@ To maximize agent and author efficiency, this skill strictly uses the **`batch-g
 ## Core Principles
 
 1. **The Human decides, the Agent looks up facts.**
-   - Finding facts in the codebase or environment is the agent's job (use Graphify, AST queries, read files). Never ask the human for facts the agent can inspect directly.
-   - Architectural tradeoffs, product boundaries, and business choices are the human author's decisions. Never silently assume an answer.
+   - Finding facts is the agent's job. Use the following priority order (auto-fallback, no CLI flags needed):
+     1. **Graphify AST graph** — local, always available. Query god-nodes and call chains first.
+     2. **Direct project file/code reading** — local, always available.
+     3. **Web search** — only if `web_search: allow` in `.sdlc/policy.yaml` (default). In air-gapped or restricted networks, set `web_search: deny`; the agent skips search entirely without any flag.
+   - If a fact cannot be verified via any available tier, mark the question `[fact unverified — author to confirm]` rather than blocking the round.
+   - Architectural tradeoffs, product boundaries, and business choices belong to the human. Never silently assume an answer.
 2. **Batch Frontier Evaluation (`batch-grill-me`).**
    - Every design decision branches into subsequent dependent decisions.
    - The **Frontier** is the set of all open decisions whose prerequisites are already settled.

@@ -34,3 +34,13 @@ ai_review:
 # Check names match the `asdlc verify` rows, e.g. schema-managed, spec-quality,
 # pr-type, approved-spec. Missing => block.
 rollout_mode: {}
+
+# Web search for agent fact-finding during grilling (Stage 2).
+# allow: agent may search (default); deny: offline/air-gapped mode, agent skips search silently.
+web_search: allow
+
+# Issue tracker integration (optional). Set required: true to enforce a ticket link in verify.
+# type: jira | github | linear | none
+issue_tracker:
+  type: none
+  required: false
