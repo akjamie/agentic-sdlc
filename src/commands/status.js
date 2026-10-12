@@ -32,11 +32,10 @@ export function statusChange(changeId, opts = {}) {
   const unchecked = has('tasks.md') ? countUncheckedTasks(readText(path.join(cdir, 'tasks.md'))) : null;
 
   const stage = [
-    ['1 explore.md', has('explore.md')],
+    ['1 explore (draft)', has('explore.md')],
     ['2 proposal.md', has('proposal.md')],
     ['2 spec delta', specFiles.length > 0],
-    ['2 review.md (APPROVE)', verdict === 'APPROVE'],
-    ['3 approved on ' + branch, Boolean(approvedSha)],
+    ['3 spec approved on ' + branch, Boolean(approvedSha)],
     ['4 tasks complete', unchecked === 0],
   ];
 
@@ -44,12 +43,11 @@ export function statusChange(changeId, opts = {}) {
   for (const [name, ok] of stage) log.plain(`  [${ok ? 'x' : ' '}] ${name}`);
 
   let next;
-  if (!has('explore.md')) next = `asdlc new ${changeId}`;
-  else if (!has('proposal.md') || specFiles.length === 0) next = 'author proposal.md + specs/** (grounded in explore.md)';
-  else if (verdict !== 'APPROVE') next = `asdlc lint ${changeId}`;
-  else if (!approvedSha) next = `merge the spec PR, then: asdlc approve ${changeId}`;
-  else if (unchecked !== 0) next = `asdlc apply ${changeId}, then /opsx-apply`;
-  else next = `asdlc verify ${changeId} --repo <name>`;
+  if (!has('explore.md') && !has('proposal.md')) next = `asdlc new ${changeId}`;
+  else if (!has('proposal.md') || specFiles.length === 0) next = 'author proposal.md + specs/**';
+  else if (!approvedSha) next = `run: asdlc lint ${changeId} && asdlc pr ${changeId} (CI handles AI review on PR; once merged run: asdlc approve ${changeId})`;
+  else if (unchecked !== 0) next = `asdlc apply ${changeId}, then complete tasks in tasks.md`;
+  else next = `asdlc verify ${changeId}`;
   log.plain('');
   log.plain(`next: ${next}`);
   return 0;

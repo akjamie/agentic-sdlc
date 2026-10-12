@@ -128,11 +128,11 @@ export function runVerify(changeId, opts = {}) {
   add('change', 'pass', slug);
   const { specSha, status } = meta(repoRoot, changeId);
 
-  const required = ['proposal.md', 'review.md', 'tasks.md'];
+  const required = ['proposal.md', 'tasks.md'];
   const missing = required.filter((f) => !exists(path.join(cdir, f)));
   const specFiles = exists(path.join(cdir, 'specs'))
     ? walkFiles(path.join(cdir, 'specs')).filter((f) => f.endsWith('spec.md')) : [];
-  if (missing.length === 0 && specFiles.length > 0) add('artifacts', 'pass', 'proposal, review, tasks, spec delta present');
+  if (missing.length === 0 && specFiles.length > 0) add('artifacts', 'pass', 'proposal, tasks, spec delta present');
   else add('artifacts', 'fail', [...missing.map((f) => `${f} missing`), ...(specFiles.length === 0 ? ['no spec delta'] : [])].join('; '));
 
   const lockedPaths = [`openspec/changes/${slug}/proposal.md`, `openspec/changes/${slug}/specs`];

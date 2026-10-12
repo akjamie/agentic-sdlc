@@ -1,11 +1,16 @@
 ---
 name: asdlc-review
-description: "Act as an independent fresh-context reviewer to evaluate proposal.md and specs deltas across 6 dimensions (completeness, ambiguity, contract, testability, security) and record an authoritative review.md."
+description: "[DORMANT / CI-MANAGED] Spec review is executed automatically by CI on PRs (leaving comments and summary directly on GitHub/GitLab). Local review.md generation is dormant."
 ---
 
-# /asdlc:review - Independent Fresh-Context Reviewer
+# /asdlc:review - Independent Spec Review (Dormant / CI-Managed)
 
-This skill switches the agent into the **Independent Reviewer** role (Player ≠ Referee). The reviewer MUST NOT be the authoring agent and MUST NOT modify `proposal.md` or `specs/**`.
+> [!NOTE]
+> **Workflow Update**: Local generation of `review.md` is **dormant**. 
+> Spec quality and 6-dimension reviews are executed automatically by the **CI AI Reviewer Action** on Spec PRs. 
+> Feedback and ratings are posted directly as PR comments/summaries to facilitate Human TL Review.
+
+This skill is retained for reference or manual pre-PR dry runs if requested. When invoked, it switches into the **Independent Reviewer** role (Player ≠ Referee). The reviewer MUST NOT be the authoring agent.
 
 ---
 

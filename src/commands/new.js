@@ -120,7 +120,7 @@ _(unavailable - graph query error)_
   log.info('');
   log.info('Next:');
   log.info(`  1. batch-grill the author (skill: grilling / batch-grill-me) and fill clarifications.md`);
-  log.info('  2. author proposal.md -> specs/** -> review.md, grounded in explore.md');
+  log.info('  2. author proposal.md -> specs/** (grounded in explore.md)');
   log.info(`  3. asdlc lint ${slug}`);
   return slug;
 }

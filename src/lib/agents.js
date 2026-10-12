@@ -22,7 +22,7 @@ raw escape hatch: the wrappers ARE the guards (graph refresh, approval, checks).
 2. **grill** - run the **grilling** skill with the author using the **batch-grill-me** protocol
    (evaluate the full frontier in 1-2 structured batches with recommendations, looking facts up
    yourself) and record the settled decisions in \`clarifications.md\`. THEN author
-   **proposal.md -> specs/** -> review.md**, grounded in \`explore.md\`.
+   **proposal.md -> specs/**\`. (AI Review is handled on PR by CI).
 3. **lint** - \`asdlc lint <ID>\`: artifacts + BDD/acceptance criteria. Open Spec PR via \`asdlc pr <ID> <targetBranch>\`.
 4. **approve** - human/TL approves (via PR merge, on PR, or in-place); \`asdlc approve <ID>\` records approved SHA + READY_FOR_IMPL.
 5. **apply** - \`asdlc apply <ID>\` (guard: the spec must be approved), then

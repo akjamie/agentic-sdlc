@@ -21,7 +21,6 @@ function scaffold(repo, changeId) {
   fs.mkdirSync(path.join(dir, 'specs', 'demo-cap'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'proposal.md'), '# Proposal\n\n## Why\nDemo change.\n');
   fs.writeFileSync(path.join(dir, 'explore.md'), '# Explore\n\n> generatedAt: 2026-01-01T00:00:00Z\n');
-  fs.writeFileSync(path.join(dir, 'review.md'), '# Review\n\n## Verdict\n\nAPPROVE\n\n## Blocking Findings\n(none)\n');
   fs.writeFileSync(path.join(dir, 'tasks.md'), '# Tasks\n\n- [x] 1.1 implement (AC1) verify: tests/demo.test.js\n');
   fs.writeFileSync(path.join(dir, 'specs', 'demo-cap', 'spec.md'),
     `# Spec Delta\n\n## Purpose\nA demo capability that exercises the BDD and AC quality harness.\n\n## ADDED Requirements\n\n### Requirement: Demo behavior\nThe system SHALL return a greeting.\n\n#### Scenario: Greeting\n- **GIVEN** a caller\n- **WHEN** it requests the greeting\n- **THEN** it receives "hello"\n\n**Acceptance criteria**\n- [ ] AC1: returns "hello" (test: tests/demo.test.js)\n\n## Constraints & NFRs\n\n## Out of Scope\n\n## Test Strategy\nUnit test asserts the greeting.\n`);
