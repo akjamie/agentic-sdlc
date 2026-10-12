@@ -24,6 +24,7 @@ function scaffold(repo, changeId) {
   fs.writeFileSync(path.join(dir, '.openspec.yaml'), `schema: agentic-repo-change\n`);
   fs.writeFileSync(path.join(dir, 'proposal.md'), '# Proposal: User Authentication With JWT\n\n## Why\nNeed secure JWT auth.\n\n## Capabilities\n- New auth capability\n');
   fs.writeFileSync(path.join(dir, 'explore.md'), '# Explore\n\n> generatedAt: 2026-01-01T00:00:00Z\n');
+  fs.writeFileSync(path.join(dir, 'tasks.md'), '# Tasks\n\n- [ ] 1.1 implement (AC1) verify: test/auth.test.js\n');
   fs.writeFileSync(path.join(dir, 'specs', 'demo-cap', 'spec.md'),
     `# Spec Delta\n\n## Purpose\nA demo capability that exercises the BDD and AC quality harness.\n\n## ADDED Requirements\n\n### Requirement: Login\nThe system SHALL authenticate users.\n\n#### Scenario: Success\n- **GIVEN** credentials\n- **WHEN** submitted\n- **THEN** returns token\n\n**Acceptance criteria**\n- [ ] AC1: token returned (test: test/auth.test.js)\n\n## Constraints & NFRs\n\n## Out of Scope\n\n## Test Strategy\nUnit tests.\n`);
   return dir;

@@ -60,13 +60,41 @@ test('apply: refuses when spec is not approved on the protected branch', () => {
   );
 });
 
-test('apply: passes when spec is approved (merged to main)', () => {
+test('apply: passes when spec is approved (merged to main and status is ready_for_impl)', () => {
   const repo = tmpRepo();
   scaffold(repo, 'TECH-1');
   execFileSync('git', ['add', '-A'], { cwd: repo });
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'spec'], { cwd: repo });
+  // Approve the change (records specSha, status: ready_for_impl)
+  mergeChange('TECH-1', { repoRoot: repo });
   const exit = applyGuard('TECH-1', { repoRoot: repo, protectedBranch: 'main' });
   assert.equal(exit, 0);
+});
+
+test('apply: fails when status is not ready_for_impl', () => {
+  const repo = tmpRepo();
+  scaffold(repo, 'TECH-1');
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'spec'], { cwd: repo });
+  // Spec commit merged, but not approved via asdlc approve
+  assert.throws(
+    () => applyGuard('TECH-1', { repoRoot: repo, protectedBranch: 'main' }),
+    /state is unset|ready_for_impl/,
+  );
+});
+
+test('apply: fails when locked spec files have uncommitted local modifications', () => {
+  const repo = tmpRepo();
+  const dir = scaffold(repo, 'TECH-1');
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'spec'], { cwd: repo });
+  mergeChange('TECH-1', { repoRoot: repo });
+  // Tamper: dirty local modification to proposal.md
+  fs.appendFileSync(path.join(dir, 'proposal.md'), '\nTampered content!\n');
+  assert.throws(
+    () => applyGuard('TECH-1', { repoRoot: repo, protectedBranch: 'main' }),
+    /uncommitted local modifications|SPEC_DIRTY/,
+  );
 });
 
 test('lint: passes when review.md is absent pre-merge', () => {

@@ -18,14 +18,20 @@ This skill executes **Stage 5 (Apply)** of the Agentic SDLC. It enforces strict 
 
 ## Workflow Sequence
 
-### Step 1: Run the Apply Guard
+### Step 1: Run the Apply Guard (Pre-Implementation Security Check)
 Before editing any implementation or test code, run the apply guard:
 
 ```powershell
 asdlc apply <CHANGE_ID>
 ```
 
-- If `asdlc apply` fails: **STOP immediately**. The spec is not yet approved on the protected branch (`origin/main`). Guide the user to finish the spec PR review and merge it.
+`asdlc apply` deterministically verifies four cryptographic preconditions:
+1. **Target Branch Approved Commit (`approvedSha`)**: Confirms that a commit touching the locked paths (`proposal.md` and `specs/**`) is physically merged into the target branch (`main` or `origin/main`).
+2. **Change State Machine (`ready_for_impl`)**: Confirms `.openspec.yaml` has been transitioned to `status: ready_for_impl` (via `asdlc approve <ID>`).
+3. **Spec Fingerprint Integrity (`specSha`)**: Verifies that the declared `specSha` in `.openspec.yaml` exactly matches the `approvedSha` on the protected branch.
+4. **Working Tree Tamper Defense**: Ensures that locked spec files (`proposal.md`, `specs/**`) have no uncommitted local modifications.
+
+- If `asdlc apply` fails: **STOP immediately**. Follow the provided hint (e.g. merge Spec PR or run `asdlc approve`).
 - If `asdlc apply` succeeds: Proceed to Step 2.
 
 ### Step 2: Read `tasks.md` and Ground Context
