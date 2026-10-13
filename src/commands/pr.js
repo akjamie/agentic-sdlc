@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { exists, readText } from '../lib/fs.js';
+import { exists, readText, writeText } from '../lib/fs.js';
 import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
 import { git, isGitRepo } from '../lib/git.js';
@@ -237,6 +237,19 @@ ${proposalText}
     } else {
       log.info(`(Install 'gh' / 'glab' CLI or set GITHUB_TOKEN for 1-click automatic PR creation)`);
     }
+  }
+
+  // Persist targetBranch and prUrl to .openspec.yaml for full traceability
+  const metaPath = path.join(cdir, '.openspec.yaml');
+  if (exists(metaPath)) {
+    let metaText = readText(metaPath);
+    const upsertKey = (text, key, val) => {
+      const re = new RegExp(`^\\s*${key}:\\s*.*$`, 'm');
+      return re.test(text) ? text.replace(re, `${key}: "${val}"`) : `${text.trimEnd()}\n${key}: "${val}"\n`;
+    };
+    metaText = upsertKey(metaText, 'targetBranch', targetBranch);
+    if (prUrl) metaText = upsertKey(metaText, 'prUrl', prUrl);
+    writeText(metaPath, metaText);
   }
 
   return { slug, title, targetBranch, prUrl };

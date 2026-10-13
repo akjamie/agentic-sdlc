@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { exists, readText } from '../lib/fs.js';
+import { exists, readText, writeText } from '../lib/fs.js';
 import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
 import { lastCommitTouching, git } from '../lib/git.js';
@@ -15,39 +15,32 @@ export function applyGuard(changeId, opts = {}) {
   const cdir = changeDir(repoRoot, slug);
   if (!exists(cdir)) fail(`change '${slug}' not found`);
 
-  // 1. Target branch approved commit check
-  const branch = opts.targetBranch ?? opts.protectedBranch ?? 'main';
-  const locked = [`openspec/changes/${slug}/proposal.md`, `openspec/changes/${slug}/specs`];
-  const approvedSha = lastCommitTouching(repoRoot, branch, locked);
-
-  if (!approvedSha) {
-    fail(`'${slug}' is not approved yet (no Spec commit merged into ${branch})`, {
-      code: 'NOT_APPROVED',
-      hint: `open a Spec PR via \`asdlc pr ${changeId} ${branch}\`, merge it, then run \`asdlc approve ${changeId}\``,
-    });
-  }
-
-  // 2. Flow state and specSha consistency in .openspec.yaml
+  // 1. Resolve target branch dynamically: CLI option -> .openspec.yaml -> git tracking -> main/master
   const metaPath = path.join(cdir, '.openspec.yaml');
   let meta = {};
   if (exists(metaPath)) {
     const text = readText(metaPath);
     const sha = text.match(/^\s*specSha:\s*['"]?([^\s'"]+)['"]?\s*$/m);
     const status = text.match(/^\s*status:\s*['"]?([^\s'"]+)['"]?\s*$/m);
-    meta = { specSha: sha ? sha[1] : null, status: status ? status[1] : null };
+    const tb = text.match(/^\s*targetBranch:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+    meta = { specSha: sha ? sha[1] : null, status: status ? status[1] : null, targetBranch: tb ? tb[1] : null };
   }
 
-  if (meta.status !== 'ready_for_impl') {
-    fail(`'${slug}' state is ${meta.status ?? 'unset'} (expected: ready_for_impl)`, {
-      code: 'NOT_READY_FOR_IMPL',
-      hint: `run \`asdlc approve ${changeId}\` to record approval and transition change state`,
-    });
-  }
+  const branch = opts.targetBranch
+    ?? opts.protectedBranch
+    ?? meta.targetBranch
+    ?? resolveDefaultBranch(repoRoot);
 
-  if (meta.specSha && meta.specSha !== approvedSha) {
-    fail(`'${slug}' specSha mismatch: declared ${meta.specSha.slice(0, 8)} != approved ${approvedSha.slice(0, 8)} on ${branch}`, {
-      code: 'SPEC_SHA_MISMATCH',
-      hint: `spec was modified after approval. Run \`asdlc approve ${changeId}\` or revert local spec changes.`,
+  const locked = [`openspec/changes/${slug}/proposal.md`, `openspec/changes/${slug}/specs`];
+
+  // 2. Multi-tenant path-isolated approval detection
+  // Query ONLY commits touching this change's own directory on target branch
+  const approvedSha = lastCommitTouching(repoRoot, branch, locked);
+
+  if (!approvedSha) {
+    fail(`'${slug}' is not approved yet (no Spec PR for this change merged into ${branch})`, {
+      code: 'NOT_APPROVED',
+      hint: `open a Spec PR via \`asdlc pr ${changeId} ${branch}\` and merge it before implementing`,
     });
   }
 
@@ -60,7 +53,33 @@ export function applyGuard(changeId, opts = {}) {
     });
   }
 
-  // 4. Tasks checklist presence
+  // 4. Content-level cryptographic zero-diff invariant:
+  // The local spec content MUST match the approved version on the target branch
+  const diff = (git(['diff', approvedSha, '--', ...locked], repoRoot, { allowFail: true }) ?? '').trim();
+  if (diff) {
+    fail(`'${slug}' spec differs from the approved version on ${branch} (${approvedSha.slice(0, 8)}):\n${diff.slice(0, 300)}`, {
+      code: 'SPEC_DIFFERS_FROM_APPROVED',
+      hint: `spec was modified after approval. Merge latest ${branch} or revert unauthorized spec changes.`,
+    });
+  }
+
+  // 5. Automatic state transition: PR Merge is the single source of truth for approval!
+  // If the spec is physically merged on the target branch with 0 diff, automatically transition to ready_for_impl
+  if (meta.status !== 'ready_for_impl' || meta.specSha !== approvedSha) {
+    if (exists(metaPath)) {
+      let metaText = readText(metaPath);
+      const upsertKey = (text, key, val) => {
+        const re = new RegExp(`^\\s*${key}:\\s*.*$`, 'm');
+        return re.test(text) ? text.replace(re, `${key}: "${val}"`) : `${text.trimEnd()}\n${key}: "${val}"\n`;
+      };
+      metaText = upsertKey(metaText, 'specSha', approvedSha);
+      metaText = upsertKey(metaText, 'status', 'ready_for_impl');
+      writeText(metaPath, metaText);
+    }
+    log.ok(`${slug}: recognized PR approval on ${branch} (synced state to ready_for_impl @ ${approvedSha.slice(0, 8)})`);
+  }
+
+  // 6. Tasks checklist presence
   const tasksPath = path.join(cdir, 'tasks.md');
   if (!exists(tasksPath)) {
     fail(`'${slug}' missing tasks.md`, {
@@ -72,6 +91,15 @@ export function applyGuard(changeId, opts = {}) {
   log.ok(`${slug} is APPROVED on ${branch} (specSha: ${approvedSha.slice(0, 8)}, state: ready_for_impl)`);
   log.info(`Ready for implementation. Follow task-level TDD loop in tasks.md.`);
   return 0;
+}
+
+function resolveDefaultBranch(repoRoot) {
+  // Check if origin/main, origin/master, main, or master exists
+  for (const candidate of ['origin/main', 'origin/master', 'main', 'master']) {
+    const existsRef = git(['rev-parse', '--verify', candidate], repoRoot, { allowFail: true });
+    if (existsRef) return candidate;
+  }
+  return 'main';
 }
 
 export function register(program) {

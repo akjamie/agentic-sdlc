@@ -71,16 +71,19 @@ test('apply: passes when spec is approved (merged to main and status is ready_fo
   assert.equal(exit, 0);
 });
 
-test('apply: fails when status is not ready_for_impl', () => {
+test('apply: automatically recognizes PR merge on target branch and syncs status', () => {
   const repo = tmpRepo();
-  scaffold(repo, 'TECH-1');
+  const dir = scaffold(repo, 'TECH-1');
   execFileSync('git', ['add', '-A'], { cwd: repo });
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'spec'], { cwd: repo });
-  // Spec commit merged, but not approved via asdlc approve
-  assert.throws(
-    () => applyGuard('TECH-1', { repoRoot: repo, protectedBranch: 'main' }),
-    /state is unset|ready_for_impl/,
-  );
+  // Spec commit merged directly to main via PR, but asdlc approve was never manually executed
+  const exit = applyGuard('TECH-1', { repoRoot: repo, protectedBranch: 'main' });
+  assert.equal(exit, 0);
+
+  // Assert that applyGuard automatically transitioned the metadata to ready_for_impl
+  const metaText = fs.readFileSync(path.join(dir, '.openspec.yaml'), 'utf8');
+  assert.match(metaText, /status: "ready_for_impl"/);
+  assert.match(metaText, /specSha:/);
 });
 
 test('apply: fails when locked spec files have uncommitted local modifications', () => {
@@ -95,6 +98,31 @@ test('apply: fails when locked spec files have uncommitted local modifications',
     () => applyGuard('TECH-1', { repoRoot: repo, protectedBranch: 'main' }),
     /uncommitted local modifications|SPEC_DIRTY/,
   );
+});
+
+test('apply: concurrent changes do not interfere with each others approvedSha', () => {
+  const repo = tmpRepo();
+  const dir1 = scaffold(repo, 'TECH-1');
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'spec(tech-1): add tech-1'], { cwd: repo });
+
+  // Simulate concurrent developer adding another change AUTH-2 later on main
+  const dir2 = path.join(repo, 'openspec', 'changes', 'auth-2');
+  fs.mkdirSync(path.join(dir2, 'specs', 'auth'), { recursive: true });
+  fs.writeFileSync(path.join(dir2, '.openspec.yaml'), `schema: agentic-repo-change\n`);
+  fs.writeFileSync(path.join(dir2, 'proposal.md'), '# Proposal: AUTH-2\n');
+  fs.writeFileSync(path.join(dir2, 'tasks.md'), '# Tasks\n- [ ] 1.1 auth\n');
+  fs.writeFileSync(path.join(dir2, 'specs', 'auth', 'spec.md'), '# Spec\n');
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'spec(auth-2): concurrent merge'], { cwd: repo });
+
+  // TECH-1 applyGuard MUST succeed even though AUTH-2 is now the latest commit on main!
+  const exit1 = applyGuard('TECH-1', { repoRoot: repo, protectedBranch: 'main' });
+  assert.equal(exit1, 0, 'TECH-1 must succeed independently of AUTH-2');
+
+  // AUTH-2 applyGuard also succeeds independently!
+  const exit2 = applyGuard('AUTH-2', { repoRoot: repo, protectedBranch: 'main' });
+  assert.equal(exit2, 0, 'AUTH-2 must succeed independently');
 });
 
 test('lint: passes when review.md is absent pre-merge', () => {
