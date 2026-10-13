@@ -64,20 +64,20 @@ For complete technical specifications of each plane, see [docs/architecture.md](
 
 `asdlc` does not assume or require external user-level skills to be pre-installed. All critical agent harnesses are **packaged inside `asdlc` and installed automatically upon `asdlc init`**:
 
-| Stage / Role | Skill Suite | Purpose & Behavior |
-| :--- | :--- | :--- |
-| **Stage 1 · Init** | [`asdlc-init`](assets/skills/asdlc-init/SKILL.md) | Bootstraps repo: installs OpenSpec, Graphify AST engine, governance schema, policies, git hooks, and bundled skills. |
-| **Stage 2 · New** | [`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Transforms natural language intent into change directory, grounded in Graphify AST code queries. |
-| **Stage 2 · Interview**| [`grilling`](assets/skills/grilling/SKILL.md) | High-throughput **`batch-grill-me`** interview engine: settles the entire decision tree in 1-2 structured batches. |
-| **Stage 3 · Lint** | [`asdlc-lint`](assets/skills/asdlc-lint/SKILL.md) | Deterministic BDD & Acceptance Criteria verification (R0–R8). Zero LLM jitter. |
-| **Stage 3 · Review** | [`asdlc-review`](assets/skills/asdlc-review/SKILL.md) | *(CI-Managed)* Independent 6-dimension spec evaluation. Runs automatically on Spec PR. |
-| **Stage 3.5 · Spec PR**| [`asdlc-pr`](assets/skills/asdlc-pr/SKILL.md) | 3-tier Spec PR engine (CLI → REST API → 1-click Web URL) with auto-labels and branch target tracking. |
-| **Stage 4 · Approve**| [`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md) | Recognizes Spec PR merge on target branch; records immutable `specSha` + `READY_FOR_IMPL`. |
-| **Stage 5 · Apply** | [`asdlc-apply`](assets/skills/asdlc-apply/SKILL.md) | Enforces multi-tenant zero-diff guard; executes strict **Red -> Green -> Refactor -> Evidence -> Converge** TDD loop. |
-| **Stage 6 · Verify** | [`asdlc-verify`](assets/skills/asdlc-verify/SKILL.md) | 12-gate implementation verification: test presence, task evidence, AC test mapping, and independent AI verifier. |
-| **Stage 7 · Archive**| [`asdlc-archive`](assets/skills/asdlc-archive/SKILL.md) | Deliberate closeout: syncs specs, refreshes code AST graph on HEAD, and updates `AGENTS.md`. |
-| **Diagnostics** | [`asdlc-doctor`](assets/skills/asdlc-doctor/SKILL.md) | Evaluates 12 toolchain/governance invariants; provides automated 1-click remediation (`--fix`). |
-| **Orientation** | [`asdlc-status`](assets/skills/asdlc-status/SKILL.md) | Shows change stage progress, active artifacts, next command, or full portfolio dashboard. |
+| Stage & Skill | Purpose & Behavior |
+| :--- | :--- |
+| **Stage 1 · Init**<br>[`asdlc-init`](assets/skills/asdlc-init/SKILL.md) | Bootstraps repo: installs OpenSpec, Graphify AST engine, governance schema, policies, git hooks, and bundled skills. |
+| **Stage 2 · New**<br>[`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Transforms natural language intent into change directory, grounded in Graphify AST code queries. |
+| **Stage 2 · Grilling**<br>[`grilling`](assets/skills/grilling/SKILL.md) | High-throughput **`batch-grill-me`** interview engine: settles the entire decision tree in 1-2 structured batches. |
+| **Stage 3 · Lint**<br>[`asdlc-lint`](assets/skills/asdlc-lint/SKILL.md) | Deterministic BDD & Acceptance Criteria verification (R0–R8). Zero LLM jitter. |
+| **Stage 3 · Review**<br>[`asdlc-review`](assets/skills/asdlc-review/SKILL.md) | *(CI-Managed)* Independent 6-dimension spec evaluation. Runs automatically on Spec PR. |
+| **Stage 3.5 · Spec PR**<br>[`asdlc-pr`](assets/skills/asdlc-pr/SKILL.md) | 3-tier Spec PR engine (CLI → REST API → 1-click Web URL) with auto-labels and branch target tracking. |
+| **Stage 4 · Approve**<br>[`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md) | Recognizes Spec PR merge on target branch; records immutable `specSha` + `READY_FOR_IMPL`. |
+| **Stage 5 · Apply**<br>[`asdlc-apply`](assets/skills/asdlc-apply/SKILL.md) | Enforces multi-tenant zero-diff guard; executes strict **Red -> Green -> Refactor -> Evidence -> Converge** TDD loop. |
+| **Stage 6 · Verify**<br>[`asdlc-verify`](assets/skills/asdlc-verify/SKILL.md) | 12-gate implementation verification: test presence, task evidence, AC test mapping, and independent AI verifier. |
+| **Stage 7 · Archive**<br>[`asdlc-archive`](assets/skills/asdlc-archive/SKILL.md) | Deliberate closeout: syncs specs, refreshes code AST graph on HEAD, and updates `AGENTS.md`. |
+| **Diagnostics**<br>[`asdlc-doctor`](assets/skills/asdlc-doctor/SKILL.md) | Evaluates 12 toolchain/governance invariants; provides automated 1-click remediation (`--fix`). |
+| **Orientation**<br>[`asdlc-status`](assets/skills/asdlc-status/SKILL.md) | Shows change stage progress, active artifacts, next command, or full portfolio dashboard. |
 
 ---
 
@@ -126,16 +126,16 @@ flowchart LR
     style S7 fill:#f3e5f5,stroke:#9c27b0
 ```
 
-| Stage | Command | Description |
-| :--- | :--- | :--- |
-| **1 · Init** | `asdlc init [--ci jenkins]` | Bootstraps OpenSpec + Graphify, governance schema, policy, and 8+ agent tools. |
-| **2 · New** | `asdlc new "<requirement>"` | Derives canonical slug, queries code graph, and seeds `clarifications.md`. |
-| **3 · Lint** | `asdlc lint <ID>` | Pure deterministic lint: verifies BDD scenarios, AC-to-test mappings (R0–R8). |
-| **3.5 · PR** | `asdlc pr <ID> <targetBranch>` | Pushes spec branch, opens PR with labels, tracks target branch in metadata. |
-| **4 · Approve**| `asdlc approve <ID>` | Validates spec merge; records path-limited `specSha` + `READY_FOR_IMPL`. *(Auto-recognized by apply)* |
-| **5 · Apply** | `asdlc apply <ID>` | Path-isolated zero-diff guard; launches `/asdlc:apply` task-level TDD Red-Green engine. |
-| **6 · Verify** | `asdlc verify <ID>` | Verifies 12 deterministic gates: test-presence, tdd-evidence, AC mappings, external tests, AI referee. |
-| **7 · Archive**| `asdlc archive <ID>` | Syncs delta to `openspec/specs/`, refreshes knowledge graph, updates `AGENTS.md` system status. |
+| Stage & Command | Lifecycle Action & Governance Guard |
+| :--- | :--- |
+| **1 · Init**<br>`asdlc init [--ci jenkins]` | Bootstraps OpenSpec + Graphify, governance schema, policy, and 8+ agent tools. |
+| **2 · New**<br>`asdlc new "<requirement>"` | Derives canonical slug, queries code graph, and seeds `clarifications.md`. |
+| **3 · Lint**<br>`asdlc lint <ID>` | Pure deterministic lint: verifies BDD scenarios, AC-to-test mappings (R0–R8). |
+| **3.5 · PR**<br>`asdlc pr <ID> <targetBranch>` | Pushes spec branch, opens PR with labels, tracks target branch in metadata. |
+| **4 · Approve**<br>`asdlc approve <ID>` | Validates spec merge; records path-limited `specSha` + `READY_FOR_IMPL`. *(Auto-recognized by apply)* |
+| **5 · Apply**<br>`asdlc apply <ID>` | Path-isolated zero-diff guard; launches `/asdlc:apply` task-level TDD Red-Green engine. |
+| **6 · Verify**<br>`asdlc verify <ID>` | Verifies 12 deterministic gates: test-presence, tdd-evidence, AC mappings, external tests, AI referee. |
+| **7 · Archive**<br>`asdlc archive <ID>` | Syncs delta to `openspec/specs/`, refreshes knowledge graph, updates `AGENTS.md` system status. |
 
 **Navigation & Diagnostics:**
 - `asdlc status <ID>`: Instant orientation on current stage and exact next command.
