@@ -104,6 +104,19 @@ test('parseRemoteUrl parses SSH and HTTPS remotes for GitHub and GitLab', async 
   assert.equal(glSsh.repoPath, 'enterprise/team/repo');
   assert.equal(glSsh.isGitLab, true);
 
+  // Enterprise on-premise GitHub Enterprise Server
+  const ghes = parseRemoteUrl('git@github.corp.internal:infra/agentic-sdlc.git');
+  assert.equal(ghes.host, 'github.corp.internal');
+  assert.equal(ghes.repoPath, 'infra/agentic-sdlc');
+  assert.equal(ghes.isGitHub, true);
+
+  // Enterprise on-premise GitLab with custom port and http protocol
+  const onPremGl = parseRemoteUrl('http://code.internal.net:8080/group/project.git', { platform: 'gitlab' });
+  assert.equal(onPremGl.host, 'code.internal.net:8080');
+  assert.equal(onPremGl.protocol, 'http:');
+  assert.equal(onPremGl.repoPath, 'group/project');
+  assert.equal(onPremGl.isGitLab, true);
+
   assert.equal(parseRemoteUrl(null), null);
   assert.equal(parseRemoteUrl(''), null);
 });

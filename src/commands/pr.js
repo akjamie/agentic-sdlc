@@ -143,9 +143,10 @@ ${proposalText}
 
     if (remoteInfo.isGitHub && ghToken) {
       try {
-        const apiUrl = remoteInfo.host === 'github.com'
-          ? `https://api.github.com/repos/${remoteInfo.repoPath}/pulls`
-          : `https://${remoteInfo.host}/api/v3/repos/${remoteInfo.repoPath}/pulls`;
+        const apiBase = remoteInfo.host === 'github.com'
+          ? 'https://api.github.com'
+          : `${remoteInfo.protocol}//${remoteInfo.host}/api/v3`;
+        const apiUrl = `${apiBase}/repos/${remoteInfo.repoPath}/pulls`;
         const res = await fetch(apiUrl, {
           method: 'POST',
           headers: {
@@ -169,9 +170,7 @@ ${proposalText}
           // Attach labels via GitHub Issues API (pull requests are issues in GitHub)
           if (data.number) {
             try {
-              const labelUrl = remoteInfo.host === 'github.com'
-                ? `https://api.github.com/repos/${remoteInfo.repoPath}/issues/${data.number}/labels`
-                : `https://${remoteInfo.host}/api/v3/repos/${remoteInfo.repoPath}/issues/${data.number}/labels`;
+              const labelUrl = `${apiBase}/repos/${remoteInfo.repoPath}/issues/${data.number}/labels`;
               await fetch(labelUrl, {
                 method: 'POST',
                 headers: {
@@ -191,7 +190,7 @@ ${proposalText}
     } else if (remoteInfo.isGitLab && glToken) {
       try {
         const projectId = encodeURIComponent(remoteInfo.repoPath);
-        const apiUrl = `https://${remoteInfo.host}/api/v4/projects/${projectId}/merge_requests`;
+        const apiUrl = `${remoteInfo.protocol}//${remoteInfo.host}/api/v4/projects/${projectId}/merge_requests`;
         const res = await fetch(apiUrl, {
           method: 'POST',
           headers: {
@@ -228,10 +227,10 @@ ${proposalText}
     // Tier 3: Browser 1-click fallback link
     if (remoteInfo) {
       if (remoteInfo.isGitHub) {
-        const webUrl = `https://${remoteInfo.host}/${remoteInfo.repoPath}/compare/${targetBranch}...${currentBranch}?expand=1&labels=spec,asdlc:spec-review`;
+        const webUrl = `${remoteInfo.protocol}//${remoteInfo.host}/${remoteInfo.repoPath}/compare/${targetBranch}...${currentBranch}?expand=1&labels=spec,asdlc:spec-review`;
         log.info(`👉 Click to open and create PR in browser: ${webUrl}`);
       } else if (remoteInfo.isGitLab) {
-        const webUrl = `https://${remoteInfo.host}/${remoteInfo.repoPath}/-/merge_requests/new?merge_request[source_branch]=${currentBranch}&merge_request[target_branch]=${targetBranch}&merge_request[labels]=asdlc:spec-review,spec`;
+        const webUrl = `${remoteInfo.protocol}//${remoteInfo.host}/${remoteInfo.repoPath}/-/merge_requests/new?merge_request[source_branch]=${currentBranch}&merge_request[target_branch]=${targetBranch}&merge_request[labels]=asdlc:spec-review,spec`;
         log.info(`👉 Click to open and create MR in browser: ${webUrl}`);
       }
     } else {
@@ -255,31 +254,43 @@ ${proposalText}
   return { slug, title, targetBranch, prUrl };
 }
 
-export function parseRemoteUrl(url) {
+export function parseRemoteUrl(url, opts = {}) {
   if (!url) return null;
   const cleaned = url.trim().replace(/\.git$/, '');
+  let host = '';
+  let repoPath = '';
+  let protocol = 'https:';
+
   const sshMatch = cleaned.match(/^git@([^:]+):(.+)$/);
   if (sshMatch) {
-    const host = sshMatch[1];
-    return {
-      host,
-      repoPath: sshMatch[2],
-      isGitHub: host.includes('github'),
-      isGitLab: host.includes('gitlab'),
-    };
+    host = sshMatch[1];
+    repoPath = sshMatch[2];
+  } else {
+    try {
+      const u = new URL(cleaned);
+      host = u.host;
+      protocol = u.protocol || 'https:';
+      repoPath = u.pathname.replace(/^\//, '');
+    } catch {
+      return null;
+    }
   }
-  try {
-    const u = new URL(cleaned);
-    const host = u.host;
-    return {
-      host,
-      repoPath: u.pathname.replace(/^\//, ''),
-      isGitHub: host.includes('github'),
-      isGitLab: host.includes('gitlab'),
-    };
-  } catch {
-    return null;
-  }
+
+  const explicitPlatform = (opts.platform || process.env.ASDLC_GIT_PLATFORM || process.env.GIT_PLATFORM || '').toLowerCase();
+  const isGitLab = explicitPlatform === 'gitlab'
+    || host.includes('gitlab')
+    || (!host.includes('github') && Boolean(process.env.GITLAB_TOKEN || process.env.CI_JOB_TOKEN || process.env.GL_TOKEN));
+  const isGitHub = explicitPlatform === 'github'
+    || host.includes('github')
+    || (!isGitLab);
+
+  return {
+    host,
+    repoPath,
+    protocol,
+    isGitHub,
+    isGitLab,
+  };
 }
 
 export function register(program) {
