@@ -60,23 +60,24 @@ For complete technical specifications of each plane, see [docs/architecture.md](
 
 ---
 
-## Bundled Out-of-the-Box Skills (The 11-Skill Suite)
+## Bundled Out-of-the-Box Skills
 
 `asdlc` does not assume or require external user-level skills to be pre-installed. All critical agent harnesses are **packaged inside `asdlc` and installed automatically upon `asdlc init`**:
 
-| Skill | Role / Stage | Purpose & Behavior |
-|---|---|---|
-| **[`asdlc-init`](assets/skills/asdlc-init/SKILL.md)** | Stage 1 · Init | Bootstraps repository: installs OpenSpec devDependency, Graphify AST engine, governance schema, policies, git hooks, and bundled skills. |
-| **[`asdlc-doctor`](assets/skills/asdlc-doctor/SKILL.md)** | Health Check | Evaluates 12 toolchain/governance invariants; provides automated 1-click remediation playbooks for drifts. |
-| **[`asdlc-new`](assets/skills/asdlc-new/SKILL.md)** | Stage 2 · New | Accepts natural language requirement, derives canonical slug, generates code-grounded `explore.md`, launches batch grilling, and drafts specs. |
-| **[`grilling`](assets/skills/grilling/SKILL.md)** | Stage 2 · Engine | High-throughput **`batch-grill-me`** interview engine: settles the entire decision tree frontier in 1-2 structured batches with recommended defaults. |
-| **[`asdlc-lint`](assets/skills/asdlc-lint/SKILL.md)** | Stage 3 · Lint | Pure deterministic BDD / Acceptance Criteria verification (R0–R8) and `review.md` verdict checker. Zero LLM jitter. |
-| **[`asdlc-review`](assets/skills/asdlc-review/SKILL.md)** | Stage 3 · Review | Independent fresh-context reviewer role (Player ≠ Referee): evaluates 6 dimensions and records authoritative `review.md`. |
-| **[`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md)** | Stage 4 · Approve | Verifies Spec PR merge on main; records path-limited `specSha` + `READY_FOR_IMPL`, tags `approved/<ID>`, and scaffolds TDD task plan. |
-| **[`asdlc-apply`](assets/skills/asdlc-apply/SKILL.md)** | Stage 5 · Apply | Guard-protected task-level TDD engine: enforces the 5-phase **Red -> Green -> Refactor -> Evidence -> Converge** cycle per task. |
-| **[`asdlc-verify`](assets/skills/asdlc-verify/SKILL.md)** | Stage 6 · Verify | 12-gate implementation verification: test presence, task evidence, AC test mapping, external tests, and independent AI verifier. |
-| **[`asdlc-archive`](assets/skills/asdlc-archive/SKILL.md)** | Stage 7 · Archive | Deliberate human-confirmed closeout: archives change, refreshes code AST graph on new HEAD, and updates `AGENTS.md` system status. |
-| **[`asdlc-status`](assets/skills/asdlc-status/SKILL.md)** | Lifecycle & Dashboard | Provides instant orientation on single change progress, next actionable command, or full repository portfolio dashboard. |
+| Stage / Role | Skill Suite | Purpose & Behavior |
+| :--- | :--- | :--- |
+| **Stage 1 · Init** | [`asdlc-init`](assets/skills/asdlc-init/SKILL.md) | Bootstraps repo: installs OpenSpec, Graphify AST engine, governance schema, policies, git hooks, and bundled skills. |
+| **Stage 2 · New** | [`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Transforms natural language intent into change directory, grounded in Graphify AST code queries. |
+| **Stage 2 · Interview**| [`grilling`](assets/skills/grilling/SKILL.md) | High-throughput **`batch-grill-me`** interview engine: settles the entire decision tree in 1-2 structured batches. |
+| **Stage 3 · Lint** | [`asdlc-lint`](assets/skills/asdlc-lint/SKILL.md) | Deterministic BDD & Acceptance Criteria verification (R0–R8). Zero LLM jitter. |
+| **Stage 3 · Review** | [`asdlc-review`](assets/skills/asdlc-review/SKILL.md) | *(CI-Managed)* Independent 6-dimension spec evaluation. Runs automatically on Spec PR. |
+| **Stage 3.5 · Spec PR**| [`asdlc-pr`](assets/skills/asdlc-pr/SKILL.md) | 3-tier Spec PR engine (CLI → REST API → 1-click Web URL) with auto-labels and branch target tracking. |
+| **Stage 4 · Approve**| [`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md) | Recognizes Spec PR merge on target branch; records immutable `specSha` + `READY_FOR_IMPL`. |
+| **Stage 5 · Apply** | [`asdlc-apply`](assets/skills/asdlc-apply/SKILL.md) | Enforces multi-tenant zero-diff guard; executes strict **Red -> Green -> Refactor -> Evidence -> Converge** TDD loop. |
+| **Stage 6 · Verify** | [`asdlc-verify`](assets/skills/asdlc-verify/SKILL.md) | 12-gate implementation verification: test presence, task evidence, AC test mapping, and independent AI verifier. |
+| **Stage 7 · Archive**| [`asdlc-archive`](assets/skills/asdlc-archive/SKILL.md) | Deliberate closeout: syncs specs, refreshes code AST graph on HEAD, and updates `AGENTS.md`. |
+| **Diagnostics** | [`asdlc-doctor`](assets/skills/asdlc-doctor/SKILL.md) | Evaluates 12 toolchain/governance invariants; provides automated 1-click remediation (`--fix`). |
+| **Orientation** | [`asdlc-status`](assets/skills/asdlc-status/SKILL.md) | Shows change stage progress, active artifacts, next command, or full portfolio dashboard. |
 
 ---
 
@@ -110,11 +111,11 @@ asdlc doctor
 
 ```mermaid
 flowchart LR
-    S1["1 · init<br/>setup + skills"] --> S2["2 · new<br/>intent + explore"]
-    S2 --> G["grill<br/>decision tree"] --> S3["3 · lint<br/>BDD + AC + review"]
-    S3 --> PR["Spec PR<br/>merge = approval"] --> S4["4 · approve<br/>record SHA + READY"]
+    S1["1 · init<br/>setup + skills"] --> S2["2 · new<br/>intent + graph"]
+    S2 --> G["grill<br/>batch-grill-me"] --> S3["3 · lint<br/>BDD + AC"]
+    S3 --> PR["Spec PR<br/>CI AI Review"] --> S4["4 · approve<br/>merge = approval"]
     S4 --> S5["5 · apply<br/>TDD loop"] --> PR2["Impl PR"]
-    PR2 --> S6["6 · verify<br/>gates + AI"] --> S7["7 · archive<br/>refresh graph"]
+    PR2 --> S6["6 · verify<br/>12 gates"] --> S7["7 · archive<br/>sync + graph"]
 
     style S1 fill:#e8f4fd,stroke:#2196f3
     style S2 fill:#e8f4fd,stroke:#2196f3
@@ -125,19 +126,20 @@ flowchart LR
     style S7 fill:#f3e5f5,stroke:#9c27b0
 ```
 
-| Stage | Command | What it does |
-|---|---|---|
-| **1 · init** | `asdlc init [--ci jenkins]` | Installs OpenSpec + Graphify, governance schema, policy, and bundled skills (`grilling`, `asdlc-apply`). |
-| **2 · new** | `asdlc new "<requirement>"` | Derives canonical slug, queries code graph, generates `explore.md`, and seeds `clarifications.md`. |
-| **3 · lint** | `asdlc lint <ID>` | Pure deterministic lint: verifies BDD scenarios, AC-to-test mappings, and independent review record. |
-| **4 · approve**| `asdlc approve <ID>` | Validates spec PR merge on protected branch; records immutable `specSha` + `READY_FOR_IMPL`. |
-| **5 · apply** | `asdlc apply <ID>` | Enforces approval guard, then launches `/asdlc:apply` task-level TDD Red-Green loop. |
-| **6 · verify** | `asdlc verify <ID> --repo <R>`| Deterministic gates: test-presence, task evidence, AC test existence, schema pin, external checks, AI verifier. |
-| **7 · archive**| `asdlc archive <ID>` | Human-confirmed close: refreshes code knowledge graph and `AGENTS.md` context. |
+| Stage | Command | Description |
+| :--- | :--- | :--- |
+| **1 · Init** | `asdlc init [--ci jenkins]` | Bootstraps OpenSpec + Graphify, governance schema, policy, and 8+ agent tools. |
+| **2 · New** | `asdlc new "<requirement>"` | Derives canonical slug, queries code graph, and seeds `clarifications.md`. |
+| **3 · Lint** | `asdlc lint <ID>` | Pure deterministic lint: verifies BDD scenarios, AC-to-test mappings (R0–R8). |
+| **3.5 · PR** | `asdlc pr <ID> <targetBranch>` | Pushes spec branch, opens PR with labels, tracks target branch in metadata. |
+| **4 · Approve**| `asdlc approve <ID>` | Validates spec merge; records path-limited `specSha` + `READY_FOR_IMPL`. *(Auto-recognized by apply)* |
+| **5 · Apply** | `asdlc apply <ID>` | Path-isolated zero-diff guard; launches `/asdlc:apply` task-level TDD Red-Green engine. |
+| **6 · Verify** | `asdlc verify <ID>` | Verifies 12 deterministic gates: test-presence, tdd-evidence, AC mappings, external tests, AI referee. |
+| **7 · Archive**| `asdlc archive <ID>` | Syncs delta to `openspec/specs/`, refreshes knowledge graph, updates `AGENTS.md` system status. |
 
 **Navigation & Diagnostics:**
 - `asdlc status <ID>`: Instant orientation on current stage and exact next command.
-- `asdlc doctor`: Comprehensive environment, toolchain, and policy health diagnostics.
+- `asdlc doctor [--fix]`: Comprehensive toolchain and policy health diagnostics with auto-remediation.
 
 ---
 
@@ -193,7 +195,7 @@ flowchart TB
 
 ```bash
 npm install
-npm test        # 44 unit and integration tests
+npm test        # 55 unit and integration tests (100% pass)
 ```
 
 ---
