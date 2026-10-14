@@ -31,6 +31,7 @@ test('deriveChangeSlug: derives clean slug from natural language requirement', a
   assert.equal(deriveChangeSlug('i want to build jwt authentication'), 'jwt-authentication');
   assert.equal(deriveChangeSlug('TECH-5678: add rate limiting to payment api'), 'tech-5678-rate-limiting-payment-api');
   assert.equal(deriveChangeSlug('i want to build redis caching', { id: 'custom-cache' }), 'custom-cache');
+  assert.match(deriveChangeSlug('用户输入一个中国城市名系统返回天气'), /^change-[a-z0-9]+$/);
 
   assert.equal(extractRequirementTerms('i want to build jwt authentication for payment api'), 'jwt authentication payment api');
 });

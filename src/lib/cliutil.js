@@ -57,7 +57,12 @@ export function deriveChangeSlug(input, opts = {}) {
   if (ticket && keywords) return `${ticket}-${keywords}`.slice(0, 40).replace(/-+$/, '');
   if (ticket) return ticket;
   if (keywords) return keywords.slice(0, 40).replace(/-+$/, '');
-  return toChangeSlug(text).slice(0, 40);
+  const fallback = toChangeSlug(text).slice(0, 40);
+  if (fallback) return fallback;
+
+  // Non-ASCII fallback (e.g. pure Chinese input): generate deterministic slug from content hash
+  const hash = Math.abs(text.split('').reduce((acc, c) => ((acc << 5) - acc) + c.charCodeAt(0), 0)).toString(36);
+  return `change-${hash || Date.now().toString(36)}`;
 }
 
 export function requireRepo(opts = {}) {
