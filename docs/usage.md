@@ -12,8 +12,8 @@
 tarball or registry:
 
 ```bash
-# A. directly from remote git repository
-npm install -g git+https://github.com/akjamie/agentic-sdlc.git
+# A. directly from remote git repository (npm v12+ requires --allow-git=all)
+npm install -g --allow-git=all git+https://github.com/akjamie/agentic-sdlc.git
 
 # B. internal tarball
 npm install -g https://internal-artifactory/asdlc/asdlc-0.1.0.tgz
@@ -22,6 +22,10 @@ npm install -g https://internal-artifactory/asdlc/asdlc-0.1.0.tgz
 npm install -g .
 # or: npm install -g asdlc
 ```
+
+> [!NOTE]
+> **npm v12+ Security Policy (`EALLOWGIT`)**:
+> Starting with **npm v12** (Node.js 24+), fetching packages from Git references is disabled by default (`allow-git = "none"`). When installing directly from GitHub, pass `--allow-git=all` (or configure `allow-git=all` in `~/.npmrc`). If overwriting a previously installed binary, append `--force`.
 
 The engines (OpenSpec, Graphify) are installed by `asdlc init`, not by hand.
 
