@@ -55,8 +55,62 @@ test('pr: succeeds on feature branch and extracts title from proposal.md', async
 
   const res = await createSpecPR('AUTH-1', 'main', { repoRoot: repo });
   assert.equal(res.slug, 'auth-1');
+  assert.equal(res.type, 'spec');
   assert.equal(res.targetBranch, 'main');
   assert.equal(res.title, 'spec(auth-1): User Authentication With JWT');
+  assert.deepEqual(res.labels, ['asdlc:spec-review', 'spec']);
+});
+
+test('pr: blocks implementation PR when verification fails (tasks unchecked / unverified)', async () => {
+  const { createPR } = await import('../src/commands/pr.js');
+  const repo = tmpRepo();
+  scaffold(repo, 'AUTH-1');
+  execFileSync('git', ['checkout', '-b', 'impl/auth-1'], { cwd: repo });
+
+  await assert.rejects(
+    async () => createPR('AUTH-1', 'main', { repoRoot: repo, type: 'impl' }),
+    /implementation verification failed/
+  );
+});
+
+test('pr: succeeds for implementation PR when verified and attaches asdlc:impl-review labels', async () => {
+  const { createPR } = await import('../src/commands/pr.js');
+  const repo = tmpRepo();
+  const dir = scaffold(repo, 'AUTH-1');
+
+  // Mark task as checked and write initial test
+  fs.writeFileSync(path.join(dir, 'tasks.md'), '# Tasks\n\n- [x] 1.1 implement (AC1) verify: test/auth.test.js\n');
+  fs.mkdirSync(path.join(repo, 'test'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'test', 'auth.test.js'), '// pass\n');
+
+  // 1. Commit spec on main
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'spec commit'], { cwd: repo });
+  const specSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+
+  // 2. Mark ready_for_impl in .openspec.yaml and commit on main
+  fs.writeFileSync(path.join(dir, '.openspec.yaml'), `schema: agentic-repo-change\nspecSha: "${specSha}"\nstatus: ready_for_impl\n`);
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'approved spec'], { cwd: repo });
+
+  // 3. Checkout impl branch and implement source + test
+  execFileSync('git', ['checkout', '-qb', 'impl/auth-1'], { cwd: repo });
+  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'src', 'auth.js'), 'export const auth = true;\n');
+  fs.writeFileSync(path.join(repo, 'test', 'auth.test.js'), '// updated pass\n');
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'impl: add auth src and test'], { cwd: repo });
+
+  const res = await createPR('AUTH-1', 'main', {
+    repoRoot: repo,
+    type: 'impl',
+    skipOpenspec: true,
+    skipExternal: true,
+  });
+  assert.equal(res.slug, 'auth-1');
+  assert.equal(res.type, 'impl');
+  assert.equal(res.title, 'impl(auth-1): User Authentication With JWT');
+  assert.deepEqual(res.labels, ['asdlc:impl-review', 'impl']);
 });
 
 test('applyGuard fails fast if Spec PR is not merged into targetBranch, passes after merge', () => {

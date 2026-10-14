@@ -5,10 +5,11 @@ import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
 import { git, isGitRepo } from '../lib/git.js';
 import { runLint } from './lint.js';
+import { runVerify } from './verify.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
 
-export async function createSpecPR(changeId, targetBranch, opts = {}) {
+export async function createPR(changeId, targetBranch, opts = {}) {
   const repoRoot = requireRepo(opts);
   if (!isGitRepo(repoRoot)) fail('not a git repository');
 
@@ -23,39 +24,90 @@ export async function createSpecPR(changeId, targetBranch, opts = {}) {
   const cdir = changeDir(repoRoot, slug);
   if (!exists(cdir)) fail(`change '${slug}' not found`);
 
-  // 1. Pre-flight lint: must pass with 0 blockers before opening PR
-  log.step(`running spec lint for ${slug}...`);
-  const lintExit = runLint(slug, { repoRoot, json: true });
-  if (lintExit !== 0) {
-    fail(`spec lint failed; fix all blocking findings before opening the Spec PR (run \`asdlc lint ${slug}\`)`);
+  // Detect PR type (spec vs impl)
+  const metaPath = path.join(cdir, '.openspec.yaml');
+  const metaText = exists(metaPath) ? readText(metaPath) : '';
+  const statusMatch = metaText.match(/^\s*status:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+  const changeStatus = statusMatch ? statusMatch[1].toLowerCase() : '';
+
+  const tasksPath = path.join(cdir, 'tasks.md');
+  const tasksText = exists(tasksPath) ? readText(tasksPath) : '';
+  const uncheckedCount = (tasksText.match(/^\s*-\s+\[\s\]/gm) ?? []).length;
+  const checkedCount = (tasksText.match(/^\s*-\s+\[[xX]\]/gm) ?? []).length;
+
+  const currentBranch = (git(['rev-parse', '--abbrev-ref', 'HEAD'], repoRoot) ?? '').trim();
+  if (currentBranch === targetBranch) {
+    fail(`cannot create a PR from '${currentBranch}' into itself. Please switch to a feature branch first (e.g. \`git checkout -b spec/${slug}\` or \`git checkout -b impl/${slug}\`)`);
   }
-  log.ok('spec lint passed (0 blockers)');
+
+  let prType = (opts.type || '').toLowerCase();
+  if (prType !== 'spec' && prType !== 'impl') {
+    if (currentBranch.startsWith('spec/')) {
+      prType = 'spec';
+    } else if (currentBranch.startsWith('impl/')) {
+      prType = 'impl';
+    } else if (changeStatus === 'ready_for_impl' || (checkedCount > 0 && uncheckedCount === 0)) {
+      prType = 'impl';
+    } else {
+      prType = 'spec';
+    }
+  }
+
+  const isSpec = prType === 'spec';
+  const labelPrefix = isSpec ? 'asdlc:spec-review' : 'asdlc:impl-review';
+  const secondaryLabel = isSpec ? 'spec' : 'impl';
+  const prTypeName = isSpec ? 'Spec PR' : 'Implementation PR';
+
+  // 1. Pre-flight self-check
+  if (isSpec) {
+    log.step(`running spec lint pre-flight for ${slug}...`);
+    const lintExit = runLint(slug, { repoRoot, json: true });
+    if (lintExit !== 0) {
+      fail(`spec lint failed; fix all blocking findings before opening the Spec PR (run \`asdlc lint ${slug}\`)`);
+    }
+    log.ok('spec lint passed (0 blockers)');
+  } else {
+    log.step(`running implementation verify pre-flight for ${slug}...`);
+    const verifyExit = runVerify(slug, {
+      repoRoot,
+      base: targetBranch,
+      protectedBranch: targetBranch,
+      ...opts,
+    });
+    if (verifyExit !== 0) {
+      fail(`implementation verification failed; all 12 gates must pass before opening the Implementation PR (run \`asdlc verify ${slug}\`)`);
+    }
+    log.ok('implementation verify passed (all 12 gates passed)');
+  }
 
   // 2. Extract Title and Description from proposal.md
   const proposalPath = path.join(cdir, 'proposal.md');
   if (!exists(proposalPath)) fail(`proposal.md missing for ${slug}`);
   const proposalText = readText(proposalPath);
 
-  // Extract clean title from proposal: # Proposal: <title> or # <title>
-  let title = `spec(${slug})`;
+  let title = `${isSpec ? 'spec' : 'impl'}(${slug})`;
   const titleMatch = proposalText.match(/^#\s*(?:Proposal:\s*)?([^\n\r]+)/im);
   if (titleMatch && titleMatch[1]) {
     const raw = titleMatch[1].replace(/<!--[\s\S]*?-->/g, '').trim();
-    if (raw) title = `spec(${slug}): ${raw}`;
+    if (raw) title = `${isSpec ? 'spec' : 'impl'}(${slug}): ${raw}`;
   }
 
-  const currentBranch = (git(['rev-parse', '--abbrev-ref', 'HEAD'], repoRoot) ?? '').trim();
-  if (currentBranch === targetBranch) {
-    fail(`cannot create a PR from '${currentBranch}' into itself. Please switch to a feature branch first (e.g. \`git checkout -b spec/${slug}\`)`);
-  }
-
-  // 3. Stage & commit any unstaged spec changes
+  // 3. Stage & commit any unstaged changes
   try {
-    git(['add', `openspec/changes/${slug}`], repoRoot);
-    const status = git(['status', '--porcelain', `openspec/changes/${slug}`], repoRoot);
-    if (status) {
-      execFileSync('git', ['commit', '-m', `spec(${slug}): specify feature intent`], { cwd: repoRoot, stdio: 'ignore' });
-      log.ok('committed latest spec changes');
+    if (isSpec) {
+      git(['add', `openspec/changes/${slug}`], repoRoot);
+      const status = git(['status', '--porcelain', `openspec/changes/${slug}`], repoRoot);
+      if (status) {
+        execFileSync('git', ['commit', '-m', `spec(${slug}): specify feature intent`], { cwd: repoRoot, stdio: 'ignore' });
+        log.ok('committed latest spec changes');
+      }
+    } else {
+      git(['add', '-A'], repoRoot);
+      const status = git(['status', '--porcelain'], repoRoot);
+      if (status) {
+        execFileSync('git', ['commit', '-m', `impl(${slug}): implement verified changes`], { cwd: repoRoot, stdio: 'ignore' });
+        log.ok('committed latest implementation changes');
+      }
     }
   } catch { /* ignore */ }
 
@@ -68,8 +120,10 @@ export async function createSpecPR(changeId, targetBranch, opts = {}) {
     log.warn(`git push skipped or failed: ${err.message}`);
   }
 
-  // 5. Build PR body from proposal
-  const body = `## 🤖 Agentic SDLC — Spec Review
+  // 5. Build PR body
+  let body = '';
+  if (isSpec) {
+    body = `## 🤖 Agentic SDLC — Spec Review
 
 **Change ID**: \`${slug}\`
 **Target Branch**: \`${targetBranch}\`
@@ -79,6 +133,22 @@ export async function createSpecPR(changeId, targetBranch, opts = {}) {
 
 ${proposalText}
 `;
+  } else {
+    body = `## 🤖 Agentic SDLC — Implementation Review
+
+**Change ID**: \`${slug}\`
+**Target Branch**: \`${targetBranch}\`
+**Implementation Branch**: \`${currentBranch}\`
+
+### 📋 Completed Tasks & TDD Evidence
+${tasksText || '(no tasks recorded)'}
+
+---
+
+### 🎯 Approved Intent
+${proposalText}
+`;
+  }
 
   // 6. Multi-tier PR creation strategy:
   // Tier 1: Platform CLI (gh / glab)
@@ -99,7 +169,7 @@ ${proposalText}
       '--body', body,
       '--base', targetBranch,
       '--head', currentBranch,
-      '--label', 'asdlc:spec-review',
+      '--label', labelPrefix,
     ], { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     prCreated = true;
     prUrl = out.trim();
@@ -127,7 +197,7 @@ ${proposalText}
         '--description', body,
         '--target-branch', targetBranch,
         '--source-branch', currentBranch,
-        '--label', 'asdlc:spec-review',
+        '--label', labelPrefix,
       ], { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
       prCreated = true;
       prUrl = out.trim();
@@ -179,7 +249,7 @@ ${proposalText}
                   'User-Agent': 'asdlc-cli',
                   'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ labels: ['asdlc:spec-review', 'spec'] }),
+                body: JSON.stringify({ labels: [labelPrefix, secondaryLabel] }),
               });
             } catch { /* ignore label add error */ }
           }
@@ -203,7 +273,7 @@ ${proposalText}
             description: body,
             source_branch: currentBranch,
             target_branch: targetBranch,
-            labels: 'asdlc:spec-review,spec',
+            labels: `${labelPrefix},${secondaryLabel}`,
           }),
         });
         if (res.ok) {
@@ -218,19 +288,19 @@ ${proposalText}
   }
 
   if (prCreated && prUrl) {
-    log.ok(`Spec PR automatically created: ${prUrl}`);
+    log.ok(`${prTypeName} automatically created: ${prUrl}`);
   } else {
     log.info('');
-    log.ok(`Branch '${currentBranch}' pushed and ready for Spec PR.`);
-    log.info(`Target: ${targetBranch} | Title: "${title}"`);
+    log.ok(`Branch '${currentBranch}' pushed and ready for ${prTypeName}.`);
+    log.info(`Target: ${targetBranch} | Title: "${title}" | Labels: ${labelPrefix}, ${secondaryLabel}`);
 
     // Tier 3: Browser 1-click fallback link
     if (remoteInfo) {
       if (remoteInfo.isGitHub) {
-        const webUrl = `${remoteInfo.protocol}//${remoteInfo.host}/${remoteInfo.repoPath}/compare/${targetBranch}...${currentBranch}?expand=1&labels=spec,asdlc:spec-review`;
+        const webUrl = `${remoteInfo.protocol}//${remoteInfo.host}/${remoteInfo.repoPath}/compare/${targetBranch}...${currentBranch}?expand=1&labels=${secondaryLabel},${labelPrefix}`;
         log.info(`👉 Click to open and create PR in browser: ${webUrl}`);
       } else if (remoteInfo.isGitLab) {
-        const webUrl = `${remoteInfo.protocol}//${remoteInfo.host}/${remoteInfo.repoPath}/-/merge_requests/new?merge_request[source_branch]=${currentBranch}&merge_request[target_branch]=${targetBranch}&merge_request[labels]=asdlc:spec-review,spec`;
+        const webUrl = `${remoteInfo.protocol}//${remoteInfo.host}/${remoteInfo.repoPath}/-/merge_requests/new?merge_request[source_branch]=${currentBranch}&merge_request[target_branch]=${targetBranch}&merge_request[labels]=${labelPrefix},${secondaryLabel}`;
         log.info(`👉 Click to open and create MR in browser: ${webUrl}`);
       }
     } else {
@@ -239,19 +309,24 @@ ${proposalText}
   }
 
   // Persist targetBranch and prUrl to .openspec.yaml for full traceability
-  const metaPath = path.join(cdir, '.openspec.yaml');
   if (exists(metaPath)) {
-    let metaText = readText(metaPath);
+    let metaTextUpdated = readText(metaPath);
     const upsertKey = (text, key, val) => {
       const re = new RegExp(`^\\s*${key}:\\s*.*$`, 'm');
       return re.test(text) ? text.replace(re, `${key}: "${val}"`) : `${text.trimEnd()}\n${key}: "${val}"\n`;
     };
-    metaText = upsertKey(metaText, 'targetBranch', targetBranch);
-    if (prUrl) metaText = upsertKey(metaText, 'prUrl', prUrl);
-    writeText(metaPath, metaText);
+    metaTextUpdated = upsertKey(metaTextUpdated, 'targetBranch', targetBranch);
+    metaTextUpdated = upsertKey(metaTextUpdated, 'lastPrType', prType);
+    if (prUrl) metaTextUpdated = upsertKey(metaTextUpdated, 'prUrl', prUrl);
+    writeText(metaPath, metaTextUpdated);
   }
 
-  return { slug, title, targetBranch, prUrl };
+  return { slug, type: prType, title, targetBranch, prUrl, labels: [labelPrefix, secondaryLabel] };
+}
+
+// Backwards-compatible export
+export function createSpecPR(changeId, targetBranch, opts = {}) {
+  return createPR(changeId, targetBranch, { type: 'spec', ...opts });
 }
 
 export function parseRemoteUrl(url, opts = {}) {
@@ -296,10 +371,11 @@ export function parseRemoteUrl(url, opts = {}) {
 export function register(program) {
   program
     .command('pr <changeId> <targetBranch>')
-    .description('automatically open a Spec PR: lints spec, pushes branch, auto-generates title & body, and creates PR (via CLI, REST API, or web link)')
+    .description('automatically open a Spec or Implementation PR: pre-flight checks, pushes branch, auto-generates title/body, and attaches labels for CI AI review')
+    .option('--type <type>', 'force PR type: spec or impl (defaults to auto-detection)')
     .option('--repo-root <path>')
     .action(async (changeId, targetBranch, opts) => {
-      await createSpecPR(changeId, targetBranch, opts);
+      await createPR(changeId, targetBranch, opts);
     });
 }
 

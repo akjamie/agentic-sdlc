@@ -1,37 +1,45 @@
 ---
 name: asdlc-pr
-description: "Open a Spec PR: pre-flight linting, git branch pushing, auto-extract title/body from proposal.md, and create PR via CLI, REST API, or browser link."
+description: "Open a Spec or Implementation PR: pre-flight checks (lint vs verify), git pushing, auto-extract title/body, and attach labels (asdlc:spec-review vs asdlc:impl-review) for CI AI review."
 ---
 
-# /asdlc:pr - Automated Spec Pull Request Creation
+# /asdlc:pr - Automated Pull Request Engine (Spec & Implementation)
 
-This skill opens a **Spec PR** for reviewing proposed intent before implementation starts.
+This skill opens a **Spec PR** (Stage 3) or an **Implementation PR** (Stage 6.5) with deterministic pre-flight quality gates and distinct labels for CI AI review triggers.
 
 ---
 
 ## Command
 
 ```powershell
-asdlc pr <CHANGE_ID> <targetBranch>
+asdlc pr <CHANGE_ID> <targetBranch> [--type <spec|impl>]
 ```
 
-- `<targetBranch>`: Target branch to merge into (e.g. `main`, `develop`, `staging`). Required.
+- `<targetBranch>`: Target branch to merge into (e.g. `main`, `develop`, `release/*`). Required.
+- `--type <spec|impl>`: Optional explicit override. Defaults to auto-detection.
+
+---
+
+## Dual-PR Lifecycle & Pre-flight Gates
+
+| PR Type | Phase & Moment | Pre-Flight Guard | Auto Labels | CI Automation Trigger |
+| :--- | :--- | :--- | :--- | :--- |
+| **Spec PR** | Stage 3 (After drafting proposal & specs) | **`asdlc lint <ID>`**<br>(0 blocking BDD/AC issues) | `asdlc:spec-review`<br>`spec` | Runs `asdlc lint` + triggers **Spec AI Review** |
+| **Impl PR** | Stage 6.5 (After TDD apply & tasks complete) | **`asdlc verify <ID>`**<br>(12 deterministic gates pass) | `asdlc:impl-review`<br>`impl` | Runs `asdlc verify` + triggers **Code AI Review** |
 
 ---
 
 ## Execution Pipeline
 
-1. **Pre-flight Lint**: Automatically executes `asdlc lint <ID>`. Fails fast if any blocking findings exist.
-2. **Title & Body Extraction**: Derives clean PR title from `proposal.md` (`# Proposal: <title>`) and embeds the structured proposal as the PR body.
-3. **Commit & Push**: Stages latest spec changes on the current branch and pushes to origin (`git push -u origin <branch>`).
-4. **Three-Tier Creation Strategy**:
-   - **Tier 1 (CLI)**: Tries `gh pr create` (or `glab mr create`) with `asdlc:spec-review` label.
-   - **Tier 2 (Direct REST API)**: If CLI is unavailable, checks `GITHUB_TOKEN` or `GITLAB_TOKEN` and calls the platform REST API directly.
-   - **Tier 3 (Browser Fallback)**: If neither is configured, prints a 1-click browser comparison URL pre-filled with branch parameters.
-
----
-
-## Prerequisites & Tools
-
-- `asdlc` does NOT require heavy bundled browser tools or vendor external CLIs.
-- Standard developer CLIs (`gh`, `glab`) or API tokens (`GITHUB_TOKEN`) are optional for headless automation.
+1. **Auto-Detection**: Determines PR phase based on branch name (`spec/*` vs `impl/*`), change approval state (`ready_for_impl`), and tasks completion.
+2. **Pre-flight Quality Gate**:
+   - For Spec PR: executes `asdlc lint <ID>`. Fails fast if any blocking findings exist.
+   - For Impl PR: executes `asdlc verify <ID>`. Fails fast if any of the 12 implementation gates fail.
+3. **Title & Body Extraction**:
+   - Spec PR: derives clean title (`spec(<slug>): <title>`) and embeds proposal intent.
+   - Impl PR: derives title (`impl(<slug>): <title>`) and embeds completed tasks, TDD evidence, and spec intent.
+4. **Commit & Push**: Stages changes, commits with standard prefix, and pushes branch to origin.
+5. **Three-Tier Creation Strategy**:
+   - **Tier 1 (CLI)**: Tries `gh pr create` (or `glab mr create`) with `asdlc:spec-review` or `asdlc:impl-review` label.
+   - **Tier 2 (Direct REST API)**: If CLI is unavailable, uses `GITHUB_TOKEN` or `GITLAB_TOKEN` to create PR and attach labels via REST API.
+   - **Tier 3 (Browser Fallback)**: Generates a 1-click comparison URL pre-filled with branch and label parameters.

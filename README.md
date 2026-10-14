@@ -113,11 +113,12 @@ asdlc doctor
 ```mermaid
 flowchart LR
     S1["1 · init<br/>setup + skills"] --> S2["2 · new<br/>intent + grill"]
-    S2 --> S3["3 · spec pr<br/>lint + open PR"]
+    S2 --> S3["3 · spec pr<br/>lint + open Spec PR"]
     S3 --> S4["4 · approve (optional)<br/>audit check"]
     S4 --> S5["5 · apply<br/>TDD loop"]
-    S5 --> PR2["Impl PR"]
-    PR2 --> S6["6 · verify<br/>12 gates"] --> S7["7 · archive<br/>sync + graph"]
+    S5 --> S6["6 · verify<br/>12 gates (local)"]
+    S6 --> PR2["Impl PR<br/>asdlc pr (CI AI Review)"]
+    PR2 --> S7["7 · archive<br/>sync + graph"]
 
     style S1 fill:#e8f4fd,stroke:#2196f3
     style S2 fill:#e8f4fd,stroke:#2196f3
@@ -125,6 +126,7 @@ flowchart LR
     style S4 fill:#fff3e0,stroke:#ff9800
     style S5 fill:#e8f5e9,stroke:#4caf50
     style S6 fill:#fff3e0,stroke:#ff9800
+    style PR2 fill:#e8f5e9,stroke:#4caf50
     style S7 fill:#f3e5f5,stroke:#9c27b0
 ```
 
@@ -132,11 +134,21 @@ flowchart LR
 | :--- | :--- |
 | **1 · Init**<br>`asdlc init [--ci jenkins]` | Bootstraps OpenSpec + Graphify, governance schema, policy, and 8+ agent tools. |
 | **2 · New**<br>`asdlc new "<requirement>"` | Derives canonical slug, queries code graph, and interviews author via `batch-grill-me`. |
-| **3 · Spec PR**<br>`asdlc pr <ID> <targetBranch>` | Pre-flight BDD/AC linting, pushes spec branch, opens PR with labels, tracks target branch. |
-| **4 · Approve (Optional)**<br>`asdlc approve <ID>` | *(Optional)* Explicit audit stamp after PR merge. `asdlc apply` automatically detects merged PRs if skipped. |
+| **3 · Spec PR**<br>`asdlc pr <ID> <targetBranch>` | Pre-flight BDD/AC linting (`asdlc lint`), attaches `asdlc:spec-review` label, triggers CI Spec AI Review before human approval. |
+| **4 · Approve (Optional)**<br>`asdlc approve <ID>` | *(Optional)* Explicit audit stamp after Spec PR merge. `asdlc apply` automatically detects merged PRs if skipped. |
 | **5 · Apply**<br>`asdlc apply <ID>` | Multi-tenant zero-diff guard; launches `/asdlc:apply` task-level TDD Red-Green engine. |
-| **6 · Verify**<br>`asdlc verify <ID>` | Verifies 12 deterministic gates: test-presence, tdd-evidence, AC mappings, external tests, AI referee. |
+| **6 · Verify (Local)**<br>`asdlc verify <ID>` | Local pre-flight self-check across 12 deterministic gates (test-presence, tdd-evidence, AC mappings, external tests). |
+| **6.5 · Impl PR**<br>`asdlc pr <ID> <targetBranch>` | Pre-flight implementation verification, pushes impl branch, attaches `asdlc:impl-review` label, triggers CI Code AI Review before merge. |
 | **7 · Archive**<br>`asdlc archive <ID>` | Syncs delta to `openspec/specs/`, refreshes knowledge graph, updates `AGENTS.md` system status. |
+
+### Dual-PR Governance & Label Dispatch
+
+`asdlc pr` automatically detects whether you are submitting a **Spec PR** or an **Implementation PR** (or set explicitly via `--type <spec|impl>`):
+
+| PR Phase | Trigger Moment & Pre-flight | PR Labels | CI Automation Trigger | Human Action |
+| :--- | :--- | :--- | :--- | :--- |
+| **Spec PR** | After spec drafting; runs **`asdlc lint`** (0 blockers) | `asdlc:spec-review`<br>`spec` | Runs `asdlc lint` + triggers **Spec AI Review** (clarity, BDD scenarios, architecture alignment) | TL / Domain Lead approves & merges |
+| **Impl PR** | After TDD implementation; runs **`asdlc verify`** (12 gates) | `asdlc:impl-review`<br>`impl` | Runs `asdlc verify` + triggers **Code AI Review** (diff analysis, style, edge cases) | Lead / Peer reviews code & merges |
 
 **Navigation & Diagnostics:**
 - `asdlc status <ID>`: Instant orientation on current stage and exact next command.
