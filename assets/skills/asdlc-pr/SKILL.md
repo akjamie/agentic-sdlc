@@ -12,11 +12,11 @@ This skill opens a **Spec PR** (Stage 3) or an **Implementation PR** (Stage 6.5)
 ## Command
 
 ```powershell
-asdlc pr <CHANGE_ID> <targetBranch> [--type <spec|impl>]
+asdlc pr <CHANGE_ID> <targetBranch>
 ```
 
 - `<targetBranch>`: Target branch to merge into (e.g. `main`, `develop`, `release/*`). Required.
-- `--type <spec|impl>`: Optional explicit override. Defaults to auto-detection.
+- Zero manual flags: `asdlc pr` automatically detects whether to open a Spec PR or an Implementation PR.
 
 ---
 

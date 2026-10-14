@@ -67,8 +67,9 @@ test('pr: blocks implementation PR when verification fails (tasks unchecked / un
   scaffold(repo, 'AUTH-1');
   execFileSync('git', ['checkout', '-b', 'impl/auth-1'], { cwd: repo });
 
+  // Pure auto-detection: detects 'impl' from impl/ branch, runs verify pre-flight
   await assert.rejects(
-    async () => createPR('AUTH-1', 'main', { repoRoot: repo, type: 'impl' }),
+    async () => createPR('AUTH-1', 'main', { repoRoot: repo }),
     /implementation verification failed/
   );
 });
@@ -101,9 +102,9 @@ test('pr: succeeds for implementation PR when verified and attaches asdlc:impl-r
   execFileSync('git', ['add', '-A'], { cwd: repo });
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'impl: add auth src and test'], { cwd: repo });
 
+  // Pure auto-detection: NO type specified!
   const res = await createPR('AUTH-1', 'main', {
     repoRoot: repo,
-    type: 'impl',
     skipOpenspec: true,
     skipExternal: true,
   });

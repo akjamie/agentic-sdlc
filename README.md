@@ -143,7 +143,7 @@ flowchart LR
 
 ### Dual-PR Governance & Label Dispatch
 
-`asdlc pr` automatically detects whether you are submitting a **Spec PR** or an **Implementation PR** (or set explicitly via `--type <spec|impl>`):
+`asdlc pr` automatically detects whether you are submitting a **Spec PR** (Stage 3) or an **Implementation PR** (Stage 6.5) based on lifecycle state, branch, and approval history — completely autonomous with zero extra flags:
 
 | PR Phase | Trigger Moment & Pre-flight | PR Labels | CI Automation Trigger | Human Action |
 | :--- | :--- | :--- | :--- | :--- |

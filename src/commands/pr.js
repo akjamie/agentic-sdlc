@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { exists, readText, writeText } from '../lib/fs.js';
 import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
-import { git, isGitRepo } from '../lib/git.js';
+import { git, isGitRepo, changeOnRef, lastCommitTouching } from '../lib/git.js';
 import { runLint } from './lint.js';
 import { runVerify } from './verify.js';
 import { fail } from '../lib/errors.js';
@@ -24,11 +24,13 @@ export async function createPR(changeId, targetBranch, opts = {}) {
   const cdir = changeDir(repoRoot, slug);
   if (!exists(cdir)) fail(`change '${slug}' not found`);
 
-  // Detect PR type (spec vs impl)
+  // Detect PR type 100% automatically (Spec PR vs Impl PR)
   const metaPath = path.join(cdir, '.openspec.yaml');
   const metaText = exists(metaPath) ? readText(metaPath) : '';
   const statusMatch = metaText.match(/^\s*status:\s*['"]?([^\s'"]+)['"]?\s*$/m);
   const changeStatus = statusMatch ? statusMatch[1].toLowerCase() : '';
+  const shaMatch = metaText.match(/^\s*specSha:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+  const specSha = shaMatch ? shaMatch[1] : null;
 
   const tasksPath = path.join(cdir, 'tasks.md');
   const tasksText = exists(tasksPath) ? readText(tasksPath) : '';
@@ -40,17 +42,29 @@ export async function createPR(changeId, targetBranch, opts = {}) {
     fail(`cannot create a PR from '${currentBranch}' into itself. Please switch to a feature branch first (e.g. \`git checkout -b spec/${slug}\` or \`git checkout -b impl/${slug}\`)`);
   }
 
-  let prType = (opts.type || '').toLowerCase();
-  if (prType !== 'spec' && prType !== 'impl') {
-    if (currentBranch.startsWith('spec/')) {
-      prType = 'spec';
-    } else if (currentBranch.startsWith('impl/')) {
-      prType = 'impl';
-    } else if (changeStatus === 'ready_for_impl' || (checkedCount > 0 && uncheckedCount === 0)) {
-      prType = 'impl';
-    } else {
-      prType = 'spec';
-    }
+  // Check if the spec is already approved/merged into targetBranch
+  const isApprovedOnTarget = changeOnRef(repoRoot, targetBranch, slug)
+    || changeOnRef(repoRoot, `origin/${targetBranch}`, slug)
+    || Boolean(lastCommitTouching(repoRoot, targetBranch, [`openspec/changes/${slug}/proposal.md`]));
+
+  // Check git diff or status for source code changes outside openspec/changes/<slug>
+  const diffFiles = (git(['diff', '--name-only', `${targetBranch}...HEAD`], repoRoot, { allowFail: true }) ?? '')
+    .split(/\r?\n/).filter(Boolean);
+  const hasSourceChanges = diffFiles.some((f) => !f.startsWith(`openspec/changes/${slug}/`));
+
+  let prType;
+  if (opts.type) {
+    prType = opts.type.toLowerCase();
+  } else if (
+    isApprovedOnTarget ||
+    changeStatus === 'ready_for_impl' ||
+    Boolean(specSha) ||
+    currentBranch.startsWith('impl/') ||
+    (hasSourceChanges && (checkedCount > 0 || uncheckedCount === 0))
+  ) {
+    prType = 'impl';
+  } else {
+    prType = 'spec';
   }
 
   const isSpec = prType === 'spec';
@@ -371,8 +385,7 @@ export function parseRemoteUrl(url, opts = {}) {
 export function register(program) {
   program
     .command('pr <changeId> <targetBranch>')
-    .description('automatically open a Spec or Implementation PR: pre-flight checks, pushes branch, auto-generates title/body, and attaches labels for CI AI review')
-    .option('--type <type>', 'force PR type: spec or impl (defaults to auto-detection)')
+    .description('automatically open a Spec or Implementation PR: auto-detects stage, pre-flight checks, pushes branch, and attaches labels for CI AI review')
     .option('--repo-root <path>')
     .action(async (changeId, targetBranch, opts) => {
       await createPR(changeId, targetBranch, opts);
