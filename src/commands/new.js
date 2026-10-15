@@ -118,10 +118,14 @@ _(unavailable - graph query error)_
   }
 
   log.info('');
-  log.info('Next:');
-  log.info(`  1. batch-grill the author (skill: grilling / batch-grill-me) and fill clarifications.md`);
-  log.info('  2. author proposal.md -> specs/** (grounded in explore.md)');
-  log.info(`  3. asdlc lint ${slug}`);
+  log.info('[ASDLC PROTOCOL: IMMEDIATE ACTION REQUIRED FOR AGENT]');
+  log.info('  ▶ DO NOT pause or ask the author if you should begin grilling.');
+  log.info('  ▶ IMMEDIATELY invoke the `grilling` skill (batch-grill-me protocol) in this turn:');
+  log.info('    1. Ground yourself in `explore.md` and research codebase facts first.');
+  log.info('    2. Present Batch 1 questions (Q1..Qn with concrete recommended defaults) to the author.');
+  log.info('    3. Record agreed decisions into `clarifications.md`.');
+  log.info('    4. ONLY AFTER clarifications are settled: author `proposal.md` and `specs/**`.');
+  log.info(`    5. Run \`asdlc lint ${slug}\`.`);
   return slug;
 }
 

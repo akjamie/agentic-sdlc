@@ -18,11 +18,13 @@ Everything runs through \`asdlc\` - do NOT call \`openspec ...\` directly. There
 raw escape hatch: the wrappers ARE the guards (graph refresh, approval, checks).
 
 1. **new** - \`asdlc new "<requirement>"\`: scaffold the change (derives slug from intent) +
-   refresh the knowledge graph + write \`explore.md\` + seed \`clarifications.md\`. This is stage 1.
-2. **grill** - run the **grilling** skill with the author using the **batch-grill-me** protocol
-   (evaluate the full frontier in 1-2 structured batches with recommendations, looking facts up
-   yourself) and record the settled decisions in \`clarifications.md\`. THEN author
-   **proposal.md -> specs/**\`. (AI Review is handled on PR by CI).
+   refresh the knowledge graph + write \`explore.md\` + seed \`clarifications.md\`.
+   ▶ **IMMEDIATE ACTION FOR AGENT**: DO NOT stop or ask permission. In the SAME interaction turn,
+   immediately run the **grilling** skill using the **batch-grill-me** protocol (evaluate the full frontier
+   in 1-2 structured batches with recommendations, looking facts up yourself) and record settled decisions
+   in \`clarifications.md\`.
+   ▶ **CRITICAL**: ONLY AFTER \`clarifications.md\` is settled may you author **proposal.md -> specs/**\`. (AI Review is handled on PR by CI).
+2. **grill** - (embedded in Stage 2) settle all design forks in \`clarifications.md\` BEFORE writing specs.
 3. **lint** - \`asdlc lint <ID>\`: artifacts + BDD/acceptance criteria. Open Spec PR via \`asdlc pr <ID> <targetBranch>\`.
 4. **approve** - human/TL approves (via PR merge, on PR, or in-place); \`asdlc approve <ID>\` records approved SHA + READY_FOR_IMPL.
 5. **apply** - \`asdlc apply <ID>\` (guard: the spec must be approved), then

@@ -19,10 +19,15 @@ asdlc new "<requirement>"
 ```
 
 The CLI:
-1. Derives a clean canonical slug (e.g. `jwt-authentication-payment-api`).
+1. Derives a clean canonical slug (e.g. `jwt-authentication-payment-api` or content-hashed `change-<id>`).
 2. Creates `openspec/changes/<SLUG>/`.
 3. Runs Graphify queries using the extracted requirement terms to discover real codebase AST nodes and call chains.
 4. Generates `explore.md` and seeds `clarifications.md`.
+
+> [!IMPORTANT]
+> **NO PAUSE / CONTINUOUS EXECUTION**: Do NOT stop after `asdlc new` to ask the author "Should I start grilling?".
+> You MUST proceed immediately to Step 2 and Step 3 (**batch-grill-me** interview) in the same turn!
+> Only after `clarifications.md` has all questions settled may you draft `proposal.md` and `specs/**`.
 
 ### Step 2: Ground Yourself in `explore.md`
 Read `openspec/changes/<SLUG>/explore.md`:

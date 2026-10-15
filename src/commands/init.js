@@ -119,7 +119,9 @@ export function initRepo(opts = {}) {
 
   // 4.5) Bundled Agent Skills: install out-of-the-box skills (grilling, asdlc-apply)
   //      into the project's agent tools directory (.agents/skills, .claude/skills, etc.)
-  installSkills(repoRoot, detectTools(repoRoot));
+  const explicitTools = opts.tools ? opts.tools.split(',').map((s) => s.trim().toLowerCase()) : [];
+  const allTools = [...new Set([...detectTools(repoRoot), ...explicitTools])];
+  installSkills(repoRoot, allTools);
 
   // 5) AGENTS.md: the routing layer the agentic IDE reads (workflow + system
   //    status derived from the graph). Written after the graph so status has nodes.
@@ -151,7 +153,9 @@ export function installSkills(repoRoot, tools = []) {
   if (!exists(skillsAssetDir)) return;
   const targetDirs = ['.agents'];
   for (const t of tools) {
-    if (TOOL_SKILLS_DIRS[t]) targetDirs.push(TOOL_SKILLS_DIRS[t]);
+    const key = String(t).toLowerCase().replace(/^\./, '');
+    if (TOOL_SKILLS_DIRS[key]) targetDirs.push(TOOL_SKILLS_DIRS[key]);
+    else if (key) targetDirs.push(`.${key}`);
   }
   const count = listDir(skillsAssetDir).filter((d) => d.isDirectory()).length;
   for (const dir of new Set(targetDirs)) {
