@@ -20,7 +20,7 @@ raw escape hatch: the wrappers ARE the guards (graph refresh, approval, checks).
 1. **new** - \`asdlc new "<requirement>"\`: scaffold the change (derives slug from intent) +
    refresh the knowledge graph + write \`explore.md\` + seed \`clarifications.md\`.
    ▶ **IMMEDIATE ACTION FOR AGENT**: DO NOT stop or ask permission. In the SAME interaction turn,
-   immediately run the **grilling** skill using the **batch-grill-me** protocol (evaluate the full frontier
+   immediately run the **batch-grill-me** (or **grilling**) skill using the **batch-grill-me** protocol (evaluate the full frontier
    in 1-2 structured batches with recommendations, looking facts up yourself) and record settled decisions
    in \`clarifications.md\`.
    ▶ **CRITICAL**: ONLY AFTER \`clarifications.md\` is settled may you author **proposal.md -> specs/**\`. (AI Review is handled on PR by CI).

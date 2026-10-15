@@ -1,71 +1,88 @@
 ---
 name: grilling
-description: "High-efficiency batch design-tree interview (batch-grill-me) for Stage 2 of Agentic SDLC. Evaluates the full decision frontier, presents structured question batches with default recommendations, and settles clarifications.md in 1-2 rounds."
+description: "High-efficiency batch design-tree interview (batch-grill-me) for Stage 2 of Agentic SDLC. Asks every frontier question at once round by round with recommended defaults, dispatches non-blocking fact explorations, settles clarifications.md, and stops only when shared understanding is confirmed."
+aliases:
+  - batch-grill-me
+  - grill-me
 ---
 
-# Batch Grilling - High-Efficiency Design-Tree Interview (`batch-grill-me`)
+# Batch Grilling — Relentless Design-Tree Interview (`batch-grill-me`)
 
-This skill drives the **Grilling phase** (Stage 2) of the Agentic SDLC. It operates between `asdlc new "<requirement>"` and spec authoring (`proposal.md` / `specs/**`).
+This skill drives the **Grilling phase** (Stage 2) of the Agentic SDLC. It operates between `asdlc new "<requirement>"` and spec authoring (`proposal.md` / `specs/**`). It can also be invoked standalone via `/batch-grill-me` or `/grill-me` for any architectural design.
 
-To maximize agent and author efficiency, this skill strictly uses the **`batch-grill-me` protocol**: never ask single sequential questions in ping-pong turns; compute and present the **entire decision frontier in structured batches** with default recommendations.
-
----
-
-## Core Principles
-
-1. **The Human decides, the Agent looks up facts.**
-   - Finding facts is the agent's job. Use the following priority order (auto-fallback, no CLI flags needed):
-     1. **Graphify AST graph** — local, always available. Query god-nodes and call chains first.
-     2. **Direct project file/code reading** — local, always available.
-     3. **Web search** — only if `web_search: allow` in `.sdlc/policy.yaml` (default). In air-gapped or restricted networks, set `web_search: deny`; the agent skips search entirely without any flag.
-   - If a fact cannot be verified via any available tier, mark the question `[fact unverified — author to confirm]` rather than blocking the round.
-   - Architectural tradeoffs, product boundaries, and business choices belong to the human. Never silently assume an answer.
-2. **Batch Frontier Evaluation (`batch-grill-me`).**
-   - Every design decision branches into subsequent dependent decisions.
-   - The **Frontier** is the set of all open decisions whose prerequisites are already settled.
-   - In each round: evaluate the entire frontier and present **all independent decisions together in one structured batch** (`Q1`, `Q2`, `Q3`...).
-   - Every question MUST provide a concrete, fact-backed **recommended default** so the human can review and approve in a single response.
-3. **1-2 Turn Convergence.**
-   - Instead of 10+ sequential conversational turns, the goal is settling the full decision tree in **1 to 2 batch rounds**:
-     - **Turn 1**: Present full initial decision frontier batch.
-     - **Human Response**: The author can reply `"Accept all recommendations"` or provide targeted overrides (e.g., `"Q1: B, Q2: accept, Q3: custom..."`).
-     - **Turn 2 (if needed)**: Present any newly unblocked child decisions unblocked by Round 1 overrides.
-4. **Record Settled Decisions in `clarifications.md`.**
-   - Record every agreed decision under `## Settled decisions` (Decision -> Choice -> Rationale).
-   - Once all questions are resolved, ensure `## Open questions` is empty and proceed to author `proposal.md` -> `specs/**`.
+Interview the author relentlessly until you reach a shared understanding. Map the requirement as a **design tree**: every decision branches into the decisions that hang off it.
 
 ---
 
-## Batch Round Format
+## Core Protocol: The Decision Tree & The Frontier
+
+1. **Work the tree in rounds.**
+   The **Frontier** is every decision whose prerequisites are already settled — the questions you can ask now without guessing at answers you haven't heard yet. Ask the whole frontier in one round: number each question and give your recommended answer. Then wait for the author's answers before the next round.
+2. **Dynamic Tree Reshaping.**
+   Each round the author answers reshapes the tree — settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round.
+3. **No Premature Speculation.**
+   A question whose answer depends on another question still open in this round belongs to a later round, not this one. Never ask speculative downstream questions whose parent branches are unresolved.
+
+---
+
+## Fact-Finding vs. Human Decisions
+
+1. **Finding facts is your job, never the user's.**
+   When a frontier question needs a fact from the environment (filesystem, codebase AST, existing specs, tools, etc.), look it up yourself — don't ask the author for anything you could look up.
+   - **Local Graphify AST / `explore.md`**: Query god nodes, call chains, and architectural hubs first.
+   - **Workspace inspection**: Read source code, configuration files, and package manifests.
+   - **Web search**: Only if `web_search: allow` in `.sdlc/policy.yaml` (default: allow).
+2. **Non-blocking Fact Exploration.**
+   When finding a fact requires deeper investigation:
+   - If the agent harness supports sub-agents: **dispatch a sub-agent to find it**.
+   - If single-agent harness: execute targeted search/read tools immediately.
+   - **Do not block on it**: A running exploration is an unsettled prerequisite, so only the questions downstream of it wait for the sub-agent to report — **ask the rest of the frontier now**.
+3. **Decisions belong to the human.**
+   Architectural trade-offs, product boundaries, business rules, and error policies belong to the human. Never silently assume an answer. Put each to the author and wait.
+
+---
+
+## Termination Gate: Empty Frontier & Shared Understanding
+
+The session is done when the **frontier is empty**:
+- Every branch of the design tree has been visited.
+- Nothing is left silently assumed.
+- **Do not act on it until the author confirms you have reached a shared understanding** (e.g. by replying *"Approve all recommendations"* or signing off on the batch).
+- Record all settled decisions in `openspec/changes/<SLUG>/clarifications.md` under `## Settled decisions`.
+- Only then proceed to Stage 3: drafting `proposal.md` and `specs/**`.
+
+---
+
+## Batch Round Presentation Format
 
 Format each round of the `batch-grill-me` interview strictly as follows:
 
 ```markdown
-### 🎯 Batch Decision Frontier (Round 1)
+### 🎯 Batch Decision Frontier (Round <N>)
 
 I have analyzed the codebase context in `explore.md` for requirement: **"<requirement>"**.
-Here is the complete set of architectural and scoping decisions on the frontier:
+Here is the complete set of architectural and scoping decisions currently on the frontier:
 
 ---
 
 ❓ **Q1** - **<Decision Title>**:
 <Concise explanation of the choice, architectural trade-offs, and available options (A / B / C)>
 
-➡️ **Recommendation**: **Option A** — <Rationale grounded in codebase AST / architectural pattern from explore.md>
+➡️ **Recommendation**: **Option A** — <Concrete rationale grounded in codebase facts / explore.md>
 
 ---
 
 ❓ **Q2** - **<Decision Title>**:
 <Concise explanation and options>
 
-➡️ **Recommendation**: **Option B** — <Rationale>
+➡️ **Recommendation**: **Option B** — <Concrete rationale>
 
 ---
 
 ❓ **Q3** - **<Decision Title>**:
 <Concise explanation and options>
 
-➡️ **Recommendation**: **Option A** — <Rationale>
+➡️ **Recommendation**: **Option A** — <Concrete rationale>
 
 ---
 
@@ -74,10 +91,20 @@ Here is the complete set of architectural and scoping decisions on the frontier:
 
 ---
 
-## Workflow Sequence
+## SDLC Artifact Synchronization
 
-1. **Context Grounding**: Read `explore.md` (knowledge graph findings, call chains, god nodes) and `clarifications.md` in `openspec/changes/<SLUG>/`.
+When operating inside an `asdlc` change (`openspec/changes/<SLUG>/`):
+
+1. **Context Grounding**: Read `explore.md` (knowledge graph findings, call chains, god nodes) and `clarifications.md`.
 2. **Frontier Extraction**: Identify all open architectural forks, boundary ambiguities, and error-handling strategies.
 3. **Execute Batch Round**: Present the numbered question batch with recommended answers.
-4. **Record Settled Decisions**: Record answers in `clarifications.md` under `## Settled decisions`.
-5. **Close & Hand-off**: When the frontier is exhausted, mark clarifications complete and proceed to author `proposal.md`, `specs/**`, and `review.md`.
+4. **Record Settled Decisions**: Record answers in `clarifications.md` under `## Settled decisions`:
+   ```markdown
+   ## Settled decisions
+
+   - **<Decision 1 Title>**: <Chosen Option>
+     - *Rationale*: <Why this was chosen>
+   - **<Decision 2 Title>**: <Chosen Option>
+     - *Rationale*: <Why this was chosen>
+   ```
+5. **Close & Hand-off**: When the frontier is empty and confirmed by the author, clear `## Open questions` and transition to authoring `proposal.md`, `specs/**`, and running `asdlc lint <SLUG>`.

@@ -120,7 +120,7 @@ _(unavailable - graph query error)_
   log.info('');
   log.info('[ASDLC PROTOCOL: IMMEDIATE ACTION REQUIRED FOR AGENT]');
   log.info('  ▶ DO NOT pause or ask the author if you should begin grilling.');
-  log.info('  ▶ IMMEDIATELY invoke the `grilling` skill (batch-grill-me protocol) in this turn:');
+  log.info('  ▶ IMMEDIATELY invoke the `batch-grill-me` (or `grilling`) skill in this turn:');
   log.info('    1. Ground yourself in `explore.md` and research codebase facts first.');
   log.info('    2. Present Batch 1 questions (Q1..Qn with concrete recommended defaults) to the author.');
   log.info('    3. Record agreed decisions into `clarifications.md`.');
