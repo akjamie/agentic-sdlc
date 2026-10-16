@@ -7,6 +7,7 @@ import { runOpenspec, openspecVersion, ensureOpenspec } from '../lib/openspec.js
 import { git } from '../lib/git.js';
 import { ensureGraphify, buildGraph, ensureGitignore } from '../lib/graphify.js';
 import { refreshAgents } from '../lib/agents.js';
+import { ensureRemoteLabels } from './pr.js';
 
 // Directory -> OpenSpec tool id. We detect what the repo already uses so we can
 // wire OpenSpec's own agent commands/skills (we do NOT invent our own).
@@ -101,6 +102,11 @@ export function initRepo(opts = {}) {
     log.ok('wrote .sdlc/policy.yaml (platform-owned; protect with CODEOWNERS)');
   }
 
+  // 3.6) Pre-provision remote governance labels if git remote & gh are available
+  try {
+    ensureRemoteLabels(repoRoot);
+  } catch { /* ignore */ }
+
   // 4) graphify (BU standard): a code-derived navigation graph for spec drafting.
   //    Deterministic code-only AST (no LLM key), bound to HEAD, derived cache.
   if (opts.graph !== false) {
@@ -139,14 +145,14 @@ export function initRepo(opts = {}) {
 
 // All supported tools and their skills directory name (tools that use a 'skills/' subdir convention)
 const TOOL_SKILLS_DIRS = {
-  claude:    '.claude',
-  opencode:  '.opencode',
-  cursor:    '.cursor',
-  gemini:    '.gemini',
-  windsurf:  '.windsurf',
-  trae:      '.trae',
-  codex:     '.codex',
-  zed:       '.zed',
+  claude: '.claude',
+  opencode: '.opencode',
+  cursor: '.cursor',
+  gemini: '.gemini',
+  windsurf: '.windsurf',
+  trae: '.trae',
+  codex: '.codex',
+  zed: '.zed',
 };
 
 export function installSkills(repoRoot, tools = []) {

@@ -48,16 +48,9 @@ If `pass` is false:
 3. Apply the edits directly to the spec files.
 4. Re-run `asdlc lint <CHANGE_ID> --json` to verify that blockers reach zero.
 
-### Step 3: Guide Pull Request Creation (If Passed)
+### Step 3: Lint Complete (Self-Review Passed)
 When `pass` is true (`0 blockers`):
-Provide clear git instructions to open the Spec PR:
+Report to the author that the spec is structurally valid, fully traceable, and passes all BDD/acceptance criteria checks:
 
-```bash
-git checkout -b spec/<CHANGE_ID>
-git add openspec/changes/<SLUG>
-git commit -m "spec(<CHANGE_ID>): specify <feature-name>"
-git push origin spec/<CHANGE_ID>
-```
+> "Spec lint passed with 0 blocking issues. The spec is ready for PR. When you are ready to submit it for review, use `asdlc pr <CHANGE_ID> <targetBranch>`."
 
-Inform the author:
-> "Spec PR is ready for human review and merge! Once merged into `origin/main`, run `/asdlc:apply <CHANGE_ID>` to begin TDD implementation."

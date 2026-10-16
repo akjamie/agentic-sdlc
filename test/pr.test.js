@@ -176,4 +176,21 @@ test('parseRemoteUrl parses SSH and HTTPS remotes for GitHub and GitLab', async 
   assert.equal(parseRemoteUrl(''), null);
 });
 
+test('ASDLC_LABELS and ensureRemoteLabels are properly exported and robust', async () => {
+  const { ASDLC_LABELS, ensureRemoteLabels } = await import('../src/commands/pr.js');
+  assert.ok(ASDLC_LABELS['asdlc:spec-review']);
+  assert.ok(ASDLC_LABELS['asdlc:impl-review']);
+  assert.ok(ASDLC_LABELS['spec']);
+  assert.ok(ASDLC_LABELS['impl']);
+  assert.equal(ASDLC_LABELS['asdlc:spec-review'].color, '1d76db');
+  assert.equal(ASDLC_LABELS['asdlc:impl-review'].color, '5319e7');
+
+  // Should run safely without throwing even in a temp repo without gh remote
+  const repo = tmpRepo();
+  assert.doesNotThrow(() => {
+    ensureRemoteLabels(repo);
+  });
+});
+
+
 

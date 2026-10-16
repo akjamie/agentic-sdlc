@@ -90,3 +90,19 @@ Verify that all checks pass:
 - `tdd-evidence` (tasks have valid verification statements/evidence)
 - `BDD + acceptance criteria`
 - `openspec-validate`
+
+---
+
+### Step 5: Open Implementation PR
+Once `asdlc verify <CHANGE_ID>` passes, execute `asdlc pr` to open the Implementation PR:
+
+```powershell
+asdlc pr <CHANGE_ID> <targetBranch>
+```
+
+`asdlc pr` will:
+1. Automatically detect this is an **Implementation PR** (status is `ready_for_impl`, spec is approved, tasks are complete, and source changes exist).
+2. Run `asdlc verify <CHANGE_ID>` as a pre-flight guard (requiring all 12 verification checks to pass).
+3. Commit implementation code and test evidence, then push to origin.
+4. Pre-provision and attach `asdlc:impl-review` and `impl` labels to trigger CI Code AI Review.
+

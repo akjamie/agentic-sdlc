@@ -9,6 +9,42 @@ import { runVerify } from './verify.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
 
+export const ASDLC_LABELS = {
+  'asdlc:spec-review': {
+    color: '1d76db',
+    description: 'Agentic SDLC: Spec PR undergoing AI and domain review',
+  },
+  'asdlc:impl-review': {
+    color: '5319e7',
+    description: 'Agentic SDLC: Implementation PR undergoing AI and verification review',
+  },
+  'spec': {
+    color: 'bfdadc',
+    description: 'Agentic SDLC: Specification draft or delta',
+  },
+  'impl': {
+    color: '0e8a16',
+    description: 'Agentic SDLC: Verified implementation',
+  },
+};
+
+export function ensureRemoteLabels(repoRoot, labelNames = Object.keys(ASDLC_LABELS)) {
+  for (const name of labelNames) {
+    const meta = ASDLC_LABELS[name];
+    if (!meta) continue;
+    try {
+      execFileSync('gh', [
+        'label', 'create', name,
+        '--description', meta.description,
+        '--color', meta.color,
+        '--force',
+      ], { cwd: repoRoot, stdio: 'ignore' });
+    } catch {
+      // ignore if gh is not installed, not authenticated, or not a GitHub repo
+    }
+  }
+}
+
 export async function createPR(changeId, targetBranch, opts = {}) {
   const repoRoot = requireRepo(opts);
   if (!isGitRepo(repoRoot)) fail('not a git repository');
@@ -175,7 +211,12 @@ ${proposalText}
   const remoteUrl = git(['remote', 'get-url', 'origin'], repoRoot, { allowFail: true });
   const remoteInfo = parseRemoteUrl(remoteUrl);
 
-  // Attempt Tier 1: CLI
+  // Pre-provision governance labels on remote before PR creation (so gh pr create doesn't reject unknown labels)
+  if (remoteInfo?.isGitHub) {
+    ensureRemoteLabels(repoRoot, [labelPrefix, secondaryLabel]);
+  }
+
+  // Attempt Tier 1: CLI (gh)
   try {
     const out = execFileSync('gh', [
       'pr', 'create',
@@ -183,7 +224,7 @@ ${proposalText}
       '--body', body,
       '--base', targetBranch,
       '--head', currentBranch,
-      '--label', labelPrefix,
+      '--label', `${labelPrefix},${secondaryLabel}`,
     ], { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     prCreated = true;
     prUrl = out.trim();
@@ -195,14 +236,53 @@ ${proposalText}
         '--body', body,
         '--base', targetBranch,
         '--head', currentBranch,
+        '--label', labelPrefix,
       ], { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
       prCreated = true;
       prUrl = out.trim();
     } catch {
-      // gh not available or failed
+      try {
+        const out = execFileSync('gh', [
+          'pr', 'create',
+          '--title', title,
+          '--body', body,
+          '--base', targetBranch,
+          '--head', currentBranch,
+        ], { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        prCreated = true;
+        prUrl = out.trim();
+      } catch {
+        // Check if PR for current branch already exists on GitHub
+        try {
+          const existingOut = execFileSync('gh', [
+            'pr', 'view', currentBranch,
+            '--json', 'url',
+            '-q', '.url',
+          ], { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+          if (existingOut && existingOut.trim()) {
+            prCreated = true;
+            prUrl = existingOut.trim();
+          }
+        } catch {
+          // gh not available or failed
+        }
+      }
     }
   }
 
+  // If created or found via gh, guarantee labels are attached even if initial create omitted them
+  if (prCreated && remoteInfo?.isGitHub) {
+    try {
+      execFileSync('gh', [
+        'pr', 'edit', currentBranch,
+        '--add-label', `${labelPrefix},${secondaryLabel}`,
+      ], { cwd: repoRoot, stdio: 'ignore' });
+    } catch {
+      // ignore
+    }
+  }
+
+  // Attempt Tier 1: CLI (glab for GitLab)
   if (!prCreated) {
     try {
       const out = execFileSync('glab', [
@@ -211,7 +291,7 @@ ${proposalText}
         '--description', body,
         '--target-branch', targetBranch,
         '--source-branch', currentBranch,
-        '--label', labelPrefix,
+        '--label', `${labelPrefix},${secondaryLabel}`,
       ], { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
       prCreated = true;
       prUrl = out.trim();
@@ -253,6 +333,27 @@ ${proposalText}
 
           // Attach labels via GitHub Issues API (pull requests are issues in GitHub)
           if (data.number) {
+            // Pre-create labels if missing
+            for (const lbl of [labelPrefix, secondaryLabel]) {
+              const meta = ASDLC_LABELS[lbl];
+              try {
+                await fetch(`${apiBase}/repos/${remoteInfo.repoPath}/labels`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${ghToken}`,
+                    'Accept': 'application/vnd.github+json',
+                    'User-Agent': 'asdlc-cli',
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    name: lbl,
+                    color: meta?.color || '1d76db',
+                    description: meta?.description || '',
+                  }),
+                });
+              } catch { /* already exists or ignored */ }
+            }
+
             try {
               const labelUrl = `${apiBase}/repos/${remoteInfo.repoPath}/issues/${data.number}/labels`;
               await fetch(labelUrl, {
