@@ -152,10 +152,11 @@ flowchart LR
 | **Spec PR** | After spec drafting; runs **`asdlc lint`** (0 blockers) | `asdlc:spec-review`<br>`spec` | Runs `asdlc lint` + triggers **Spec AI Review** (clarity, BDD scenarios, architecture alignment) | TL / Domain Lead approves & merges |
 | **Impl PR** | After TDD implementation; runs **`asdlc verify`** (12 gates) | `asdlc:impl-review`<br>`impl` | Runs `asdlc verify` + triggers **Code AI Review** (diff analysis, style, edge cases) | Lead / Peer reviews code & merges |
 
-**Navigation, Diagnostics & CI Agent Setup:**
+**Navigation, Diagnostics & Workspace Maintenance:**
 - `asdlc status <ID>`: Instant orientation on current stage and exact next command.
 - `asdlc doctor [--fix]`: Comprehensive toolchain and policy health diagnostics with auto-remediation.
-- `asdlc upgrade [--global]`: Upgrades the toolchain and refreshes repo or global user skills for CI runners.
+- `asdlc update`: Synchronizes repository SDLC state in seconds: refreshes repo-level agent skills (`.agents/skills`), rebuilds codebase AST knowledge graph (`graphify-out/` bound to `HEAD`), updates `AGENTS.md` system status & architectural hubs, and verifies git hooks. Fails fast with guidance if run outside an initialized repository.
+- `asdlc upgrade [--global]`: Upgrades the machine toolchain (`asdlc` CLI, OpenSpec engine, Graphify, managed schema) and automatically updates the current repository if inside one, or global user skills (`~/.agents`) with `--global`.
 - `asdlc skills list`: Lists all bundled skills available in agentic-sdlc.
 - `asdlc skills install --global`: One-click setup on CI Linux VMs to inject skills into global agent directories (`~/.agents`, `~/.opencode`, `~/.pi`, `~/.dsh`) without polluting developer workspaces.
 
@@ -213,7 +214,7 @@ flowchart TB
 
 ```bash
 npm install
-npm test        # 55 unit and integration tests (100% pass)
+npm test        # 66 unit and integration tests (100% pass)
 ```
 
 ---
