@@ -6,7 +6,7 @@ aliases:
   - grill-me
 ---
 
-# Batch Grilling — Relentless Design-Tree Interview (`batch-grill-me`)
+# Batch Grilling — Relentless Design-Tree Interview (`grilling`)
 
 This skill drives the **Grilling phase** (Stage 2) of the Agentic SDLC. It operates between `asdlc new "<requirement>"` and spec authoring (`proposal.md` / `specs/**`). It can also be invoked standalone via `/batch-grill-me` or `/grill-me` for any architectural design.
 
@@ -14,100 +14,117 @@ Interview the author relentlessly until you reach a shared understanding. Map th
 
 ---
 
-## Core Protocol: The Decision Tree & The Frontier
+## 1. Core Protocol: The Decision Tree & The Frontier
 
 1. **Work the tree in rounds.**
-   The **Frontier** is every decision whose prerequisites are already settled — the questions you can ask now without guessing at answers you haven't heard yet. Ask the whole frontier in one round: number each question and give your recommended answer. Then wait for the author's answers before the next round.
-2. **Dynamic Tree Reshaping.**
+   The **frontier** is every decision whose prerequisites are *already settled* — the questions you can ask *now* without guessing at answers you haven't heard yet. Ask the whole frontier in one round: number each question and give your recommended answer. Then wait for the author's answers before the next round.
+
+2. **No Tree-Flattening (CRITICAL RULE).**
+   > **A question whose answer depends on another question still open in this round belongs to a *later* round, not this one.**
+
+   - Never ask child or grandchild questions whose parent decision is still open in the current round.
+   - If Question C1 asks *"Should we support internationalization (en + zh)?"*, you **CANNOT** ask *"Which fields should be translated?"* or *"What format should the message catalog use?"* in the same round! Those depend on C1 being answered.
+   - Asking child questions prematurely forces you to guess at parent answers, which leads directly to pseudo-questions and fake choices. Hold them for Round 2.
+
+3. **Dynamic Tree Reshaping.**
    Each round the author answers reshapes the tree — settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round.
-3. **No Premature Speculation.**
-   A question whose answer depends on another question still open in this round belongs to a later round, not this one. Never ask speculative downstream questions whose parent branches are unresolved.
 
 ---
 
-## Fact-Finding vs. Human Decisions
+## 2. Fact-Finding vs. Human Decisions
 
-1. **Strict Invocation Order for Fact Discovery**:
-   When preparing a batch interview, always execute discovery in this strict sequence:
-   - **Step 1 · Local Graph & Workspace (Primary)**: Query `explore.md`, Graphify AST nodes, god nodes, types, and existing specs. Always check what the local codebase already defines before looking outside.
-   - **Step 2 · Targeted External Search (Secondary & Conditional)**:
-     If the requirement references 3rd-party APIs, vendor SDKs, external schemas, or modern library standards:
-     Check `.sdlc/policy.yaml` (`web_search: allow`). If allowed, execute a targeted web/doc search for authoritative facts.
-   - **Step 3 · Non-Blocking Degradation Policy (CRITICAL)**:
-     External search **MUST NEVER BLOCK** the SDLC workflow. If external search fails (network down, rate limited, offline sandbox, timeout, or DNS failure):
-     - Output an advisory warning: `[WARN] External search failed or unavailable (<reason>); proceeding with local codebase context only.`
-     - Record any unverified external assumptions in `openspec/changes/<SLUG>/clarifications.md` under `## Unverified External Assumptions`.
-     - **NEVER throw an error, pause, or block the batch interview**. Continue immediately to Step 4 using local context and best-effort engineering judgment.
-   - **Step 4 · Batch Formulation**: Synthesize local findings and external facts into the batch questions.
+1. **Finding facts is your job, never the author's.**
+   When a frontier question needs a fact from the environment (filesystem, codebase AST, existing specs, `explore.md`, tools), look it up yourself — don't ask the author for anything you could look up yourself.
 
-2. **Non-blocking Fact Exploration**:
-   When finding a fact requires deeper investigation:
-   - If the agent harness supports sub-agents: **dispatch a sub-agent to find it**.
-   - If single-agent harness: execute targeted search/read tools immediately.
-   - **Do not block on it**: A running exploration is an unsettled prerequisite, so only the questions downstream of it wait for the sub-agent to report — **ask the rest of the frontier now**.
+2. **Non-blocking fact exploration (Granular Facts).**
+   When finding a fact requires deeper investigation (a sub-agent or targeted research):
+   - **Do not block on it.** A running exploration is an unsettled prerequisite, so only the questions downstream of it wait for the result.
+   - **Ask the rest of the frontier now.** All independent frontier branches are asked immediately without waiting for the fact exploration to complete.
+   - Once the fact is established, unblock the downstream branch and include it in the next round.
 
-3. **Decisions belong to the human**:
-   Architectural trade-offs, product boundaries, business rules, and error policies belong to the human. Never silently assume an answer. Put each to the author and wait.
+3. **External search failure degradation (Offline/Sandbox Safety).**
+   If an external doc or web search fails (network down, rate limited, sandbox timeout):
+   - Emit an advisory: `[WARN] External search failed (<reason>); proceeding with local codebase context only.`
+   - Record unverified assumptions in `clarifications.md` under `## Unverified External Assumptions`.
+   - **NEVER block or fail the interview**. Proceed with best-effort engineering judgment.
+
+4. **Decisions belong to the author.**
+   Architectural trade-offs, scope boundaries, migration strategies, and error policies belong to the human author. Put each to them and wait.
 
 ---
 
-## Termination Gate: Empty Frontier & Shared Understanding
+## 3. Question Formulation & Anti-Patterns
 
-The session is done when the **frontier is empty**:
-- Every branch of the design tree has been visited.
-- Nothing is left silently assumed.
-- **Do not act on it until the author confirms you have reached a shared understanding** (e.g. by replying *"Approve all recommendations"* or signing off on the batch).
-- Record all settled decisions in `openspec/changes/<SLUG>/clarifications.md` under `## Settled decisions`.
-- Only then proceed to Stage 3: drafting `proposal.md` and `specs/**`.
+> [!CAUTION]
+> **Strict Anti-Pattern Enforcement**:
+
+1. **NO Pseudo-Questions / NO "Rec: yes"**:
+   - Every question on the frontier MUST offer $\ge 2$ distinct, mutually exclusive choices: **Option A vs Option B [vs Option C]**.
+   - **NEVER write a statement ending with `→ Rec: yes` or `→ Rec: agree`**.
+   - If you catch yourself writing `Rec: yes`, it is a red flag indicating:
+     - *Case 1*: You flattened a child question whose parent is still open. **Fix**: Delete it from this round; ask it in a later round once the parent is settled.
+     - *Case 2*: You stated an obvious implementation detail with no architectural trade-off. **Fix**: Do not ask the user; treat it as an engineering fact and implement it in the spec.
+
+2. **No Over-Fragmentation of Implementation Details**:
+   - Group closely related technical facets into a single coherent architectural decision rather than five micro-questions.
+   - Ask about system seams, contracts, and migration paths — not variable names or code trivia.
+
+3. **Small-Fix / Patch Heuristic**:
+   - For a small bugfix, typo, or minor patch, the entire frontier is **0 to 1 question maximum** (confirming root cause and regression test target). Do not subject minor fixes to architectural grilling.
 
 ---
 
-## Batch Round Presentation Format
+## 4. Pre-Flight Self-Check (Run Before Every Batch)
 
-Format each round of the `batch-grill-me` interview strictly as follows:
+Before emitting a batch round to the author, verify these 3 conditions:
+- [ ] **Dependency Check**: Does any question in this round depend on the answer to another question in this same round? (If YES: cut the dependent question; save it for the next round).
+- [ ] **Real Options Check**: Does every question have distinct, mutually exclusive options (Option A vs Option B)? Are there any `Rec: yes` or rhetorical statements? (If YES: rewrite as real options or drop).
+- [ ] **Fact Check**: Did I ask the author anything that could be looked up in the codebase or `explore.md`? (If YES: look it up; don't ask).
+
+---
+
+## 5. Batch Presentation Format
+
+Format each round of the interview strictly as follows:
 
 ```markdown
 ### 🎯 Batch Decision Frontier (Round <N>)
 
-I have analyzed the codebase context in `explore.md` for requirement: **"<requirement>"**.
-Here is the complete set of architectural and scoping decisions currently on the frontier:
+Requirement: **"<requirement>"**
+Active Frontier: <N> independent decisions ready for resolution.
 
 ---
 
-❓ **Q1** - **<Decision Title>**:
-<Concise explanation of the choice, architectural trade-offs, and available options (A / B / C)>
+❓ **Q1** — **<Decision Title>**:
+<Concise explanation of the architectural fork and trade-offs>
+- **Option A**: <Description of Option A>
+- **Option B**: <Description of Option B>
 
-➡️ **Recommendation**: **Option A** — <Concrete rationale grounded in codebase facts / explore.md>
-
----
-
-❓ **Q2** - **<Decision Title>**:
-<Concise explanation and options>
-
-➡️ **Recommendation**: **Option B** — <Concrete rationale>
+➡️ **Recommendation**: **Option A** — <Fact-backed rationale grounded in codebase/explore.md>
 
 ---
 
-❓ **Q3** - **<Decision Title>**:
-<Concise explanation and options>
+❓ **Q2** — **<Decision Title>**:
+<Concise explanation of the architectural fork and trade-offs>
+- **Option A**: <Description of Option A>
+- **Option B**: <Description of Option B>
 
-➡️ **Recommendation**: **Option A** — <Concrete rationale>
+➡️ **Recommendation**: **Option B** — <Fact-backed rationale>
 
 ---
 
-💡 *To proceed efficiently, you can reply **"Approve all recommendations"**, or specify adjustments (e.g. `Q1: B, Q2: accept`).*
+💡 *To proceed efficiently, reply **"Approve all recommendations"**, or specify adjustments (e.g. `Q1: B, Q2: accept`).*
 ```
 
 ---
 
-## SDLC Artifact Synchronization
+## 6. Termination Gate & ASDLC Artifact Sync
 
-When operating inside an `asdlc` change (`openspec/changes/<SLUG>/`):
-
-1. **Context Grounding**: Read `explore.md` (knowledge graph findings, call chains, god nodes) and `clarifications.md`.
-2. **Frontier Extraction**: Identify all open architectural forks, boundary ambiguities, and error-handling strategies.
-3. **Execute Batch Round**: Present the numbered question batch with recommended answers.
-4. **Record Settled Decisions**: Record answers in `clarifications.md` under `## Settled decisions`:
+The session is done when the **frontier is empty**:
+1. Every branch of the design tree has been visited.
+2. Nothing is left silently assumed.
+3. **Do not act until the author confirms you have reached a shared understanding** (e.g. by approving recommendations or answering all questions).
+4. Record all settled decisions in `openspec/changes/<SLUG>/clarifications.md`:
    ```markdown
    ## Settled decisions
 
@@ -116,4 +133,4 @@ When operating inside an `asdlc` change (`openspec/changes/<SLUG>/`):
    - **<Decision 2 Title>**: <Chosen Option>
      - *Rationale*: <Why this was chosen>
    ```
-5. **Close & Hand-off**: When the frontier is empty and confirmed by the author, clear `## Open questions` and transition to authoring `proposal.md`, `specs/**`, and running `asdlc lint <SLUG>`.
+5. Only after `clarifications.md` is settled may you transition to authoring `proposal.md` and `specs/**`.
