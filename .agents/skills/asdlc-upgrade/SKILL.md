@@ -1,6 +1,6 @@
 ---
 name: asdlc-upgrade
-description: "Upgrade the Agentic SDLC toolchain: asdlc CLI, OpenSpec engine, Graphify knowledge graph, BU managed schemas, and post-upgrade health check."
+description: "Upgrade the Agentic SDLC toolchain: asdlc CLI, OpenSpec engine, Graphify knowledge graph, managed schemas, and post-upgrade health check."
 ---
 
 # /asdlc:upgrade - Self-Maintenance & Toolchain Upgrader

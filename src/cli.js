@@ -21,7 +21,7 @@ export function buildCli() {
   const program = new Command();
   program
     .name('asdlc')
-    .description('BU Agentic SDLC - an OpenSpec + Graphify flow behind one command.')
+    .description('Agentic SDLC - an OpenSpec + Graphify flow behind one command.')
     .version(pkg.version);
 
   // The 7 stages, in order.

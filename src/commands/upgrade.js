@@ -155,7 +155,7 @@ export function runUpgrade(opts = {}) {
 export function register(program) {
   program
     .command('upgrade')
-    .description('upgrade the toolchain: asdlc CLI, OpenSpec, Graphify, BU schemas, and repo or global skills')
+    .description('upgrade the toolchain: asdlc CLI, OpenSpec, Graphify, managed schemas, and repo or global skills')
     .option('-g, --global', 'upgrade toolchain and refresh global user skills (~/.agents) for CI runners')
     .option('--no-asdlc', 'skip upgrading asdlc itself')
     .option('--no-openspec', 'skip upgrading openspec')

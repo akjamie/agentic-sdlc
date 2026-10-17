@@ -5,7 +5,7 @@
 schema: agentic-repo-change
 
 context: |
-  This repo uses the BU Agentic SDLC flow. Everything runs through `asdlc`:
+  This repo uses the Agentic SDLC flow. Everything runs through `asdlc`:
     asdlc new <ID>       start a spec (scaffold + refresh the graph + explore.md)
     asdlc lint <ID>      check the spec (artifacts + review + BDD/acceptance criteria)
     asdlc approve <ID>   after the spec PR merges: record the approved SHA

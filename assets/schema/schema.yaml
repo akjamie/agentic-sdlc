@@ -1,6 +1,6 @@
 name: agentic-repo-change
 version: 1
-description: BU Agentic SDLC change flow - intent (proposal/specs/review) then, after approval, tasks
+description: Agentic SDLC change flow - intent (proposal/specs/review) then, after approval, tasks
 artifacts:
   - id: proposal
     generates: proposal.md
