@@ -29,11 +29,16 @@ The CLI:
 > You MUST proceed immediately to Step 2 and Step 3 (**batch-grill-me** interview) in the same turn!
 > Only after `clarifications.md` has all questions settled may you draft `proposal.md` and `specs/**`.
 
-### Step 2: Ground Yourself in `explore.md`
-Read `openspec/changes/<SLUG>/explore.md`:
-- Note the **Architectural Hubs (god nodes)** that this change touches.
-- Review existing functions/endpoints matching the query terms.
-- **Never guess**: ground every architectural assumption in real file paths and exported symbols from `explore.md`.
+### Step 2: Ground Yourself in Codebase & External Context (Strict Order)
+Follow this strict discovery sequence:
+1. **Local Graph & Workspace First (Primary)**:
+   - Read `openspec/changes/<SLUG>/explore.md`.
+   - Note the **Architectural Hubs (god nodes)** that this change touches.
+   - Review existing functions, types, and exported symbols. Never guess: ground internal assumptions in real paths from `explore.md`.
+2. **Targeted External Search (Secondary & Conditional)**:
+   - If the requirement references 3rd-party APIs, vendor SDKs, protocols, or external library specs:
+     Execute a targeted web/doc search for authoritative facts (if `web_search: allow` in `.sdlc/policy.yaml`).
+   - **Non-blocking failure tolerance**: If external search fails (offline, rate limited, network timeout), **DO NOT BLOCK**. Emit `[WARN] External search failed: <reason>; proceeding with local context`, record unverified assumptions in `clarifications.md`, and proceed immediately.
 
 ### Step 3: Run the `batch-grill-me` Interview
 Before authoring any spec markdown, run the **`batch-grill-me`** protocol:

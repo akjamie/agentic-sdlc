@@ -27,17 +27,26 @@ Interview the author relentlessly until you reach a shared understanding. Map th
 
 ## Fact-Finding vs. Human Decisions
 
-1. **Finding facts is your job, never the user's.**
-   When a frontier question needs a fact from the environment (filesystem, codebase AST, existing specs, tools, etc.), look it up yourself — don't ask the author for anything you could look up.
-   - **Local Graphify AST / `explore.md`**: Query god nodes, call chains, and architectural hubs first.
-   - **Workspace inspection**: Read source code, configuration files, and package manifests.
-   - **Web search**: Only if `web_search: allow` in `.sdlc/policy.yaml` (default: allow).
-2. **Non-blocking Fact Exploration.**
+1. **Strict Invocation Order for Fact Discovery**:
+   When preparing a batch interview, always execute discovery in this strict sequence:
+   - **Step 1 · Local Graph & Workspace (Primary)**: Query `explore.md`, Graphify AST nodes, god nodes, types, and existing specs. Always check what the local codebase already defines before looking outside.
+   - **Step 2 · Targeted External Search (Secondary & Conditional)**:
+     If the requirement references 3rd-party APIs, vendor SDKs, external schemas, or modern library standards:
+     Check `.sdlc/policy.yaml` (`web_search: allow`). If allowed, execute a targeted web/doc search for authoritative facts.
+   - **Step 3 · Non-Blocking Degradation Policy (CRITICAL)**:
+     External search **MUST NEVER BLOCK** the SDLC workflow. If external search fails (network down, rate limited, offline sandbox, timeout, or DNS failure):
+     - Output an advisory warning: `[WARN] External search failed or unavailable (<reason>); proceeding with local codebase context only.`
+     - Record any unverified external assumptions in `openspec/changes/<SLUG>/clarifications.md` under `## Unverified External Assumptions`.
+     - **NEVER throw an error, pause, or block the batch interview**. Continue immediately to Step 4 using local context and best-effort engineering judgment.
+   - **Step 4 · Batch Formulation**: Synthesize local findings and external facts into the batch questions.
+
+2. **Non-blocking Fact Exploration**:
    When finding a fact requires deeper investigation:
    - If the agent harness supports sub-agents: **dispatch a sub-agent to find it**.
    - If single-agent harness: execute targeted search/read tools immediately.
    - **Do not block on it**: A running exploration is an unsettled prerequisite, so only the questions downstream of it wait for the sub-agent to report — **ask the rest of the frontier now**.
-3. **Decisions belong to the human.**
+
+3. **Decisions belong to the human**:
    Architectural trade-offs, product boundaries, business rules, and error policies belong to the human. Never silently assume an answer. Put each to the author and wait.
 
 ---

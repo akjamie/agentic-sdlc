@@ -75,6 +75,26 @@ For every task in `tasks.md`, execute this exact 5-phase loop:
 
 ---
 
+### Special Guidance: Web & Mobile Applications (UI Design Tasks)
+
+> [!IMPORTANT]
+> **Is UI Design required or nice-to-have for Web/Mobile apps?**
+> **Verdict: It is ESSENTIAL (Required in `tasks.md`), not a nice-to-have.**
+
+When a change introduces or modifies user-facing interfaces (web, mobile, or desktop):
+1. **Design Foundation Must Precede Logic**:
+   Never jump directly into business logic or raw HTML/JSX. Skipping UI design creates unstyled, disjointed MVPs that violate usability and require costly refactoring.
+2. **Decompose UI Work into Explicit `tasks.md` Tasks**:
+   For any change touching frontend views, `tasks.md` should structure tasks into three progressive tiers:
+   - **Tier 1 · [UI/DESIGN] Visual & Token Scaffolding**:
+     Establish or update design tokens (colors, typography, spacing, CSS variables, dark/light theme), responsive layout containers, and navigation hierarchy.
+   - **Tier 2 · [UI/COMPONENTS] Interactive Component States**:
+     Build reusable components with all mandatory states: **Empty**, **Loading**, **Error**, and **Success/Data-bound**. Validate via component render tests or visual snapshots.
+   - **Tier 3 · [LOGIC/INTEGRATION] State & API Wiring**:
+     Wire state stores, API clients, forms, and business logic with unit & E2E integration tests fulfilling the spec's ACs.
+
+---
+
 ### Step 4: Run Verification Gate
 Once all tasks in `tasks.md` are checked and evidenced, run `asdlc verify`:
 
