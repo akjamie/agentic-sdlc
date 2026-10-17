@@ -11,6 +11,7 @@ import { register as registerArchive } from './commands/archive.js';
 import { register as registerStatus } from './commands/status.js';
 import { register as registerDoctor } from './commands/doctor.js';
 import { register as registerUpgrade } from './commands/upgrade.js';
+import { register as registerUpdate } from './commands/update.js';
 import { register as registerSkills } from './commands/skills.js';
 import { AsdlcError } from './lib/errors.js';
 import { log } from './lib/log.js';
@@ -37,6 +38,7 @@ export function buildCli() {
   // Navigation + health + maintenance (not stages).
   registerStatus(program); // where am I / what's next
   registerDoctor(program); // environment + setup health
+  registerUpdate(program); // update repo state: skills, AST graph (KB) & AGENTS.md
   registerUpgrade(program); // upgrade toolchain (asdlc, openspec, graphify, schema)
   registerSkills(program); // manage & install bundled agent skills (repo or global CI)
 
@@ -54,6 +56,7 @@ The flow:
 Navigation, health & maintenance:
   asdlc status <ID>              where a change is in the 7 stages + the next command
   asdlc doctor                   environment + repo setup health
+  asdlc update                   update repo state: skills, AST knowledge graph (KB) & AGENTS.md
   asdlc upgrade [--global]       upgrade asdlc CLI, openspec, graphify & managed schema
   asdlc skills list              list all available bundled agent skills
   asdlc skills install --global  install skills globally for CI/headless agents (opencode, pi, dsh)

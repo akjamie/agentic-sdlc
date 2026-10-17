@@ -174,7 +174,7 @@ export function installSkills(repoRoot, tools = []) {
   }
 }
 
-function installHooks(repoRoot) {
+export function installHooks(repoRoot) {
   if (!exists(githooksAssetDir)) return;
   const dest = path.join(repoRoot, '.githooks');
   copyTree(githooksAssetDir, dest);

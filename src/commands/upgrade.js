@@ -1,8 +1,9 @@
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { exists } from '../lib/fs.js';
-import { resolveRepoRoot, schemaAssetDir } from '../lib/paths.js';
+import { resolveRepoRoot, schemaAssetDir, openspecDir } from '../lib/paths.js';
 import { installSchema, builtinSchemaVersion } from '../lib/schema.js';
+import { updateRepo } from './update.js';
 import { doctor } from './doctor.js';
 import { log } from '../lib/log.js';
 
@@ -136,7 +137,11 @@ export function runUpgrade(opts = {}) {
     if (opts.global) {
       installGlobalSkills(opts);
     } else if (repoRoot) {
-      upgradeSkills(repoRoot);
+      if (exists(openspecDir(repoRoot))) {
+        updateRepo({ repoRoot, ...opts });
+      } else {
+        upgradeSkills(repoRoot);
+      }
     }
   }
 
