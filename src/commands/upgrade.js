@@ -95,17 +95,26 @@ export function upgradeSchema() {
   }
 }
 
+import { installGlobalSkills } from './skills.js';
+
 export function runUpgrade(opts = {}) {
   log.info('=== Upgrading Agentic SDLC Toolchain ===');
   log.info('');
 
-  const repoRoot = resolveRepoRoot(opts);
+  const repoRoot = opts.global ? null : resolveRepoRoot(opts);
 
   if (opts.asdlc !== false) upgradeAsdlc();
   if (opts.openspec !== false) upgradeOpenspec();
   if (opts.graphify !== false) upgradeGraphify();
   if (opts.schema !== false) upgradeSchema();
-  if (opts.skills !== false && repoRoot) upgradeSkills(repoRoot);
+
+  if (opts.skills !== false) {
+    if (opts.global) {
+      installGlobalSkills(opts);
+    } else if (repoRoot) {
+      upgradeSkills(repoRoot);
+    }
+  }
 
   log.info('');
   log.ok('Toolchain upgrade complete.');
@@ -113,7 +122,7 @@ export function runUpgrade(opts = {}) {
   if (opts.doctor !== false) {
     log.info('');
     log.info('=== Post-upgrade Health Check (doctor) ===');
-    return doctor({ repoRoot });
+    return doctor(repoRoot ? { repoRoot } : {});
   }
 
   return 0;
@@ -122,12 +131,13 @@ export function runUpgrade(opts = {}) {
 export function register(program) {
   program
     .command('upgrade')
-    .description('upgrade the toolchain: asdlc CLI, OpenSpec, Graphify, BU schemas, and repo skills')
+    .description('upgrade the toolchain: asdlc CLI, OpenSpec, Graphify, BU schemas, and repo or global skills')
+    .option('-g, --global', 'upgrade toolchain and refresh global user skills (~/.agents) for CI runners')
     .option('--no-asdlc', 'skip upgrading asdlc itself')
     .option('--no-openspec', 'skip upgrading openspec')
     .option('--no-graphify', 'skip upgrading graphify')
     .option('--no-schema', 'skip refreshing BU-managed schema')
-    .option('--no-skills', 'skip refreshing repository bundled skills')
+    .option('--no-skills', 'skip refreshing skills')
     .option('--no-doctor', 'skip running post-upgrade doctor check')
     .option('--repo-root <path>')
     .action((opts) => {

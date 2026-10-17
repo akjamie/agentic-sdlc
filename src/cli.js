@@ -11,6 +11,7 @@ import { register as registerArchive } from './commands/archive.js';
 import { register as registerStatus } from './commands/status.js';
 import { register as registerDoctor } from './commands/doctor.js';
 import { register as registerUpgrade } from './commands/upgrade.js';
+import { register as registerSkills } from './commands/skills.js';
 import { AsdlcError } from './lib/errors.js';
 import { log } from './lib/log.js';
 
@@ -37,6 +38,7 @@ export function buildCli() {
   registerStatus(program); // where am I / what's next
   registerDoctor(program); // environment + setup health
   registerUpgrade(program); // upgrade toolchain (asdlc, openspec, graphify, schema)
+  registerSkills(program); // manage & install bundled agent skills (repo or global CI)
 
   program.addHelpText('after', `
 The flow:
@@ -52,7 +54,9 @@ The flow:
 Navigation, health & maintenance:
   asdlc status <ID>              where a change is in the 7 stages + the next command
   asdlc doctor                   environment + repo setup health
-  asdlc upgrade                  upgrade asdlc CLI, openspec, graphify & managed schema
+  asdlc upgrade [--global]       upgrade asdlc CLI, openspec, graphify & managed schema
+  asdlc skills list              list all available bundled agent skills
+  asdlc skills install --global  install skills globally for CI/headless agents (opencode, pi, dsh)
 
 A bad spec is not edited: close it and run \`asdlc new\` again.`);
   return program;

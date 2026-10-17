@@ -152,9 +152,12 @@ flowchart LR
 | **Spec PR** | After spec drafting; runs **`asdlc lint`** (0 blockers) | `asdlc:spec-review`<br>`spec` | Runs `asdlc lint` + triggers **Spec AI Review** (clarity, BDD scenarios, architecture alignment) | TL / Domain Lead approves & merges |
 | **Impl PR** | After TDD implementation; runs **`asdlc verify`** (12 gates) | `asdlc:impl-review`<br>`impl` | Runs `asdlc verify` + triggers **Code AI Review** (diff analysis, style, edge cases) | Lead / Peer reviews code & merges |
 
-**Navigation & Diagnostics:**
+**Navigation, Diagnostics & CI Agent Setup:**
 - `asdlc status <ID>`: Instant orientation on current stage and exact next command.
 - `asdlc doctor [--fix]`: Comprehensive toolchain and policy health diagnostics with auto-remediation.
+- `asdlc upgrade [--global]`: Upgrades the toolchain and refreshes repo or global user skills for CI runners.
+- `asdlc skills list`: Lists all bundled skills available in agentic-sdlc.
+- `asdlc skills install --global`: One-click setup on CI Linux VMs to inject skills into global agent directories (`~/.agents`, `~/.opencode`, `~/.pi`, `~/.dsh`) without polluting developer workspaces.
 
 ---
 

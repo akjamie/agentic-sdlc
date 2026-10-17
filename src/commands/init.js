@@ -16,6 +16,7 @@ const TOOL_DIRS = {
   '.claude': 'claude',
   '.codex': 'codex',
   '.pi': 'pi',
+  '.dsh': 'dsh',
   '.cursor': 'cursor',
   '.gemini': 'gemini',
   '.qwen': 'qwen',
@@ -147,6 +148,8 @@ export function initRepo(opts = {}) {
 const TOOL_SKILLS_DIRS = {
   claude: '.claude',
   opencode: '.opencode',
+  pi: '.pi',
+  dsh: '.dsh',
   cursor: '.cursor',
   gemini: '.gemini',
   windsurf: '.windsurf',
