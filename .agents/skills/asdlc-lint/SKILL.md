@@ -53,3 +53,4 @@ When `pass` is true (`0 blockers`):
 Report to the author that the spec is structurally valid, fully traceable, and passes all BDD/acceptance criteria checks:
 
 > "Spec lint passed with 0 blocking issues. The spec is ready for PR. When you are ready to submit it for review, use `asdlc pr <CHANGE_ID> <targetBranch>`."
+

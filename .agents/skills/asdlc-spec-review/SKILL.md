@@ -5,63 +5,86 @@ aliases:
   - spec-review
 ---
 
-# /asdlc:spec-review — Independent Spec Reviewer
+# /asdlc:spec-review — CI-Triggered Independent Spec Reviewer
 
-This skill executes **independent AI spec review** against a Spec PR (`asdlc:spec-review` label) or a local change directory.
+This skill executes **independent AI spec review**, triggered by CI when a PR carries the `asdlc:spec-review` label.
+It posts its findings as a **markdown PR comment** via the GitHub API so the human TL sees them inline on the PR.
+
 It applies the **Player ≠ Referee** principle: the reviewing agent MUST NOT be the agent that authored the spec.
 
 > [!IMPORTANT]
 > **Scope**: Reviews *intent* — BDD quality, logical consistency, architectural soundness, AC testability.
 > Does NOT re-run `asdlc lint` (deterministic structural checks are already gated by `asdlc pr`).
 > Does NOT review implementation code — that is `asdlc-impl-review`.
+> Output is a **PR comment**, not a local file.
 
 ---
 
-## Invocation
+## Trigger
 
+This skill is invoked by CI when a PR is labeled `asdlc:spec-review`. The typical invocation in a GitHub Actions workflow or Jenkinsfile:
+
+```yaml
+# GitHub Actions example
+- name: AI Spec Review
+  if: contains(github.event.pull_request.labels.*.name, 'asdlc:spec-review')
+  env:
+    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    PR_NUMBER: ${{ github.event.pull_request.number }}
+    REPO: ${{ github.repository }}
+  run: |
+    # Agent CLI / SDK invokes this skill with: /asdlc:spec-review $PR_NUMBER $REPO
 ```
-# From a GitHub PR URL
-/asdlc:spec-review https://github.com/<org>/<repo>/pull/<N>
 
-# From a local change directory
-/asdlc:spec-review <CHANGE_ID>
+```groovy
+// Jenkinsfile example
+stage('Spec AI Review') {
+  when { expression { env.IS_IMPL != 'true' } }
+  steps {
+    withCredentials([string(credentialsId: 'github-token', variable: 'GH_TOKEN')]) {
+      sh "${env.ASDLC} spec-review --pr ${env.PR_NUMBER} --repo ${env.REPO}"
+    }
+  }
+}
 ```
 
 ---
 
 ## Workflow Sequence
 
-### Step 1: Acquire Change Context
+### Step 1: Acquire PR Context
 
-**If given a PR URL:**
-1. Run `gh pr view <PR_NUMBER> --repo <org>/<repo> --json title,body,files` to list changed files.
-2. Run `gh pr diff <PR_NUMBER> --repo <org>/<repo>` to read the full diff.
-3. Extract `CHANGE_ID` from the branch name or the PR body `**Change ID**:` field.
+Run the following commands to collect everything needed for review:
 
-**If given a CHANGE_ID:**
-1. Read all artifacts under `openspec/changes/<CHANGE_ID>/`:
-   - `explore.md` — knowledge graph grounding
-   - `clarifications.md` — settled design decisions
-   - `proposal.md` — intent, scope, and impact
-   - `specs/**/*.md` — requirements, BDD scenarios, ACs
+```bash
+# List changed files
+gh pr view $PR_NUMBER --repo $REPO --json title,body,baseRefName,headRefName,files
+
+# Read the full spec diff
+gh pr diff $PR_NUMBER --repo $REPO
+```
+
+Extract from the PR body:
+- `CHANGE_ID` from the `**Change ID**:` field
+- The proposal summary from the PR body itself
 
 > [!NOTE]
-> Read **all** artifacts before forming any finding. Partial context produces false positives.
+> Read **all** changed files in the diff before forming any finding. Partial context produces false positives.
 
 ---
 
 ### Step 2: Apply the Six Review Dimensions
 
-Evaluate every requirement against all six dimensions. Mark each `PASS`, `CONCERN`, or `FAIL`.
+Evaluate every requirement in the diff against all six dimensions. Mark each `PASS`, `CONCERN`, or `FAIL`.
 
 #### D1 — Completeness
-- Does the spec cover all user journeys stated in `proposal.md ## Why`?
+- Does the spec cover all user journeys stated in the proposal `## Why`?
 - Are nil/empty inputs, upstream failures, and degradation paths handled?
-- Is every `## MODIFIED` or `## REMOVED` requirement accompanied by a **Reason**?
+- Is every `## MODIFIED` or `## REMOVED` requirement accompanied by a `**Reason**`?
 
 #### D2 — Ambiguity & Contradiction
 - Does each requirement use normative `SHALL` / `MUST`, not passive voice?
-- Are there contradictory ACs or scenarios within the spec? (e.g., one AC implies HTTP 200 graceful fallback, another implies HTTP 4xx hard error, for the same trigger event)
+- Are there contradictory ACs or scenarios within the spec? (e.g., one AC implies HTTP 200 graceful fallback, another implies HTTP 4xx hard error for the same trigger)
 - Are threshold values, enum members, and schema field names precisely specified?
 
 #### D3 — Cross-Repo Consistency
@@ -87,13 +110,7 @@ Evaluate every requirement against all six dimensions. Mark each `PASS`, `CONCER
 
 ### Step 3: Build the Requirement → AC → Test Traceability Matrix
 
-For each `### Requirement:` found in `specs/**/*.md`, produce one row:
-
-| Requirement | ACs | Target Test File | Status |
-| :--- | :--- | :--- | :--- |
-| City resolution | AC1, AC2 | test/city-resolve.test.ts | VERIFIED |
-
-Flag any requirement that is missing ACs, missing a `(test: <path>)`, or whose test path appears implausible for the repo's language and test runner.
+For each `### Requirement:` found in the diff, produce one row covering all its ACs and their test file mappings.
 
 ---
 
@@ -101,75 +118,77 @@ Flag any requirement that is missing ACs, missing a `(test: <path>)`, or whose t
 
 Classify each finding:
 
-- **Blocker** — Contradictory ACs, untestable assertion, missing normative language, security risk. Blocks `asdlc approve`.
-- **Major** — Ambiguous scenario, unhandled edge case, missing degradation path. Must be resolved before approval.
-- **Advisory** — Clarity or style improvements. Does not block.
+- **🔴 Blocker** — Contradictory ACs, untestable assertion, missing normative language, security risk. Blocks `asdlc approve`.
+- **🟡 Major** — Ambiguous scenario, unhandled edge case, missing degradation path. Should be resolved before approval.
+- **🟢 Advisory** — Clarity or style improvements. Does not block.
 
 ---
 
-### Step 5: Write `ai-spec-review.md`
+### Step 5: Post PR Comment
 
-> [!IMPORTANT]
-> Write to `openspec/changes/<CHANGE_ID>/ai-spec-review.md` — **NOT** `review.md`.
-> `review.md` is exclusively owned by `asdlc approve` (the human TL approval stamp).
-> Writing to it here would bypass the governance gate.
-> Human TLs read `ai-spec-review.md` on the PR before deciding whether to run `asdlc approve`.
+Compose the review as markdown and post it as a PR comment using the GitHub API:
 
-Write to `openspec/changes/<CHANGE_ID>/ai-spec-review.md`:
+```bash
+gh pr comment $PR_NUMBER --repo $REPO --body "$(cat <<'EOF'
+<review-markdown>
+EOF
+)"
+```
 
-```markdown
-# AI Spec Review: <CHANGE_ID>
+Format the comment body strictly as:
 
-> Reviewer: AI (asdlc-spec-review) — advisory; not a substitute for human TL approval
-> Reviewed: <ISO-8601 timestamp>
-> Source: <PR URL or "local">
+~~~markdown
+## 🤖 AI Spec Review — `<CHANGE_ID>`
 
-## Summary
-<2–3 sentences: what the change does and overall review outcome>
+> **Reviewer**: AI Independent Spec Reviewer (`asdlc-spec-review`)
+> **Verdict**: ✅ APPROVE | 🔴 NEEDS_REVISION
 
-## Dimensions
+### Dimension Scores
 
 | Dimension | Rating | Key Finding |
 | :--- | :---: | :--- |
-| D1 Completeness | PASS / CONCERN / FAIL | <one-line summary> |
-| D2 Ambiguity & Contradiction | PASS / CONCERN / FAIL | <one-line summary> |
-| D3 Cross-repo consistency | PASS / CONCERN / FAIL | <one-line summary> |
-| D4 Contract impact | PASS / CONCERN / FAIL | <one-line summary> |
-| D5 Testability | PASS / CONCERN / FAIL | <one-line summary> |
-| D6 Security & Privacy | PASS / CONCERN / FAIL | <one-line summary> |
+| D1 Completeness | ✅ PASS / ⚠️ CONCERN / ❌ FAIL | <one-line summary> |
+| D2 Ambiguity & Contradiction | ✅ / ⚠️ / ❌ | <one-line summary> |
+| D3 Cross-repo consistency | ✅ / ⚠️ / ❌ | <one-line summary> |
+| D4 Contract impact | ✅ / ⚠️ / ❌ | <one-line summary> |
+| D5 Testability | ✅ / ⚠️ / ❌ | <one-line summary> |
+| D6 Security & Privacy | ✅ / ⚠️ / ❌ | <one-line summary> |
 
-## Requirement → AC → Test Traceability
+### Requirement → AC → Test Traceability
 
 | Requirement | ACs | Target Test | Status |
 | :--- | :--- | :--- | :--- |
-| <Requirement name> | AC1, AC2 | test/<feature>.test.ts | VERIFIED |
+| <Requirement name> | AC1, AC2 | test/<feature>.test.ts | ✅ VERIFIED |
 
-## Blocking Findings
-<!-- List every Blocker. If none: write "(none)" -->
-1. [Blocker] <Requirement: Name> — AC<n>: <description of contradiction or missing assertion>
+### 🔴 Blocking Findings
+<!-- Omit section if none -->
+1. **[Blocker]** `<Requirement: Name>` — AC<n>: <description of contradiction or missing assertion>
 
-## Major Findings
-<!-- List every Major finding. If none: write "(none)" -->
+### 🟡 Major Findings
+<!-- Omit section if none -->
+1. **[Major]** <description>
 
-## Advisory Notes
-<!-- Omit section if empty -->
+### 🟢 Advisory Notes
+<!-- Omit section if none -->
 
-## Verdict
-APPROVE
-<!-- Or: NEEDS_REVISION -->
-```
+---
+*Human TL: review the findings above, then run `asdlc approve <CHANGE_ID>` when satisfied.*
+~~~
 
 ---
 
-### Step 6: Report Outcome
+### Step 6: Set CI Status
 
-**If `APPROVE`:**
-> "✅ Spec review complete — **APPROVE**.
-> `ai-spec-review.md` written. Share it with the human TL on the PR.
-> When the TL is satisfied, they run `asdlc approve <CHANGE_ID>` to lock `specSha` and transition to `READY_FOR_IMPL`."
+After posting the comment:
 
-**If `NEEDS_REVISION`:**
-> "🔴 Spec review complete — **NEEDS_REVISION**.
-> Blocking findings must be resolved before `asdlc approve` is run."
+- **If APPROVE**: set CI check status to `success` (green). The PR is unblocked for TL approval.
+- **If NEEDS_REVISION**: set CI check status to `failure` (red). The PR is blocked until blockers are resolved.
 
-List every Blocker inline in the response so the author can act without switching files.
+```bash
+# Using gh CLI to set a commit status
+gh api repos/$REPO/statuses/$SHA \
+  -f state="success|failure" \
+  -f context="asdlc/spec-ai-review" \
+  -f description="AI Spec Review: APPROVE|NEEDS_REVISION" \
+  -f target_url="$PR_URL"
+```

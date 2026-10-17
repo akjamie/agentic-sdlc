@@ -56,3 +56,4 @@ asdlc pr <CHANGE_ID> <targetBranch>
    - **Tier 1 (CLI)**: Executes `gh pr create` with both labels (`--label asdlc:spec-review,spec`). If a PR for the branch already exists, detects it and runs `gh pr edit --add-label` to ensure labels are attached.
    - **Tier 2 (Direct REST API)**: Pre-creates labels via GitHub API and attaches them to the PR issue.
    - **Tier 3 (Browser Fallback)**: Generates a 1-click comparison URL pre-filled with branch and label query parameters.
+
