@@ -17,13 +17,14 @@ function which(name) {
 export function upgradeAsdlc() {
   log.step('upgrading asdlc CLI...');
   try {
-    execFileSync('npm', ['install', '-g', 'agentic-sdlc@latest'], { stdio: 'inherit' });
+    const pkgSpec = process.env.ASDLC_PKG_SPEC || 'git+https://github.com/akjamie/agentic-sdlc.git';
+    execFileSync('npm', ['install', '-g', '--allow-git=all', '--force', pkgSpec], { stdio: 'inherit' });
     log.ok('asdlc CLI upgraded to latest');
     return true;
   } catch (err) {
     log.warn(`asdlc upgrade via npm failed: ${err.message}`);
     log.info('💡 [FALLBACK] If automatic upgrade failed, run manually:');
-    log.info('             npm install -g agentic-sdlc@latest');
+    log.info('             npm install -g --allow-git=all --force git+https://github.com/akjamie/agentic-sdlc.git');
     return false;
   }
 }
@@ -44,7 +45,7 @@ export function upgradeSkills(repoRoot) {
 export function upgradeOpenspec() {
   log.step('upgrading openspec...');
   try {
-    execFileSync('npm', ['install', '-g', 'openspec@latest'], { stdio: 'inherit' });
+    execFileSync('npm', ['install', '-g', '@fission-ai/openspec@latest'], { stdio: 'inherit' });
     log.ok('openspec upgraded to latest');
     return true;
   } catch (err) {
@@ -56,6 +57,7 @@ export function upgradeOpenspec() {
 export function upgradeGraphify() {
   log.step('upgrading graphify...');
   const viaUv = Boolean(which('uv'));
+  const viaPipx = Boolean(which('pipx'));
   const viaPip = Boolean(which('pip'));
 
   if (viaUv) {
@@ -64,7 +66,17 @@ export function upgradeGraphify() {
       log.ok('graphify upgraded via uv');
       return true;
     } catch {
-      // fallback to pip if uv tool fails
+      // fallback
+    }
+  }
+
+  if (viaPipx) {
+    try {
+      execFileSync('pipx', ['install', '--upgrade', 'graphifyy'], { stdio: 'inherit' });
+      log.ok('graphify upgraded via pipx');
+      return true;
+    } catch {
+      // fallback
     }
   }
 
@@ -74,18 +86,29 @@ export function upgradeGraphify() {
       log.ok('graphify upgraded via pip');
       return true;
     } catch (err) {
-      log.warn(`graphify upgrade via pip failed: ${err.message}`);
-      return false;
+      // PEP 668 on Debian/Ubuntu externally-managed-environment: retry with --break-system-packages
+      try {
+        execFileSync('pip', ['install', '--upgrade', 'graphifyy', '--break-system-packages'], { stdio: 'inherit' });
+        log.ok('graphify upgraded via pip (--break-system-packages)');
+        return true;
+      } catch (err2) {
+        log.warn(`graphify upgrade via pip failed: ${err2.message}`);
+        return false;
+      }
     }
   }
 
-  log.warn('neither uv nor pip found; please install/upgrade graphify manually');
+  log.warn('neither uv, pipx, nor pip found; please install/upgrade graphify manually');
   return false;
 }
 
 export function upgradeSchema() {
   log.step('refreshing BU-managed OpenSpec schema...');
   try {
+    if (!exists(schemaAssetDir)) {
+      log.warn(`schema asset directory missing at ${schemaAssetDir}`);
+      return false;
+    }
     const dest = installSchema();
     log.ok(`refreshed schema v${builtinSchemaVersion()} -> ${dest}`);
     return true;

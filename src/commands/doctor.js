@@ -12,51 +12,64 @@ import { log, dim } from '../lib/log.js';
 // Environment + setup health. Exit non-zero only on a critical failure
 // (no OpenSpec project, or the managed schema is not installed / is overridden).
 export function doctor(opts = {}) {
-  const repoRoot = resolveRepoRoot(opts);
+  const isGlobal = Boolean(opts.global);
+  const repoRoot = opts.global ? null : resolveRepoRoot(opts);
+  const hasProject = repoRoot ? exists(openspecDir(repoRoot)) : false;
+  const isRepo = repoRoot ? exists(path.join(repoRoot, '.git')) : false;
+
   const rows = [];
   const add = (name, status, detail) => rows.push({ name, status, detail });
 
+  // 1) Environment & Toolchain checks (run in all modes)
   const nodeOk = /^v?\d+\./.test(process.version) && compare(process.versions.node, '20.19.0') >= 0;
   add('node >= 20.19', nodeOk ? 'pass' : 'fail', process.version);
 
-  const osV = openNav(repoRoot);
-  add('OpenSpec CLI', findOpenspec(repoRoot) ? (osV === OPENSPEC_PINNED ? 'pass' : 'warn') : 'fail',
-    osV ? `${osV}${osV === OPENSPEC_PINNED ? '' : ` (pinned ${OPENSPEC_PINNED})`}` : 'not found (run `asdlc init`)');
+  const checkCwd = repoRoot || process.cwd();
+  const osV = openNav(checkCwd);
+  add('OpenSpec CLI', findOpenspec(checkCwd) ? (osV === OPENSPEC_PINNED ? 'pass' : 'warn') : 'fail',
+    osV ? `${osV}${osV === OPENSPEC_PINNED ? '' : ` (pinned ${OPENSPEC_PINNED})`}` : 'not found (run `npm install -g @fission-ai/openspec`)');
 
-  add('Graphify', graphifyAvailable() ? 'pass' : 'warn', graphifyAvailable() ? 'installed' : 'not found (run `asdlc init`)');
-
-  const hasProject = exists(openspecDir(repoRoot));
-  add('OpenSpec project', hasProject ? 'pass' : 'fail', hasProject ? openspecDir(repoRoot) : 'run `asdlc init`');
+  add('Graphify', graphifyAvailable() ? 'pass' : 'warn', graphifyAvailable() ? 'installed' : 'not found (install via uv tool install graphifyy or pip)');
 
   const schemaV = readInstalledVersion();
-  add('managed schema', schemaV ? 'pass' : 'fail', schemaV ? `v${schemaV} (bundled v${builtinSchemaVersion()})` : 'not installed (run `asdlc init`)');
+  add('managed schema', schemaV ? 'pass' : 'fail', schemaV ? `v${schemaV} (bundled v${builtinSchemaVersion()})` : 'not installed (run `asdlc init` or `asdlc upgrade`)');
 
-  const override = localOverride(repoRoot);
-  add('schema override', override.tracked ? 'fail' : 'pass',
-    override.tracked ? `${override.path} COMMITTED (forbidden)` : 'none');
+  // If in global mode or not in a repository workspace, check global skills and skip repo-specific checks
+  if (isGlobal || (!isRepo && !hasProject)) {
+    const globalSkills = path.join(process.env.HOME || process.env.USERPROFILE || '', '.agents', 'skills');
+    const hasGlobalSkills = exists(globalSkills);
+    add('global skills (~/.agents)', hasGlobalSkills ? 'pass' : 'warn', hasGlobalSkills ? 'installed' : 'run `asdlc skills install --global`');
+  } else {
+    // 2) Repository Workspace Checks (only when inside an actual repo)
+    add('OpenSpec project', hasProject ? 'pass' : 'fail', hasProject ? openspecDir(repoRoot) : 'run `asdlc init`');
 
-  const cfgPath = path.join(openspecDir(repoRoot), 'config.yaml');
-  let cfgSchema = null;
-  if (exists(cfgPath)) { try { cfgSchema = (readYaml(cfgPath) ?? {}).schema ?? null; } catch { /* ignore */ } }
-  add('repo config schema', cfgSchema === 'agentic-repo-change' ? 'pass' : 'warn', cfgSchema ?? 'unset');
+    const override = localOverride(repoRoot);
+    add('schema override', override.tracked ? 'fail' : 'pass',
+      override.tracked ? `${override.path} COMMITTED (forbidden)` : 'none');
 
-  const policy = exists(path.join(repoRoot, '.sdlc', 'policy.yaml'));
-  add('.sdlc/policy.yaml', policy ? 'pass' : 'warn', policy ? '' : 'missing (run `asdlc init`)');
+    const cfgPath = path.join(openspecDir(repoRoot), 'config.yaml');
+    let cfgSchema = null;
+    if (exists(cfgPath)) { try { cfgSchema = (readYaml(cfgPath) ?? {}).schema ?? null; } catch { /* ignore */ } }
+    add('repo config schema', cfgSchema === 'agentic-repo-change' ? 'pass' : 'warn', cfgSchema ?? 'unset');
 
-  let hooksPath = null;
-  try { hooksPath = git(['config', '--get', 'core.hooksPath'], repoRoot, { allowFail: true }); } catch { /* ignore */ }
-  add('.githooks', hooksPath === '.githooks' ? 'pass' : 'warn', hooksPath === '.githooks' ? 'core.hooksPath=.githooks' : `core.hooksPath=${hooksPath ?? 'unset'}`);
+    const policy = exists(path.join(repoRoot, '.sdlc', 'policy.yaml'));
+    add('.sdlc/policy.yaml', policy ? 'pass' : 'warn', policy ? '' : 'missing (run `asdlc init`)');
 
-  const agents = path.join(repoRoot, 'AGENTS.md');
-  const hasRouting = exists(agents) && readText(agents).includes('<!-- asdlc:routing -->');
-  add('AGENTS.md routing', hasRouting ? 'pass' : 'warn', hasRouting ? '' : 'missing (run `asdlc init`)');
+    let hooksPath = null;
+    try { hooksPath = git(['config', '--get', 'core.hooksPath'], repoRoot, { allowFail: true }); } catch { /* ignore */ }
+    add('.githooks', hooksPath === '.githooks' ? 'pass' : 'warn', hooksPath === '.githooks' ? 'core.hooksPath=.githooks' : `core.hooksPath=${hooksPath ?? 'unset'}`);
 
-  const gstatus = graphStatus(repoRoot);
-  add('knowledge graph', gstatus === 'fresh' ? 'pass' : 'warn', gstatus);
+    const agents = path.join(repoRoot, 'AGENTS.md');
+    const hasRouting = exists(agents) && readText(agents).includes('<!-- asdlc:routing -->');
+    add('AGENTS.md routing', hasRouting ? 'pass' : 'warn', hasRouting ? '' : 'missing (run `asdlc init`)');
 
-  const gi = path.join(repoRoot, '.gitignore');
-  const ignored = exists(gi) && readText(gi).split(/\r?\n/).some((l) => l.trim() === GITIGNORE_LINE);
-  add('graphify-out ignored', ignored ? 'pass' : 'warn', ignored ? '' : `add ${GITIGNORE_LINE} to .gitignore`);
+    const gstatus = graphStatus(repoRoot);
+    add('knowledge graph', gstatus === 'fresh' ? 'pass' : 'warn', gstatus);
+
+    const gi = path.join(repoRoot, '.gitignore');
+    const ignored = exists(gi) && readText(gi).split(/\r?\n/).some((l) => l.trim() === GITIGNORE_LINE);
+    add('graphify-out ignored', ignored ? 'pass' : 'warn', ignored ? '' : `add ${GITIGNORE_LINE} to .gitignore`);
+  }
 
   let failed = 0;
   log.info('');
@@ -141,6 +154,7 @@ export function register(program) {
   program
     .command('doctor')
     .description('check the environment + repo setup health (with optional --fix)')
+    .option('-g, --global', 'check global toolchain and agent skills only (for CI/headless environments)')
     .option('--fix', 'automatically remediate fixable environment and configuration drift')
     .option('--repo-root <path>')
     .action((opts) => {
