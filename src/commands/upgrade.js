@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { resolveRepoRoot } from '../lib/paths.js';
+import { exists } from '../lib/fs.js';
+import { resolveRepoRoot, schemaAssetDir } from '../lib/paths.js';
 import { installSchema, builtinSchemaVersion } from '../lib/schema.js';
 import { doctor } from './doctor.js';
 import { log } from '../lib/log.js';
