@@ -6,6 +6,7 @@ import { register as registerLint } from './commands/lint.js';
 import { register as registerPr } from './commands/pr.js';
 import { register as registerApprove } from './commands/approve.js';
 import { register as registerApply } from './commands/apply.js';
+import { register as registerTest } from './commands/test.js';
 import { register as registerVerify } from './commands/verify.js';
 import { register as registerArchive } from './commands/archive.js';
 import { register as registerStatus } from './commands/status.js';
@@ -32,6 +33,7 @@ export function buildCli() {
   registerPr(program); //      3.5 open the Spec PR automatically
   registerApprove(program); // 4. record approval (after the spec PR merges or in-place)
   registerApply(program); //   5. start implementing
+  registerTest(program); //    5.5 run AI acceptance tests mapped from change specs
   registerVerify(program); //  6. check the implementation
   registerArchive(program); // 7. finish (sync living specs to openspec/specs/)
 
@@ -50,6 +52,7 @@ The flow:
   asdlc pr <ID> <targetBranch>   open the Spec PR (pushes branch + auto-creates PR via CLI or API)
   asdlc approve <ID>             record approval (on PR / merge / in-place) + mark READY_FOR_IMPL
   asdlc apply <ID>               guard, then /opsx-apply (task-level TDD loop)
+  asdlc test <ID>                run AI acceptance tests mapped from change specs
   asdlc verify <ID>              check the implementation (artifacts, tasks, tests, AI)
   asdlc archive <ID>             finish: archive change + sync living specs to openspec/specs/
 

@@ -103,6 +103,7 @@ const DEFAULT_SEVERITY = {
   'R4-then': 'blocker',
   'R4-given': 'major',
   'R5-ac': 'blocker',
+  'R5-scenario-coverage': 'blocker',
   'R6-ac-test': 'blocker',
   'R7-test-strategy': 'blocker',
   'R8-removed-reason': 'major',
@@ -146,7 +147,11 @@ export function lintSpecText(text, { requireGiven = true, repoRoot = null, rules
     }
 
     const acs = acceptanceCriteria(r.body);
-    if (acs.length === 0) add('R5-ac', 'blocker', `"${r.name}" has no Acceptance criteria (AC<n>)`, r.name);
+    if (acs.length === 0) {
+      add('R5-ac', 'blocker', `"${r.name}" has no Acceptance criteria (AC<n>)`, r.name);
+    } else if (scens.length > acs.length) {
+      add('R5-scenario-coverage', 'blocker', `"${r.name}" defines ${scens.length} scenario(s) but only ${acs.length} acceptance criteria (each scenario requires AC coverage)`, r.name);
+    }
     for (const ac of acs) {
       if (!ac.test) {
         add('R6-ac-test', 'blocker', `"${ac.id}" has no (test: <path>) mapping`, `${r.name} / ${ac.id}`);
