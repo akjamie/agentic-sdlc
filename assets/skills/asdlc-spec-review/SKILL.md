@@ -106,6 +106,13 @@ Evaluate every requirement in the diff against all six dimensions. Mark each `PA
 - Is user-supplied input validated before use?
 - If the change stores user data, is PII lifecycle (retention, deletion) documented?
 
+#### D7 — Technical Design & UI/API Soundness
+- **Design Ground Truth**: When UI is involved, does `design.md` cite an authoritative ground truth reference (mockup, Figma URL, design system URL, or existing brand CSS)? Flag as **Major** if tokens appear hallucinated without reference or justification.
+- **Visual Testability**: When UI is involved, does the spec contain Visual Acceptance Criteria covering responsive breakpoints (mobile, tablet, desktop) and interaction states (loading, empty, error, active), mapped to test files (e.g. Playwright / visual snapshot tests)? Flag as **Blocker** if UI specs lack visual ACs or test mappings.
+- **Unverified Assumptions**: Are there any `[UNVERIFIED: <reason>]` tags present in `clarifications.md`, `design.md`, or the specs? D7 MUST extract every `[UNVERIFIED]` tag. If an AC depends on an unverified endpoint, quota, or rate limit without a verified fallback, flag as **Major** and require explicit human TL sign-off.
+- **API & Client Lifecycle**: When 3rd-party/external APIs are integrated, does the technical design enforce client reuse (singleton / connection pooling, never recreate per request), in-memory TTL caching for geocoding/lookup endpoints, rate-limit awareness, and degraded fallbacks? Flag as **Blocker** if clients are instantiated per request or lack caching/retry policies.
+- **Interface & DTO Contracts**: Are request/response schemas, DTOs, and domain models rigorously typed (e.g. TypeScript interfaces) with validation boundaries?
+
 ---
 
 ### Step 3: Build the Requirement → AC → Test Traceability Matrix
@@ -118,8 +125,8 @@ For each `### Requirement:` found in the diff, produce one row covering all its 
 
 Classify each finding:
 
-- **🔴 Blocker** — Contradictory ACs, untestable assertion, missing normative language, security risk. Blocks `asdlc approve`.
-- **🟡 Major** — Ambiguous scenario, unhandled edge case, missing degradation path. Should be resolved before approval.
+- **🔴 Blocker** — Contradictory ACs, untestable assertion, missing normative language, missing visual ACs for UI, missing singleton/caching for external APIs, security risk. Blocks `asdlc approve`.
+- **🟡 Major** — Ambiguous scenario, unhandled edge case, unverified assumption on external API (`[UNVERIFIED]`), missing design ground truth reference. Should be resolved or acknowledged before approval.
 - **🟢 Advisory** — Clarity or style improvements. Does not block.
 
 ---
@@ -153,12 +160,17 @@ Format the comment body strictly as:
 | D4 Contract impact | ✅ / ⚠️ / ❌ | <one-line summary> |
 | D5 Testability | ✅ / ⚠️ / ❌ | <one-line summary> |
 | D6 Security & Privacy | ✅ / ⚠️ / ❌ | <one-line summary> |
+| D7 Technical Design & UI/API Soundness | ✅ / ⚠️ / ❌ | <one-line summary> |
 
 ### Requirement → AC → Test Traceability
 
 | Requirement | ACs | Target Test | Status |
 | :--- | :--- | :--- | :--- |
 | <Requirement name> | AC1, AC2 | test/<feature>.test.ts | ✅ VERIFIED |
+
+### ⚠️ Unverified Assumptions Requiring TL Acknowledgment
+<!-- List any [UNVERIFIED: ...] tags found across clarifications.md, design.md, and specs. Omit section if none. -->
+- `[UNVERIFIED: <reason>]` — <context / affected requirement>
 
 ### 🔴 Blocking Findings
 <!-- Omit section if none -->

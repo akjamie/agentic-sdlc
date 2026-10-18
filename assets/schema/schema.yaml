@@ -86,14 +86,20 @@ artifacts:
 
   - id: design
     generates: design.md
-    description: Repo-internal technical design (HOW) - optional
+    description: Repo-internal technical design (HOW) - required for UI and external APIs
     template: design.md
     instruction: |
-      Create only if the change is cross-cutting, introduces a new
-      pattern/dependency, or has migration/security/perf complexity.
+      Required when the change introduces UI/frontend views, 3rd-party API integrations,
+      architectural patterns, new data models, or security/perf complexity. Mandatory in asdlc lint.
 
-      Sections: Context; Goals / Non-Goals; Decisions (+alternatives);
-      Risks / Trade-offs ([Risk] -> Mitigation); Migration Plan.
+      Sections:
+      - **Context & Background**: constraints, current architecture.
+      - **System Architecture**: component interaction, Mermaid sequence/flowcharts.
+      - **Interface Contracts**: TypeScript interfaces / schemas for requests & responses.
+      - **External API Integration**: endpoints, auth, rate-limits, client caching & error taxonomy.
+      - **UI/UX Design & Aesthetics**: tokens, typography, component layout, responsive breakpoints (mobile/tablet/desktop), and states (loading/empty/error).
+      - **Security & NFRs**: input validation, path traversal defense, resource bounds.
+      - **Decisions & Migration**: choices made with rationale and deployment plan.
 
       Do NOT restate requirements. Do NOT make cross-repo design decisions here;
       raise a System Design Amendment instead.

@@ -37,8 +37,9 @@ asdlc archive <CHANGE_ID>
 
 The CLI:
 1. Moves `openspec/changes/<SLUG>/` into `openspec/changes/archive/<SLUG>/`.
-2. Triggers Graphify to rebuild the AST knowledge graph against the new HEAD commit.
-3. Regenerates the `system-status` block in `AGENTS.md` with newly calculated architectural hubs and god nodes.
+2. Syncs living specs into `openspec/specs/` and records the capability in `README.md`.
+3. Rebuilds the AST knowledge graph (`graphify-out/`) against the new HEAD commit.
+4. Creates `AGENTS.md` (if missing) and regenerates its `system-status` block with newly calculated architectural hubs and god nodes.
 
 ### Step 4: Confirm Archive Completion
 Summarize the result to the user:

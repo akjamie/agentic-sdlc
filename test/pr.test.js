@@ -7,6 +7,9 @@ import { execFileSync } from 'node:child_process';
 import { createSpecPR } from '../src/commands/pr.js';
 import { mergeChange } from '../src/commands/approve.js';
 import { applyGuard } from '../src/commands/apply.js';
+import { installSchema } from '../src/lib/schema.js';
+
+installSchema();
 
 function tmpRepo() {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'asdlc-pr-test-'));
@@ -133,7 +136,7 @@ test('applyGuard fails fast if Spec PR is not merged into targetBranch, passes a
 
   // Merge feature branch to main (simulating Spec PR merge)
   execFileSync('git', ['checkout', 'main'], { cwd: repo });
-  execFileSync('git', ['merge', 'feat/auth-1', '--no-ff', '-m', 'merge: spec pr'], { cwd: repo });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'merge', 'feat/auth-1', '--no-ff', '-m', 'merge: spec pr'], { cwd: repo });
   execFileSync('git', ['checkout', 'feat/auth-1'], { cwd: repo });
 
   // Now applyGuard succeeds!
