@@ -66,6 +66,6 @@ test('newChange: auto-seeds design.md when requirement mentions security or NFR 
 
   assert.ok(fs.existsSync(designPath), 'design.md should be auto-seeded for security/NFR requirement');
   const content = fs.readFileSync(designPath, 'utf8');
-  assert.ok(content.includes('Security Architecture, Threat Mitigation & Operational NFRs'));
+  assert.ok(content.includes('Security Architecture & Operational NFRs'));
 });
 

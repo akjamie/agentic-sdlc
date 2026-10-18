@@ -99,37 +99,27 @@ Every UI component must specify all 5 states:
 4. Empty State: Friendly icon/illustration, descriptive message, actionable prompt.
 5. Error State: Banner with clear explanation and retry action.
 
-## 6. Security Architecture, Threat Mitigation & Operational NFRs
+## 6. Security Architecture & Operational NFRs (Optional / When Applicable)
+<!--
+Document this section when the change introduces public interfaces, handles sensitive/user data,
+integrates external rate-limited services, or has explicit latency/resource constraints.
+For changes without external dependencies or strict SLAs, omit this section or mark as (N/A).
+Do NOT invent arbitrary default values.
+-->
 
-### 6.1 Security & Threat Mitigation (MANDATORY)
-<!-- Detail concrete defense mechanisms for this capability: -->
-- Authentication & Authorization:
-  - Caller identity verification, token validation, scope/role enforcement.
-- Input Validation & Defense-in-Depth:
-  - Schema-level parameter validation, maximum payload sizes, string length limits.
-  - Path traversal defense (e.g. `path.resolve` / sibling directory boundary checks).
-  - Sanitization against injection (SQL, Command, XSS) and header manipulation.
-- Secret & Credential Lifecycle:
-  - Secrets injected strictly via environment variables; never checked in, serialized, or logged.
-  - Redaction of authorization headers, tokens, and keys in error/debug logs.
-- Data Privacy & PII Protection:
-  - Data classification, retention policies, and sanitized export pipelines.
+### 6.1 Security & Threat Mitigation (If Applicable)
+<!-- Detail concrete defense mechanisms if the change touches auth, inputs, or secrets: -->
+- Authentication & Authorization: <!-- Caller identity verification, role/scope enforcement, or N/A -->
+- Input Validation & Boundaries: <!-- Schema constraints, bounds, sanitization, or N/A -->
+- Secret & Credential Lifecycle: <!-- Injected via environment variables, never logged, or N/A -->
+- Data Privacy & PII Protection: <!-- Data classification, retention policies, or N/A -->
 
-### 6.2 Performance Budgets & Operational NFRs (MANDATORY)
-<!-- Concrete verifiable figures, not subjective adjectives: -->
-- Latency Budgets & SLAs:
-  - p95/p99 response latency targets (e.g. cache hit < 50ms, upstream query < 500ms).
-  - Client-side debouncing/throttling (e.g. 300ms debounce on search inputs).
-- Resource Bounds & Memory Lifecycle:
-  - Cache size limits (e.g. maximum 1,000 LRU entries), TTL expiration (e.g. 15m).
-  - Payload limits and memory leak guards (clearing listeners/intervals/connections).
-- Upstream Quota & Rate Limit Protection:
-  - Connection pooling / singleton client reuse (never re-instantiate clients per request).
-  - Rate limiting, concurrency throttling, exponential backoff with jitter on 429s.
-- Fault Tolerance & Graceful Degradation:
-  - Downstream timeout bounds (e.g. 5s max before fallback).
-  - Offline mode or stale cache serving on upstream failure.
-  - Safe error surfaces preventing stack trace leaks to end users.
+### 6.2 Performance Budgets & Operational NFRs (If Applicable)
+<!-- Document operational constraints only when required by architecture, scale, or SLAs: -->
+- Latency Budgets & SLAs: <!-- Target p95/p99 latency or response time bounds, if applicable -->
+- Resource Bounds & Lifecycles: <!-- Cache size caps, TTL expiration, memory guards, if applicable -->
+- Upstream Quota & Rate Limit Protection: <!-- Singleton client reuse, exponential backoff, if applicable -->
+- Graceful Degradation: <!-- Downstream timeout bounds, stale/offline fallback, if applicable -->
 
 ## 7. Key Decisions & Alternatives
 <!--

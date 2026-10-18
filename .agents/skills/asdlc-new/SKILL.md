@@ -54,10 +54,9 @@ Follow this strict discovery sequence:
 
 ### Step 3: Run the `batch-grill-me` Interview
 Before authoring any spec markdown, run the **`batch-grill-me`** protocol:
-1. Evaluate the open decision frontier across 3 mandatory dimensions:
-   - **Functional Seams**: User flows, domain states, and interface shapes.
-   - **Security Threat Vectors**: AuthN/AuthZ, input validation/sanitization boundaries, secrets injection, PII & egress control.
-   - **Operational NFRs**: Latency budgets (p95/p99), caching strategy, memory/resource bounds, upstream rate limits, and failure degradation.
+1. Evaluate the open decision frontier for this feature:
+   - **Functional Seams**: Primary user flows, alternate paths, domain states, and interface contracts.
+   - **Security & Operational NFRs (When Applicable)**: For changes introducing public endpoints, handling sensitive data, or integrating external rate-limited APIs, evaluate auth boundaries and operational limits. (Do not invent synthetic numbers for simple changes where SLAs do not apply).
 2. Present all architectural forks and boundary questions in **one structured batch**:
    - Number each question (`Q1`, `Q2`, `Q3`...).
    - Provide concrete options (A / B / C).
@@ -78,8 +77,7 @@ Once `## Open questions` in `clarifications.md` is empty, author the change docu
      - **Architecture & Component Interaction**: Mermaid sequence/flowchart diagrams.
      - **Interface Contracts & Schemas**: TypeScript interfaces or JSON schemas for all requests/responses.
      - **External API Integration**: Endpoints, authentication, rate limits, client-level in-memory/TTL caching (never recreate clients per request), error taxonomy & fallbacks.
-     - **Security Architecture & Threat Mitigation**: Authentication/authorization, input sanitization boundaries, secret management, PII/data privacy.
-     - **Operational NFRs & Performance Budgets**: Concrete latency budgets (p95/p99), resource bounds, memory/cache lifecycles, and graceful degradation.
+     - **Security & Operational NFRs (Optional / When Applicable)**: Document authentication, boundary validation, secret lifecycles, and performance budgets/quotas when the architecture demands them (omit or mark N/A for changes without external dependencies or strict SLAs).
      - **UI/UX Design Reference & Tokens (Zero tolerance for unstyled HTML)**:
        - **Required Ground Truth Reference**: Link to human-provided mockup, Figma URL, brand styleguide, or existing CSS tokens. Do NOT invent palettes or fonts in isolation.
        - Concrete design tokens derived from reference (colors, typography, spacing/radii).
