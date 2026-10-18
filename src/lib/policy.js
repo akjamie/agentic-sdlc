@@ -12,6 +12,7 @@ export const DEFAULT_POLICY = {
   reviewers: { spec: null, design: null },
   ai_review: { trigger: 'on-ready-and-push', debounce_seconds: 120 },
   rollout_mode: {},
+  web_search: 'allow',
 };
 
 function deepMerge(base, over) {
@@ -51,4 +52,9 @@ export function matchesAny(p, globs = []) {
 // rollout_mode: checkName -> 'block' | 'advisory'. Missing => block.
 export function isAdvisory(policy, checkName) {
   return policy?.rollout_mode?.[checkName] === 'advisory';
+}
+
+// Web-search policy egress guard: enabled by default ('allow'), blocked only when explicitly 'deny'.
+export function canWebSearch(policy) {
+  return policy?.web_search !== 'deny';
 }

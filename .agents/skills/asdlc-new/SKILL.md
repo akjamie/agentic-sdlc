@@ -36,13 +36,14 @@ Follow this strict discovery sequence:
    - Read `openspec/changes/<SLUG>/explore.md`.
    - Note the **Architectural Hubs (god nodes)** that this change touches.
    - Review existing functions, types, and exported symbols. Never guess: ground internal assumptions in real paths from `explore.md`.
-2. **Policy Guard & Targeted External Search**:
+2. **Policy Guard & Targeted External Search (Enabled by Default)**:
    - **Enterprise Egress Policy Guard**: Check `.sdlc/policy.yaml` before executing any external web or API doc search.
-     Execute external search **ONLY if `web_search: allow`** is configured in `.sdlc/policy.yaml`.
-     If `web_search: deny` (or not `allow`):
-     Emit `[POLICY] External search disabled by .sdlc/policy.yaml; proceeding with local context only.`
-     Tag any external API assumptions in `clarifications.md` and `design.md` with `[UNVERIFIED: policy_denied]`.
-   - **Authoritative Fact Lookup** (when policy allows):
+     - **Default is ENABLED (`allow`)**: External web search is enabled by default. If `web_search` is omitted, unspecified, or set to `allow` in `.sdlc/policy.yaml`, search is permitted and encouraged for grounding 3rd-party APIs, vendor SDKs, and specs.
+     - **Strict Egress Deny**: Search is blocked **ONLY if `.sdlc/policy.yaml` explicitly sets `web_search: deny`** (for air-gapped / offline enterprise environments).
+       In that case, emit:
+       `[POLICY] External search disabled by .sdlc/policy.yaml (web_search: deny); proceeding with local context only.`
+       Tag any external API assumptions in `clarifications.md` and `design.md` with `[UNVERIFIED: policy_denied]`.
+   - **Authoritative Fact Lookup** (when search is allowed / default):
      If the requirement references 3rd-party APIs, vendor SDKs, protocols, or external library specs (e.g. Amap, Weather APIs, Maps, Payment Gateways):
      Execute a targeted web/doc search to look up authoritative endpoints, rate limits, request/response formats, error codes, and caching best practices.
    - **Non-blocking failure tolerance**: If external search fails (offline, rate limited, sandbox network restriction, DNS failure, timeout), **DO NOT BLOCK**.
@@ -53,7 +54,10 @@ Follow this strict discovery sequence:
 
 ### Step 3: Run the `batch-grill-me` Interview
 Before authoring any spec markdown, run the **`batch-grill-me`** protocol:
-1. Evaluate the entire open decision frontier for this feature.
+1. Evaluate the open decision frontier across 3 mandatory dimensions:
+   - **Functional Seams**: User flows, domain states, and interface shapes.
+   - **Security Threat Vectors**: AuthN/AuthZ, input validation/sanitization boundaries, secrets injection, PII & egress control.
+   - **Operational NFRs**: Latency budgets (p95/p99), caching strategy, memory/resource bounds, upstream rate limits, and failure degradation.
 2. Present all architectural forks and boundary questions in **one structured batch**:
    - Number each question (`Q1`, `Q2`, `Q3`...).
    - Provide concrete options (A / B / C).
@@ -74,6 +78,8 @@ Once `## Open questions` in `clarifications.md` is empty, author the change docu
      - **Architecture & Component Interaction**: Mermaid sequence/flowchart diagrams.
      - **Interface Contracts & Schemas**: TypeScript interfaces or JSON schemas for all requests/responses.
      - **External API Integration**: Endpoints, authentication, rate limits, client-level in-memory/TTL caching (never recreate clients per request), error taxonomy & fallbacks.
+     - **Security Architecture & Threat Mitigation**: Authentication/authorization, input sanitization boundaries, secret management, PII/data privacy.
+     - **Operational NFRs & Performance Budgets**: Concrete latency budgets (p95/p99), resource bounds, memory/cache lifecycles, and graceful degradation.
      - **UI/UX Design Reference & Tokens (Zero tolerance for unstyled HTML)**:
        - **Required Ground Truth Reference**: Link to human-provided mockup, Figma URL, brand styleguide, or existing CSS tokens. Do NOT invent palettes or fonts in isolation.
        - Concrete design tokens derived from reference (colors, typography, spacing/radii).
