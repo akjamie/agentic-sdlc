@@ -18,7 +18,7 @@ function tmpRepo() {
 
 test('newChange: auto-seeds design.md when requirement mentions UI or API keywords', () => {
   const repo = tmpRepo();
-  const slug = newChange('build responsive web ui for tourism itinerary recommendations', { repoRoot: repo });
+  const slug = newChange('build responsive web ui for tourism itinerary recommendations', { repoRoot: repo, openspec: false });
   const cdir = path.join(repo, 'openspec', 'changes', slug);
   const designPath = path.join(cdir, 'design.md');
 
@@ -33,7 +33,7 @@ test('newChange: auto-seeds design.md when requirement mentions UI or API keywor
 
 test('newChange: seeds design.md when --design flag is explicitly passed', () => {
   const repo = tmpRepo();
-  const slug = newChange('small logic adjustment', { repoRoot: repo, design: true, id: 'logic-adj' });
+  const slug = newChange('small logic adjustment', { repoRoot: repo, design: true, id: 'logic-adj', openspec: false });
   const cdir = path.join(repo, 'openspec', 'changes', slug);
   const designPath = path.join(cdir, 'design.md');
 
@@ -42,7 +42,7 @@ test('newChange: seeds design.md when --design flag is explicitly passed', () =>
 
 test('newChange: respects --no-design even if requirement matches keywords', () => {
   const repo = tmpRepo();
-  const slug = newChange('build web ui screen', { repoRoot: repo, design: false, id: 'no-design-slug' });
+  const slug = newChange('build web ui screen', { repoRoot: repo, design: false, id: 'no-design-slug', openspec: false });
   const cdir = path.join(repo, 'openspec', 'changes', slug);
   const designPath = path.join(cdir, 'design.md');
 
@@ -51,7 +51,7 @@ test('newChange: respects --no-design even if requirement matches keywords', () 
 
 test('newChange: does not seed design.md for simple non-technical requirement', () => {
   const repo = tmpRepo();
-  const slug = newChange('update greeting text message in config', { repoRoot: repo, id: 'simple-greeting' });
+  const slug = newChange('update greeting text message in config', { repoRoot: repo, id: 'simple-greeting', openspec: false });
   const cdir = path.join(repo, 'openspec', 'changes', slug);
   const designPath = path.join(cdir, 'design.md');
 

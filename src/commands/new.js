@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { exists, readText, writeText } from '../lib/fs.js';
+import { exists, readText, writeText, ensureDir } from '../lib/fs.js';
 import { changeDir, schemaAssetDir } from '../lib/paths.js';
 import { requireRepo, deriveChangeSlug, extractRequirementTerms } from '../lib/cliutil.js';
 import { ensureGraphify, ensureFreshGraph, graphifyQuery } from '../lib/graphify.js';
@@ -18,10 +18,16 @@ export function newChange(requirement, opts = {}) {
   const cdir = changeDir(repoRoot, slug);
   if (exists(cdir)) fail(`change '${slug}' already exists`, { hint: 'use a new requirement/id, or iterate the existing change' });
 
-  const res = runOpenspec(['new', 'change', slug], repoRoot);
-  if (res.missing) fail('OpenSpec CLI not found', { hint: 'run `asdlc init`' });
-  if (res.status !== 0) fail(`openspec new change failed: ${(res.stderr || res.stdout || '').slice(0, 300)}`);
-  log.ok(`created change '${slug}' (derived from: "${requirement}")`);
+  if (opts.openspec !== false) {
+    const res = runOpenspec(['new', 'change', slug], repoRoot);
+    if (res.missing) fail('OpenSpec CLI not found', { hint: 'run `asdlc init`' });
+    if (res.status !== 0) fail(`openspec new change failed: ${(res.stderr || res.stdout || '').slice(0, 300)}`);
+    log.ok(`created change '${slug}' (derived from: "${requirement}")`);
+  } else {
+    ensureDir(cdir);
+    writeText(path.join(cdir, '.openspec.yaml'), 'schema: agentic-repo-change\n');
+    log.ok(`created change '${slug}' (derived from: "${requirement}")`);
+  }
 
   // Record requirement in change metadata (.openspec.yaml)
   const metaPath = path.join(cdir, '.openspec.yaml');

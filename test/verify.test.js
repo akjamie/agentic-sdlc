@@ -5,6 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { runVerify } from '../src/commands/verify.js';
+import { installSchema } from '../src/lib/schema.js';
+
+installSchema();
 
 function tmpRepo() {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'asdlc-verify-'));
