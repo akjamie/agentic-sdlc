@@ -27,7 +27,7 @@ asdlc upgrade
 
 ## What It Does
 
-1. **CLI Upgrade**: Updates `agentic-sdlc` to the latest release via `npm install -g agentic-sdlc@latest`.
+1. **CLI Upgrade**: Updates `@akjamie/agentic-sdlc` to the latest release via `npm install -g @akjamie/agentic-sdlc@latest`.
 2. **OpenSpec Upgrade**: Keeps OpenSpec CLI up-to-date (`npm install -g openspec@latest`).
 3. **Graphify Upgrade**: Updates the AST knowledge graph tool (`uv tool install --upgrade graphifyy` or `pip install --upgrade graphifyy`).
 4. **Schema Refresh**: Refreshes centrally managed schemas and templates.

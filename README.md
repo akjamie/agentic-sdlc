@@ -85,11 +85,11 @@ For complete technical specifications of each plane, see [docs/architecture.md](
 `asdlc` supports multiple installation methods depending on your environment:
 
 ```bash
-# Option A: Directly from remote Git repository (npm v12+ requires --allow-git=all)
-npm install -g --allow-git=all git+https://github.com/akjamie/agentic-sdlc.git
+# Option A: From npm registry (Recommended)
+npm install -g @akjamie/agentic-sdlc
 
-# Option B: Internal artifact store / tarball
-npm install -g https://internal-artifactory/asdlc/asdlc-<version>.tgz
+# Option B: Directly from GitHub repository (npm v12+ requires --allow-git=all)
+npm install -g --allow-git=all git+https://github.com/akjamie/agentic-sdlc.git
 
 # Option C: Local development repository
 npm install -g .
@@ -97,10 +97,6 @@ npm install -g .
 # Initialize repository (installs OpenSpec engine, Graphify, policy, and bundled skills)
 asdlc init --ci jenkins
 ```
-
-> [!NOTE]
-> **npm v12+ Security Policy (`EALLOWGIT`)**:
-> Starting with **npm v12** (Node.js 24+), fetching packages from Git references is disabled by default (`allow-git = "none"`). When installing directly from GitHub, pass `--allow-git=all` (or configure `allow-git=all` in `~/.npmrc`). If overwriting a previously installed binary, append `--force`.
 
 Verify setup health at any time:
 

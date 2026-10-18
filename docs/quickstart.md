@@ -37,7 +37,7 @@
 - **Optional**: Python + `uv` or `pip` (for Graphify AST knowledge graphs)
 - **Install `asdlc` CLI**:
   ```bash
-  npm install -g agentic-sdlc
+  npm install -g @akjamie/agentic-sdlc
   ```
 
 ---
@@ -193,7 +193,7 @@ asdlc archive user-login-with-jwt
 - **可选依赖**: Python + `uv` 或 `pip`（用于 Graphify 语法知识图谱构建）
 - **安装 `asdlc` 全局命令行**:
   ```bash
-  npm install -g agentic-sdlc
+  npm install -g @akjamie/agentic-sdlc
   ```
 
 ---

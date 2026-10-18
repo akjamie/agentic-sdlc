@@ -1,6 +1,6 @@
 {
-  "name": "agentic-sdlc",
-  "version": "0.1.0",
+  "name": "@akjamie/agentic-sdlc",
+  "version": "1.0.0",
   "description": "Enterprise Agentic SDLC governance CLI: a 7-stage spec-driven flow on top of OpenSpec + Graphify, enforced by CI.",
   "type": "module",
   "bin": {
@@ -8,6 +8,9 @@
   },
   "exports": {
     ".": "./src/index.js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "preferGlobal": true,
   "repository": {

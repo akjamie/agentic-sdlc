@@ -19,8 +19,8 @@ function which(name) {
 export function upgradeAsdlc() {
   log.step('upgrading asdlc CLI...');
   try {
-    const pkgSpec = process.env.ASDLC_PKG_SPEC || 'git+https://github.com/akjamie/agentic-sdlc.git';
-    execFileSync('npm', ['install', '-g', '--allow-git=all', '--force', pkgSpec], { stdio: 'inherit' });
+    const pkgSpec = process.env.ASDLC_PKG_SPEC || '@akjamie/agentic-sdlc@latest';
+    execFileSync('npm', ['install', '-g', pkgSpec], { stdio: 'inherit' });
     log.ok('asdlc CLI upgraded to latest');
     return true;
   } catch (err) {

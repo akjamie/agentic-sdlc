@@ -8,19 +8,17 @@
 
 ## Install asdlc
 
-`asdlc` is **not** on the public npm registry. Install it from your internal
-tarball or registry:
+Install it from npm, your internal tarball, or git:
 
 ```bash
-# A. directly from remote git repository (npm v12+ requires --allow-git=all)
+# A. from public npm registry
+npm install -g @akjamie/agentic-sdlc
+
+# B. directly from remote git repository (npm v12+ requires --allow-git=all)
 npm install -g --allow-git=all git+https://github.com/akjamie/agentic-sdlc.git
 
-# B. internal tarball
-npm install -g https://internal-artifactory/asdlc/asdlc-0.1.0.tgz
-
-# C. local development / private registry
+# C. local development
 npm install -g .
-# or: npm install -g asdlc
 ```
 
 > [!NOTE]
