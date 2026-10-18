@@ -56,11 +56,29 @@ export function runLint(changeId, opts = {}) {
   add('change', 'pass', slug);
   add('explore.md (stage 1)', exists(path.join(cdir, 'explore.md')) ? 'pass' : 'fail',
     exists(path.join(cdir, 'explore.md')) ? '' : 'run `asdlc new <ID>` (explore is the first stage)');
-  add('proposal.md', exists(path.join(cdir, 'proposal.md')) ? 'pass' : 'fail',
-    exists(path.join(cdir, 'proposal.md')) ? '' : 'proposal.md missing');
+  const proposalPath = path.join(cdir, 'proposal.md');
+  const proposalText = exists(proposalPath) ? readText(proposalPath) : '';
+  add('proposal.md', exists(proposalPath) ? 'pass' : 'fail',
+    exists(proposalPath) ? '' : 'proposal.md missing');
+
+  const specFiles = exists(path.join(cdir, 'specs'))
+    ? walkFiles(path.join(cdir, 'specs')).filter((f) => f.endsWith('spec.md'))
+    : [];
+  add('spec delta', specFiles.length > 0 ? 'pass' : 'fail', specFiles.length > 0 ? `${specFiles.length} file(s)` : 'no spec delta present');
+
+  const combinedSpecText = specFiles.map((f) => readText(path.join(cdir, 'specs', f))).join('\n');
+  const fullIntentText = `${proposalText}\n${combinedSpecText}`;
+
+  // Deterministic detection for UI and 3rd-party/external API scope
+  const UI_OR_EXTERNAL_API = /\b(ui|ux|frontend|web|screen|page|view|component|css|style|html|layout|dialog|modal|button|table|card|form|itinerary|3rd-party|third-party|external api|vendor api|geocode|amap|weather api|maps api|payment gateway|stripe|oauth|webhook)\b/i;
+  const requiresDesign = UI_OR_EXTERNAL_API.test(fullIntentText);
 
   const designPath = path.join(cdir, 'design.md');
-  if (exists(designPath)) {
+  if (!exists(designPath)) {
+    if (requiresDesign) {
+      add('design.md', 'fail', 'design.md is mandatory for UI and external API changes (run `asdlc new --design` or author design.md)');
+    }
+  } else {
     const text = readText(designPath);
     const nonComment = text.replace(/<!--[\s\S]*?-->/g, '').trim();
     if (nonComment.length < 150) {
@@ -81,11 +99,6 @@ export function runLint(changeId, opts = {}) {
     add('review verdict', verdict === 'APPROVE' ? 'pass' : 'fail', verdict ? `verdict: ${verdict}` : 'no verdict found');
     add('blocking findings', hasBlockingFindings(text) ? 'fail' : 'pass', hasBlockingFindings(text) ? 'blocking findings present' : '');
   }
-
-  const specFiles = exists(path.join(cdir, 'specs'))
-    ? walkFiles(path.join(cdir, 'specs')).filter((f) => f.endsWith('spec.md'))
-    : [];
-  add('spec delta', specFiles.length > 0 ? 'pass' : 'fail', specFiles.length > 0 ? `${specFiles.length} file(s)` : 'no spec delta present');
 
   const { rules } = readLintConfig(repoRoot);
   const findings = [];

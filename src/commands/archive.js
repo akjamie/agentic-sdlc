@@ -4,6 +4,7 @@ import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
 import { runOpenspec } from '../lib/openspec.js';
 import { refreshAgents } from '../lib/agents.js';
+import { ensureFreshGraph } from '../lib/graphify.js';
 import { git } from '../lib/git.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
@@ -88,6 +89,18 @@ export function archiveChange(changeId, opts = {}) {
 
   syncReadme(repoRoot, slug, proposalText);
 
+  // Refresh AST knowledge graph if Graphify is available
+  if (opts.graph !== false) {
+    try {
+      const g = ensureFreshGraph(repoRoot);
+      if (g.status === 'missing' || g.status === 'stale') {
+        log.ok(`rebuilt knowledge graph (graphify ${g.status} -> fresh)`);
+      }
+    } catch (err) {
+      log.warn(`knowledge graph refresh skipped: ${err.message}`);
+    }
+  }
+
   // AGENTS.md update:
   // - If AGENTS.md does not exist, create and initialize it.
   // - If AGENTS.md exists, refresh the system status (knowledge graph god nodes)
@@ -121,6 +134,7 @@ export function register(program) {
     .option('--repo-root <path>')
     .option('--agents', 'force refresh AGENTS.md')
     .option('--no-agents', 'skip updating AGENTS.md')
+    .option('--no-graph', 'skip rebuilding knowledge graph')
     .option('--no-openspec', 'skip the openspec archive step')
     .action((changeId, opts) => {
       process.exitCode = archiveChange(changeId, opts);

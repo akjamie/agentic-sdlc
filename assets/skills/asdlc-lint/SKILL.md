@@ -21,7 +21,8 @@ The linter evaluates spec text with pure deterministic rules (no LLM jitter):
 - **`R6-ac-test`**: Every acceptance criterion must map to an explicit test file path (`(test: <path>)`).
 - **`R7-test-strategy`**: Must contain a non-empty `## Test Strategy` section.
 - **`R8-removed-reason`**: Any requirement under `## REMOVED Requirements` must document a `**Reason**`.
-- **`design.md` Quality**: If `design.md` is present (for UI/API/complex changes), verifies that it contains substantive technical design specifications rather than empty template placeholders.
+- **`design.md` Quality & Enforcement**: Mandatory whenever proposal or specs touch UI/frontend or external/3rd-party APIs. Fails if missing when UI or external APIs are present, or if it contains empty template placeholders.
+- **Visual Acceptance Criteria (UI specs)**: UI requirements must include visual ACs covering responsive breakpoints (mobile, desktop) and interaction states (loading, empty, error), mapped to test files (`(test: <path>)`).
 - **Review Status**: If `review.md` is present, it must have `## Verdict: APPROVE` and zero blocking findings. (On pre-merge branches, `review.md` is pending human PR review and is automatically generated upon `asdlc approve`).
 
 ---

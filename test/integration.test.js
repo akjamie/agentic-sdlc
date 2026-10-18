@@ -69,6 +69,36 @@ test('lint: fails when design.md contains only unedited template placeholders', 
   assert.equal(exit, 1);
 });
 
+test('lint: fails when change mentions UI/API but design.md is absent', () => {
+  const repo = tmpRepo();
+  const dir = scaffold(repo, 'UI-1');
+  fs.mkdirSync(path.join(repo, 'tests'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'tests', 'demo.test.js'), '// test\n');
+  fs.writeFileSync(
+    path.join(dir, 'proposal.md'),
+    '# Proposal\n\n## Why\nBuild a new web dashboard frontend for travel itinerary planning.\n',
+  );
+  const exit = runLint('UI-1', { repoRoot: repo, json: true });
+  assert.equal(exit, 1);
+});
+
+test('lint: passes when change mentions UI/API and substantive design.md is present', () => {
+  const repo = tmpRepo();
+  const dir = scaffold(repo, 'UI-1');
+  fs.mkdirSync(path.join(repo, 'tests'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'tests', 'demo.test.js'), '// test\n');
+  fs.writeFileSync(
+    path.join(dir, 'proposal.md'),
+    '# Proposal\n\n## Why\nBuild a new web dashboard frontend for travel itinerary planning.\n',
+  );
+  fs.writeFileSync(
+    path.join(dir, 'design.md'),
+    '# Technical Design\n\n## 5. UI Architecture & Design System\nReference: Brand Token CSS at ui/tokens.css\nBreakpoints: Mobile (375px), Desktop (1280px)\nInteraction states: loading skeleton, empty state, error banner.\n',
+  );
+  const exit = runLint('UI-1', { repoRoot: repo, json: true });
+  assert.equal(exit, 0);
+});
+
 test('lint: fails when review.md verdict is NEEDS_REVISION', () => {
   const repo = tmpRepo();
   const dir = scaffold(repo, 'TECH-1');

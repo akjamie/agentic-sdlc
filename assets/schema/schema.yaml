@@ -86,11 +86,11 @@ artifacts:
 
   - id: design
     generates: design.md
-    description: Repo-internal technical design (HOW) - optional or auto-seeded
+    description: Repo-internal technical design (HOW) - required for UI and external APIs
     template: design.md
     instruction: |
-      Create when the change introduces UI/frontend views, 3rd-party API integrations,
-      architectural patterns, new data models, or security/perf complexity.
+      Required when the change introduces UI/frontend views, 3rd-party API integrations,
+      architectural patterns, new data models, or security/perf complexity. Mandatory in asdlc lint.
 
       Sections:
       - **Context & Background**: constraints, current architecture.

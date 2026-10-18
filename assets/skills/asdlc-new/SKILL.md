@@ -5,7 +5,7 @@ description: "Start a new spec-driven change: derives change slug from natural l
 
 # /asdlc:new - Start Feature & Batch-Grill Author
 
-This skill executes **Stage 2 (New)** of the Agentic SDLC. It transforms a natural language requirement into an approved intent change package (`proposal.md`, `specs/**`, `design.md`, `review.md`).
+This skill executes **Stage 2 (New)** of the Agentic SDLC. It transforms a natural language requirement into an approved intent change package (`proposal.md`, `specs/**`, and `design.md`).
 
 ---
 
@@ -36,13 +36,20 @@ Follow this strict discovery sequence:
    - Read `openspec/changes/<SLUG>/explore.md`.
    - Note the **Architectural Hubs (god nodes)** that this change touches.
    - Review existing functions, types, and exported symbols. Never guess: ground internal assumptions in real paths from `explore.md`.
-2. **Targeted External Search (Essential for 3rd-Party APIs & UI Systems)**:
-   - If the requirement references 3rd-party APIs, vendor SDKs, protocols, or external library specs (e.g. Amap, Weather APIs, Maps, Payment Gateways):
+2. **Policy Guard & Targeted External Search**:
+   - **Enterprise Egress Policy Guard**: Check `.sdlc/policy.yaml` before executing any external web or API doc search.
+     Execute external search **ONLY if `web_search: allow`** is configured in `.sdlc/policy.yaml`.
+     If `web_search: deny` (or not `allow`):
+     Emit `[POLICY] External search disabled by .sdlc/policy.yaml; proceeding with local context only.`
+     Tag any external API assumptions in `clarifications.md` and `design.md` with `[UNVERIFIED: policy_denied]`.
+   - **Authoritative Fact Lookup** (when policy allows):
+     If the requirement references 3rd-party APIs, vendor SDKs, protocols, or external library specs (e.g. Amap, Weather APIs, Maps, Payment Gateways):
      Execute a targeted web/doc search to look up authoritative endpoints, rate limits, request/response formats, error codes, and caching best practices.
    - **Non-blocking failure tolerance**: If external search fails (offline, rate limited, sandbox network restriction, DNS failure, timeout), **DO NOT BLOCK**.
      Output:
      `[WARN] External search failed or offline: <reason>. Continuing with defined steps.`
-     Record unverified assumptions in `clarifications.md`, and proceed immediately with local context.
+     Tag any unverified external API assumptions, endpoints, schemas, or rate limits in `clarifications.md` and `design.md` with `[UNVERIFIED: <reason>]`.
+     These will be explicitly surfaced on the PR review by CI/D7 for mandatory human confirmation before merge.
 
 ### Step 3: Run the `batch-grill-me` Interview
 Before authoring any spec markdown, run the **`batch-grill-me`** protocol:
@@ -67,10 +74,11 @@ Once `## Open questions` in `clarifications.md` is empty, author the change docu
      - **Architecture & Component Interaction**: Mermaid sequence/flowchart diagrams.
      - **Interface Contracts & Schemas**: TypeScript interfaces or JSON schemas for all requests/responses.
      - **External API Integration**: Endpoints, authentication, rate limits, client-level in-memory/TTL caching (never recreate clients per request), error taxonomy & fallbacks.
-     - **UI/UX Design & Aesthetics (Zero tolerance for unstyled HTML)**:
-       - Design tokens: Curated color palette, Google typography (Inter, Outfit), spacing/radii.
-       - Component hierarchy: Hero/Search, Filters, Data Cards, Detail views.
-       - Responsive breakpoints: Mobile (<=640px), Tablet (<=1024px), Desktop (>1024px).
+     - **UI/UX Design Reference & Tokens (Zero tolerance for unstyled HTML)**:
+       - **Required Ground Truth Reference**: Link to human-provided mockup, Figma URL, brand styleguide, or existing CSS tokens. Do NOT invent palettes or fonts in isolation.
+       - Concrete design tokens derived from reference (colors, typography, spacing/radii).
+       - Component hierarchy (Hero/Search, Filters, Data Cards, Detail views).
+       - Responsive breakpoints: Mobile (<= 640px), Tablet (<= 1024px), Desktop (> 1024px).
        - Mandatory interaction states: Default, Hover/Focus, Loading Skeleton, Empty State with prompt, Error Banner with retry.
 
 3. **`specs/<capability>/spec.md`**:
@@ -80,11 +88,15 @@ Once `## Open questions` in `clarifications.md` is empty, author the change docu
      - Every requirement has `#### Scenario: <name>` with **GIVEN / WHEN / THEN**.
      - Every requirement has an `**Acceptance criteria**` block:
        `- [ ] AC1: <concrete testable assertion> (test: <path/to/test>)`
+     - **UI Testability**: For any UI capability, include visual Acceptance Criteria for responsive breakpoints and key interaction states (empty, loading, error), mapped to component/E2E test targets (e.g. Playwright / snapshot tests).
      - `## Constraints & NFRs`: Verifiable performance/security statements.
      - `## Out of Scope` and `## Test Strategy`.
 
-4. **`review.md`**:
-   - Run an independent review pass and stamp `## Verdict: APPROVE`.
+4. **Review Provenance (Player $\ne$ Referee)**:
+   - The authoring agent MUST NOT approve its own spec.
+   - Do NOT stamp `review.md` with self-approval.
+   - Independent AI review (`asdlc:spec-review`) is executed automatically on the Spec PR by CI.
+   - Formal approval is given by the human lead via PR merge or `asdlc approve <SLUG>`.
 
 ### Step 5: Transition to Lint
 Once artifacts are written, guide the developer:
