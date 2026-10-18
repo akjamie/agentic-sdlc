@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { exists, readText, writeText } from '../lib/fs.js';
-import { changeDir } from '../lib/paths.js';
+import { changeDir, schemaAssetDir } from '../lib/paths.js';
 import { requireRepo, deriveChangeSlug, extractRequirementTerms } from '../lib/cliutil.js';
 import { ensureGraphify, ensureFreshGraph, graphifyQuery } from '../lib/graphify.js';
 import { runOpenspec } from '../lib/openspec.js';
@@ -117,15 +117,32 @@ _(unavailable - graph query error)_
     log.ok('seeded clarifications.md (run batch-grill-me interview)');
   }
 
+  // Technical design (design.md) scaffolding:
+  // Auto-seed if requirement implies UI, frontend, API integration, or technical complexity,
+  // or if explicitly requested via opts.design === true.
+  const UI_OR_TECH_KEYWORDS = /\b(ui|ux|frontend|web|screen|page|view|component|css|style|api|endpoint|service|client|integration|database|db|schema|model|architecture|refactor|migration|auth|payment|cache|gateway|protocol)\b/i;
+  const shouldSeedDesign = opts.design === true || (opts.design !== false && UI_OR_TECH_KEYWORDS.test(requirement));
+  const designPath = path.join(cdir, 'design.md');
+  if (shouldSeedDesign && !exists(designPath)) {
+    const tmplPath = path.join(schemaAssetDir, 'templates', 'design.md');
+    let tmpl = exists(tmplPath) ? readText(tmplPath) : `# Technical Design: ${slug}\n\n`;
+    tmpl = tmpl.replace('<!-- change id -->', slug);
+    tmpl = tmpl.replace('<!-- requirement summary -->', requirement.replace(/"/g, '\\"'));
+    writeText(designPath, tmpl);
+    log.ok('seeded design.md (technical design for architecture/UI/API)');
+  }
+
   log.info('');
   log.info('[ASDLC PROTOCOL: IMMEDIATE ACTION REQUIRED FOR AGENT]');
   log.info('  ▶ DO NOT pause or ask the author if you should begin grilling.');
   log.info('  ▶ IMMEDIATELY invoke the `batch-grill-me` (or `grilling`) skill in this turn:');
   log.info('    1. Ground yourself in `explore.md` and research codebase facts first.');
-  log.info('    2. Present Batch 1 questions (Q1..Qn with concrete recommended defaults) to the author.');
-  log.info('    3. Record agreed decisions into `clarifications.md`.');
-  log.info('    4. ONLY AFTER clarifications are settled: author `proposal.md` and `specs/**`.');
-  log.info(`    5. Run \`asdlc lint ${slug}\`.`);
+  log.info('    2. Perform external search for 3rd-party APIs, vendor SDKs, and UI design patterns.');
+  log.info('       (If search fails or offline: emit \'[WARN] External search failed or offline: <reason>. Continuing with defined steps.\' and continue without blocking).');
+  log.info('    3. Present Batch 1 questions (Q1..Qn with concrete recommended defaults) to the author.');
+  log.info('    4. Record agreed decisions into `clarifications.md`.');
+  log.info('    5. ONLY AFTER clarifications are settled: author `proposal.md`, `specs/**`, and `design.md` (if seeded/needed).');
+  log.info(`    6. Run \`asdlc lint ${slug}\`.`);
   return slug;
 }
 
@@ -135,6 +152,8 @@ export function register(program) {
     .description('start a spec: scaffold + refresh the graph + explore.md + clarifications.md (for grilling)')
     .option('--id <slug>', 'explicit change slug (override auto-derivation)')
     .option('--query <q>', 'graph query terms (default: extracted requirement terms)')
+    .option('--design', 'explicitly generate technical design (design.md)')
+    .option('--no-design', 'skip generating technical design (design.md)')
     .option('--repo-root <path>')
     .action((requirement, opts) => {
       newChange(requirement, opts);

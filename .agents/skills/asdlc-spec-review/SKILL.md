@@ -106,6 +106,11 @@ Evaluate every requirement in the diff against all six dimensions. Mark each `PA
 - Is user-supplied input validated before use?
 - If the change stores user data, is PII lifecycle (retention, deletion) documented?
 
+#### D7 — Technical Design & UI/API Soundness
+- When UI/frontend is modified: Does `design.md` or the spec define concrete visual tokens (colors, typography), responsive breakpoints (mobile, tablet, desktop), and interaction states (loading skeleton, empty state with prompt, error banner with retry)? Flag as Blocker if UI is unstyled/toy HTML.
+- When 3rd-party APIs are integrated: Does the design address rate limits, client-level caching (in-memory TTL cache / reusable singleton client), and error degradation (never exhaust quotas with per-request instantiations)?
+- Are interface contracts (schemas/TypeScript types) defined for requests, responses, and domain models?
+
 ---
 
 ### Step 3: Build the Requirement → AC → Test Traceability Matrix
@@ -153,6 +158,7 @@ Format the comment body strictly as:
 | D4 Contract impact | ✅ / ⚠️ / ❌ | <one-line summary> |
 | D5 Testability | ✅ / ⚠️ / ❌ | <one-line summary> |
 | D6 Security & Privacy | ✅ / ⚠️ / ❌ | <one-line summary> |
+| D7 Technical Design & UI/API Soundness | ✅ / ⚠️ / ❌ | <one-line summary> |
 
 ### Requirement → AC → Test Traceability
 

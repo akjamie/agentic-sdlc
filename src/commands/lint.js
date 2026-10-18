@@ -59,6 +59,17 @@ export function runLint(changeId, opts = {}) {
   add('proposal.md', exists(path.join(cdir, 'proposal.md')) ? 'pass' : 'fail',
     exists(path.join(cdir, 'proposal.md')) ? '' : 'proposal.md missing');
 
+  const designPath = path.join(cdir, 'design.md');
+  if (exists(designPath)) {
+    const text = readText(designPath);
+    const nonComment = text.replace(/<!--[\s\S]*?-->/g, '').trim();
+    if (nonComment.length < 150) {
+      add('design.md', 'fail', 'design.md contains only unedited template placeholders; fill in technical design');
+    } else {
+      add('design.md', 'pass', 'technical design documented');
+    }
+  }
+
   const reviewPath = path.join(cdir, 'review.md');
   if (!exists(reviewPath)) {
     add('review.md', 'pass', 'delegated to CI bot (review comments & summary posted on PR)');

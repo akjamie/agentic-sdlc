@@ -131,13 +131,13 @@ flowchart LR
 | Stage & Command | Lifecycle Action & Governance Guard |
 | :--- | :--- |
 | **1 · Init**<br>`asdlc init [--ci jenkins]` | Bootstraps OpenSpec + Graphify, governance schema, policy, and 8+ agent tools. |
-| **2 · New**<br>`asdlc new "<requirement>"` | Derives canonical slug, queries code graph, and interviews author via `batch-grill-me`. |
-| **3 · Spec PR**<br>`asdlc pr <ID> <targetBranch>` | Pre-flight BDD/AC linting (`asdlc lint`), attaches `asdlc:spec-review` label, triggers CI Spec AI Review before human approval. |
+| **2 · New**<br>`asdlc new "<requirement>" [--design]` | Derives slug, auto-seeds `design.md` for UI/API systems, queries code graph, guides 3rd-party research with offline degradation, and interviews author via `batch-grill-me`. |
+| **3 · Spec PR**<br>`asdlc pr <ID> <targetBranch>` | Pre-flight BDD/AC and technical design linting (`asdlc lint`), attaches `asdlc:spec-review` label, triggers CI Spec AI Review before human approval. |
 | **4 · Approve (Optional)**<br>`asdlc approve <ID>` | *(Optional)* Explicit audit stamp after Spec PR merge. `asdlc apply` automatically detects merged PRs if skipped. |
-| **5 · Apply**<br>`asdlc apply <ID>` | Multi-tenant zero-diff guard; launches `/asdlc:apply` task-level TDD Red-Green engine. |
+| **5 · Apply**<br>`asdlc apply <ID>` | Multi-tenant zero-diff guard; launches `/asdlc:apply` task-level TDD Red-Green engine guided by approved specs and `design.md`. |
 | **6 · Verify (Local)**<br>`asdlc verify <ID>` | Local pre-flight self-check across 12 deterministic gates (test-presence, tdd-evidence, AC mappings, external tests). |
 | **6.5 · Impl PR**<br>`asdlc pr <ID> <targetBranch>` | Pre-flight implementation verification, pushes impl branch, attaches `asdlc:impl-review` label, triggers CI Code AI Review before merge. |
-| **7 · Archive**<br>`asdlc archive <ID>` | Syncs delta to `openspec/specs/`, refreshes knowledge graph, updates `AGENTS.md` system status. |
+| **7 · Archive**<br>`asdlc archive <ID>` | Syncs delta to `openspec/specs/`, creates `AGENTS.md` if missing, refreshes knowledge graph, and updates `AGENTS.md` system status. |
 
 ### Dual-PR Governance & Label Dispatch
 
