@@ -53,26 +53,7 @@ Interview the author relentlessly until you reach a shared understanding. Map th
 
 ---
 
-## 3. Mandatory Frontier Coverage: Functional, Security & NFRs
-
-Before declaring the frontier complete, the interviewer MUST evaluate three mandatory dimensions whenever the change introduces public interfaces, handles user input, integrates external services, or modifies performance-critical paths:
-
-1. **Functional Seams & Domain Boundaries**:
-   - Primary user journeys, alternate workflows, domain models, and error surfaces.
-2. **Security & Threat Mitigation**:
-   - **AuthN / AuthZ**: Caller identity verification, token validation, scope/role enforcement.
-   - **Input Validation & Sanitization**: Schema constraints, bounds, path traversal checks, injection defense.
-   - **Secrets & Credentials**: Injected via environment variables; never logged, committed, or serialized.
-   - **Data Privacy & PII**: Egress restrictions, user data retention, and redacted logging.
-3. **Operational NFRs & Performance Budgets**:
-   - **Latency Budgets & SLAs**: p95/p99 response latency limits, debouncing search queries, caching strategy.
-   - **Resource Bounds**: Cache size limits (LRU / max entries), TTL expiration, memory leak safeguards.
-   - **Upstream Quota & Rate Limits**: Singleton client reuse (never recreate per request), exponential backoff on 429s.
-   - **Fault Tolerance & Degradation**: Timeout bounds, circuit breaking, offline/stale cache fallback.
-
----
-
-## 4. Question Formulation & Anti-Patterns
+## 3. Question Formulation & Anti-Patterns
 
 > [!CAUTION]
 > **Strict Anti-Pattern Enforcement**:
@@ -93,17 +74,16 @@ Before declaring the frontier complete, the interviewer MUST evaluate three mand
 
 ---
 
-## 5. Pre-Flight Self-Check (Run Before Every Batch)
+## 4. Pre-Flight Self-Check (Run Before Every Batch)
 
-Before emitting a batch round to the author, verify these 4 conditions:
+Before emitting a batch round to the author, verify these 3 conditions:
 - [ ] **Dependency Check**: Does any question in this round depend on the answer to another question in this same round? (If YES: cut the dependent question; save it for the next round).
 - [ ] **Real Options Check**: Does every question have distinct, mutually exclusive options (Option A vs Option B)? Are there any `Rec: yes` or rhetorical statements? (If YES: rewrite as real options or drop).
 - [ ] **Fact Check**: Did I ask the author anything that could be looked up in the codebase or `explore.md`? (If YES: look it up; don't ask).
-- [ ] **Security & NFR Check**: If this change introduces APIs, user inputs, or external services, did I probe security boundaries (auth/validation/secrets) and operational NFRs (latency/caching/rate limits)?
 
 ---
 
-## 6. Batch Presentation Format
+## 5. Batch Presentation Format
 
 Format each round of the interview strictly as follows:
 

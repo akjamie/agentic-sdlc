@@ -116,6 +116,10 @@ _(unavailable - graph query error)_
 
 ## Settled decisions
 <!-- one entry per settled decision: decision -> answer, with the reason -->
+<!-- Consider key architectural dimensions: -->
+<!-- 1. Functional Scope & Seams (user journeys, error states, domain models) -->
+<!-- 2. Security & Threat Mitigation (auth, parameter validation, secrets, data privacy) -->
+<!-- 3. Operational NFRs & Performance Budgets (latency SLAs, cache TTL, rate limits) -->
 
 ## Open questions
 <!-- must be empty before the spec is written -->
@@ -124,9 +128,9 @@ _(unavailable - graph query error)_
   }
 
   // Technical design (design.md) scaffolding:
-  // Auto-seed if requirement implies UI, frontend, API integration, or technical complexity,
+  // Auto-seed if requirement implies UI, frontend, API integration, security, NFR, or technical complexity,
   // or if explicitly requested via opts.design === true.
-  const UI_OR_TECH_KEYWORDS = /\b(ui|ux|frontend|web|screen|page|view|component|css|style|api|endpoint|service|client|integration|database|db|schema|model|architecture|refactor|migration|auth|payment|cache|gateway|protocol)\b/i;
+  const UI_OR_TECH_KEYWORDS = /\b(ui|ux|frontend|web|screen|page|view|component|css|style|api|endpoint|service|client|integration|database|db|schema|model|architecture|refactor|migration|auth|payment|cache|gateway|protocol|security|threat|nfr|performance|rate.?limit|sanitize|encryption)\b/i;
   const shouldSeedDesign = opts.design === true || (opts.design !== false && UI_OR_TECH_KEYWORDS.test(requirement));
   const designPath = path.join(cdir, 'design.md');
   if (shouldSeedDesign && !exists(designPath)) {
@@ -135,20 +139,20 @@ _(unavailable - graph query error)_
     tmpl = tmpl.replace('<!-- change id -->', slug);
     tmpl = tmpl.replace('<!-- requirement summary -->', requirement.replace(/"/g, '\\"'));
     writeText(designPath, tmpl);
-    log.ok('seeded design.md (technical design for architecture/UI/API)');
+    log.ok('seeded design.md (technical design for architecture/UI/API/security/NFR)');
   }
 
   log.info('');
   log.info('[ASDLC PROTOCOL: IMMEDIATE ACTION REQUIRED FOR AGENT]');
   log.info('  ▶ DO NOT pause or ask the author if you should begin grilling.');
-  log.info('  ▶ IMMEDIATELY invoke the `batch-grill-me` (or `grilling`) skill in this turn:');
-  log.info('    1. Ground yourself in `explore.md` and research codebase facts first.');
-  log.info('    2. Perform external search for 3rd-party APIs, vendor SDKs, and UI design patterns.');
-  log.info('       (If search fails or offline: emit \'[WARN] External search failed or offline: <reason>. Continuing with defined steps.\' and continue without blocking).');
-  log.info('    3. Present Batch 1 questions (Q1..Qn with concrete recommended defaults) to the author.');
-  log.info('    4. Record agreed decisions into `clarifications.md`.');
-  log.info('    5. ONLY AFTER clarifications are settled: author `proposal.md`, `specs/**`, and `design.md` (if seeded/needed).');
-  log.info(`    6. Run \`asdlc lint ${slug}\`.`);
+  log.info('  ▶ Ground yourself in `explore.md` and research codebase facts first.');
+  log.info('  ▶ Perform external search for 3rd-party APIs, vendor SDKs, and UI design patterns (enabled by default).');
+  log.info('     (If search fails or offline: emit \'[WARN] External search failed or offline: <reason>. Continuing with defined steps.\' and continue without blocking).');
+  log.info('  ▶ Formulate decision frontier covering Functional scope, Security threat vectors, and Operational NFRs.');
+  log.info('  ▶ Invoke `batch-grill-me` (or `grilling`) to present structured Batch 1 questions with recommended defaults.');
+  log.info('  ▶ Record agreed decisions into `clarifications.md`.');
+  log.info('  ▶ ONLY AFTER clarifications are settled: author `proposal.md`, `specs/**`, and `design.md` (if seeded/needed).');
+  log.info(`  ▶ Run \`asdlc lint ${slug}\`.`);
   return slug;
 }
 

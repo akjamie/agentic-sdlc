@@ -57,3 +57,15 @@ test('newChange: does not seed design.md for simple non-technical requirement', 
 
   assert.ok(!fs.existsSync(designPath), 'design.md should not be seeded for non-UI/non-tech requirement');
 });
+
+test('newChange: auto-seeds design.md when requirement mentions security or NFR keywords', () => {
+  const repo = tmpRepo();
+  const slug = newChange('implement rate limiting and security token encryption', { repoRoot: repo, openspec: false });
+  const cdir = path.join(repo, 'openspec', 'changes', slug);
+  const designPath = path.join(cdir, 'design.md');
+
+  assert.ok(fs.existsSync(designPath), 'design.md should be auto-seeded for security/NFR requirement');
+  const content = fs.readFileSync(designPath, 'utf8');
+  assert.ok(content.includes('Security Architecture, Threat Mitigation & Operational NFRs'));
+});
+
