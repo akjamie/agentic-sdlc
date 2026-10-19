@@ -52,23 +52,47 @@ What enterprise engineering leaders and platform architects care about most when
 
 ## Three-Plane Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ PLANE 3: Agentic IDE Skills & Commands (.agents/skills, .claude/skills, ...)│
-│  ● asdlc:new  ● asdlc:lint  ● asdlc:review  ● asdlc:apply  ● asdlc:verify  │
-│  ● Bundled Engines: grilling (batch-grill-me), asdlc-apply (TDD Red-Green)  │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │ runs CLI with --json
-┌──────────────────────────────────────▼──────────────────────────────────────┐
-│ PLANE 2: Governance CLI & CI Gate (asdlc init/new/lint/approve/apply/verify)│
-│  ● Path-limited approval evidence  ● Deterministic BDD/AC linters           │
-│  ● Diff-based test presence gate   ● Schema version pin & override guard    │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │ calls pure functions
-┌──────────────────────────────────────▼──────────────────────────────────────┐
-│ PLANE 1: Core Library (src/lib/ — zero side-effects, fully unit-tested)     │
-│  ● speclint  ● tdd  ● prtype  ● policy  ● graphify  ● schema  ● agents      │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph P3 ["PLANE 3 · Agentic IDE Surface (Autonomous Skills & Conversations)"]
+        direction LR
+        S_NEW["/asdlc:new<br/>(Scaffold & Graph Grounding)"]
+        S_GRILL["grilling<br/>(Batch-Grill-Me Protocol)"]
+        S_LINT["/asdlc:lint<br/>(Deterministic BDD/AC Gate)"]
+        S_APPLY["/asdlc:apply<br/>(Guarded TDD Red-Green)"]
+        S_TEST["asdlc test<br/>(Acceptance Test Runner)"]
+        S_VERIFY["/asdlc:verify<br/>(12-Gate Implementation Check)"]
+    end
+
+    subgraph P2 ["PLANE 2 · Governance CLI & Hard CI Gates (Deterministic, Exit-Coded)"]
+        direction LR
+        C_GUARD["Cryptographic Guard<br/>approvedSha Lock & Anti-Tamper"]
+        C_LINT["BDD / AC Linters<br/>R0–R8 + Scenario Coverage"]
+        C_RUNNER["Acceptance Runner<br/>(test: path) Mapping Execution"]
+        C_VERIFY["12 Verify Gates<br/>Test Presence + TDD Evidence"]
+    end
+
+    subgraph P1 ["PLANE 1 · Core Library (src/lib/ · Pure Functions, Zero Side-Effects)"]
+        direction LR
+        L_SPEC["speclint.js<br/>Rule Engine"]
+        L_TDD["tdd.js<br/>Evidence Tracker"]
+        L_GIT["git.js<br/>Path-Limited SHA"]
+        L_GRAPH["graphify.js<br/>AST Code Topology"]
+        L_POLICY["policy.js<br/>Governance Schema"]
+    end
+
+    P3 -->|"Invokes CLI with --json"| P2
+    P2 -->|"Calls pure domain functions"| P1
+
+    classDef p3Style fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#ffffff,rx:8px,ry:8px;
+    classDef p2Style fill:#0f172a,stroke:#0ea5e9,stroke-width:2px,color:#ffffff,rx:8px,ry:8px;
+    classDef p1Style fill:#022c22,stroke:#10b981,stroke-width:2px,color:#ffffff,rx:8px,ry:8px;
+    classDef nodeStyle fill:#1e293b,stroke:#475569,stroke-width:1px,color:#f8fafc,rx:6px,ry:6px;
+
+    class P3 p3Style;
+    class P2 p2Style;
+    class P1 p1Style;
+    class S_NEW,S_GRILL,S_LINT,S_APPLY,S_TEST,S_VERIFY,C_GUARD,C_LINT,C_RUNNER,C_VERIFY,L_SPEC,L_TDD,L_GIT,L_GRAPH,L_POLICY nodeStyle;
 ```
 
 For complete technical specifications of each plane, see [docs/architecture.md](docs/architecture.md).
@@ -124,25 +148,41 @@ asdlc doctor
 ## The Seven Stages
 
 ```mermaid
-flowchart LR
-    S1["1 · init<br/>setup + skills"] --> S2["2 · new<br/>intent + grill"]
-    S2 --> S3["3 · spec pr<br/>lint + open Spec PR"]
-    S3 --> S4["4 · approve<br/>Spec PR merge (main)"]
-    S4 --> S5["5 · apply<br/>guard + TDD loop"]
-    S5 --> S5b["5.5 · test<br/>acceptance tests"]
-    S5b --> S6["6 · verify<br/>12 gates (local)"]
-    S6 --> PR2["Impl PR<br/>asdlc pr (CI AI Review)"]
-    PR2 --> S7["7 · archive<br/>sync + graph"]
+flowchart TD
+    subgraph PHASE1 ["Phase A · Specification & Alignment (Intent to Contract)"]
+        direction LR
+        S1["1 · init<br/><b>Toolchain Setup</b><br/>OpenSpec + Graphify"] --> S2["2 · new<br/><b>Intent Scaffolding</b><br/>AST explore.md"]
+        S2 --> S2b["2.5 · grill<br/><b>Batch-Grill-Me</b><br/>Settle clarifications.md"]
+        S2b --> S3["3 · lint<br/><b>BDD/AC Gate</b><br/>R0–R8 + Scenario Coverage"]
+        S3 --> PR1{{"<b>Spec PR (Stage 3.5)</b><br/>CI Spec AI Review"}}
+        PR1 -->|"Human TL Approves & Merges"| S4["4 · approve<br/><b>Cryptographic Lock</b><br/>approvedSha & ready_for_impl"]
+    end
 
-    style S1 fill:#e8f4fd,stroke:#2196f3
-    style S2 fill:#e8f4fd,stroke:#2196f3
-    style S3 fill:#e8f4fd,stroke:#2196f3
-    style S4 fill:#fff3e0,stroke:#ff9800
-    style S5 fill:#e8f5e9,stroke:#4caf50
-    style S5b fill:#e8f5e9,stroke:#4caf50
-    style S6 fill:#fff3e0,stroke:#ff9800
-    style PR2 fill:#e8f5e9,stroke:#4caf50
-    style S7 fill:#f3e5f5,stroke:#9c27b0
+    subgraph PHASE2 ["Phase B · Implementation & Hard Gate TDD (Contract to Verified Code)"]
+        direction LR
+        S4 -.->|"Guarded Unlock"| S5["5 · apply<br/><b>Apply Guard Check</b><br/>Refuses unapproved specs"]
+        S5 --> S5_TDD["<b>TDD Red-Green Loop</b><br/>Red -> Green -> Refactor"]
+        S5_TDD --> S5_TEST["5.5 · test<br/><b>Acceptance Tests</b><br/>Runs mapped AC assertions"]
+        S5_TEST --> S6["6 · verify<br/><b>12 Local Gates</b><br/>spec-tamper + test-presence"]
+        S6 --> PR2{{"<b>Impl PR (Stage 6.5)</b><br/>CI Acceptance Tests (asdlc test)<br/>Player ≠ Referee AI Review"}}
+    end
+
+    subgraph PHASE3 ["Phase C · Closeout & Living Catalog (Trunk Archive)"]
+        direction LR
+        PR2 -.->|"Peer Review & Merge"| S7["7 · archive<br/><b>Living Spec Sync</b><br/>openspec/specs/ + AST Refresh"]
+    end
+
+    classDef stageBox fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#f8fafc,rx:6px,ry:6px;
+    classDef prBox fill:#312e81,stroke:#a855f7,stroke-width:2px,color:#ffffff,rx:10px,ry:10px;
+    classDef lockBox fill:#451a03,stroke:#f59e0b,stroke-width:2px,color:#ffffff,rx:6px,ry:6px;
+    classDef closeBox fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#ffffff,rx:6px,ry:6px;
+    classDef subStyle fill:#020617,stroke:#334155,stroke-width:1.5px,color:#94a3b8;
+
+    class S1,S2,S2b,S3,S5,S5_TDD,S5_TEST,S6 stageBox;
+    class PR1,PR2 prBox;
+    class S4 lockBox;
+    class S7 closeBox;
+    class PHASE1,PHASE2,PHASE3 subStyle;
 ```
 
 | Stage & Command | Lifecycle Action & Governance Guard |
@@ -181,20 +221,48 @@ flowchart LR
 `asdlc verify` executes in local developer terminals and on CI (Jenkins/GitHub Actions) without drift:
 
 ```mermaid
-flowchart TB
-    V["asdlc verify"] --> C1["pr-type<br/>paths only discrimination"]
-    V --> C2["artifacts<br/>proposal + review + tasks + explore + spec"]
-    V --> C3["approved-spec<br/>git log verification on target branch"]
-    V --> C3b["spec-tamper<br/>locked spec paths unmodified in impl PR"]
-    V --> C4["flow-state<br/>READY_FOR_IMPL verification"]
-    V --> C5["tasks-complete<br/>all checkboxes resolved"]
-    V --> C6["test-presence<br/>code diff mandates test diff"]
-    V --> C7["tdd-evidence<br/>verified task output annotations"]
-    V --> C8["BDD + AC<br/>GIVEN/WHEN/THEN + AC→test mapping"]
-    V --> C9["openspec validate<br/>--all --strict"]
-    V --> C10["schema-managed<br/>central install + version pin"]
-    V --> C11["external<br/>unit tests · contract · security"]
-    V --> C12["AI verification<br/>independent referee model"]
+flowchart TD
+    V["<b>asdlc verify &lt;ID&gt;</b><br/>Deterministic Implementation Gatekeeper"]
+
+    subgraph TIER1 ["Tier 1 · Cryptographic & Contract Integrity"]
+        G_APPROVED["<b>approved-spec</b><br/>Matches commit on main"]
+        G_TAMPER["<b>spec-tamper</b><br/>Zero spec modifications in Impl PR"]
+        G_STATE["<b>flow-state</b><br/>Status is READY_FOR_IMPL"]
+        G_ARTIFACTS["<b>artifacts</b><br/>proposal, tasks, spec delta present"]
+    end
+
+    subgraph TIER2 ["Tier 2 · Code & Test Fidelity (TDD Invariants)"]
+        G_PRESENCE["<b>test-presence</b><br/>Code changes mandate test changes"]
+        G_TDD["<b>tdd-evidence</b><br/>Recorded test execution logs"]
+        G_BDD["<b>BDD + AC Traceability</b><br/>GIVEN/WHEN/THEN + (test: path)"]
+        G_TASKS["<b>tasks-complete</b><br/>All tasks checked off in tasks.md"]
+    end
+
+    subgraph TIER3 ["Tier 3 · Engine & Environment Invariants"]
+        G_PR["<b>pr-type</b><br/>Path classification"]
+        G_OPENSPEC["<b>openspec validate</b><br/>Schema conformance --all --strict"]
+        G_SCHEMA["<b>schema-managed</b><br/>Central install + pinned version"]
+        G_EXTERNAL["<b>external tests</b><br/>Unit, integration, and security tests"]
+    end
+
+    subgraph TIER4 ["Tier 4 · Independent AI Review (CI Referee)"]
+        G_AI["<b>Player ≠ Referee AI Verification</b><br/>Independent model, fresh context, spec conformance audit"]
+    end
+
+    V --> TIER1
+    V --> TIER2
+    V --> TIER3
+    V --> TIER4
+
+    classDef rootStyle fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#ffffff,rx:8px,ry:8px;
+    classDef tierStyle fill:#020617,stroke:#334155,stroke-width:1.5px,color:#94a3b8;
+    classDef gateStyle fill:#0f172a,stroke:#0284c7,stroke-width:1px,color:#f1f5f9,rx:5px,ry:5px;
+    classDef aiStyle fill:#3b0764,stroke:#c084fc,stroke-width:1.5px,color:#fdf4ff,rx:6px,ry:6px;
+
+    class V rootStyle;
+    class TIER1,TIER2,TIER3,TIER4 tierStyle;
+    class G_APPROVED,G_TAMPER,G_STATE,G_ARTIFACTS,G_PRESENCE,G_TDD,G_BDD,G_TASKS,G_PR,G_OPENSPEC,G_SCHEMA,G_EXTERNAL gateStyle;
+    class G_AI aiStyle;
 ```
 
 ---
