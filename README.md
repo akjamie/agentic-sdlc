@@ -10,6 +10,7 @@
 ## Contents
 
 - [What problem this solves](#what-problem-this-solves)
+- [Enterprise Quality Gates & Non-Negotiable Invariants](#-enterprise-quality-gates--non-negotiable-invariants)
 - [Three-Plane Architecture](#three-plane-architecture)
 - [Bundled Out-of-the-Box Skills](#bundled-out-of-the-box-skills)
 - [Install & Setup](#install--setup)
@@ -34,6 +35,20 @@ Spec-driven development works — until you scale it past one team or turn AI ag
 - **Player ≠ Referee**: Independent AI verification uses a different model and a fresh context than the authoring agent.
 
 ---
+
+## 🛡️ Enterprise Quality Gates & Non-Negotiable Invariants
+
+What enterprise engineering leaders and platform architects care about most when deploying autonomous or pair-programming AI agents into production repositories:
+
+| Quality Gate / Invariant | Enforcement Mechanism | Failure Mode & Blast Radius Protection |
+| :--- | :--- | :--- |
+| **1. No Apply Before Approval & Spec PR Merge** | `asdlc apply <ID>` verifies path-limited Git commit (`approvedSha`) touching `proposal.md` and `specs/**` on the protected branch (`main`). | **Hard Refusal**: Agents cannot write a single line of production code on an unapproved spec draft. |
+| **2. Cryptographic Anti-Tampering (`spec-tamper`)** | `asdlc verify` computes path-limited SHA of locked spec files in the implementation diff against `approvedSha`. | **PR Rejection**: Agents are barred from silently altering specs or moving the goalposts to make failing tests pass. |
+| **3. Full Scenario-to-AC Traceability (`R5-scenario-coverage`)** | `asdlc lint` enforces that every scenario declared under a requirement has at least one corresponding Acceptance Criterion (`scens.length <= acs.length`). | **Pre-flight Blocker**: Prevents agents from specifying complex failure/edge-case scenarios while only providing a single happy-path AC. |
+| **4. Deterministic Acceptance Test Gate (`asdlc test`)** | `asdlc test <ID>` parses all `- [ ] ACn: ... (test: <path>)` mappings and executes real test assertions via native runners. | **Dual-Harness Defense**: Empowers local TDD red-to-green iterations, while CI independently executes `asdlc test <ID> --json` to fail fake claims. |
+| **5. Player ≠ Referee Isolation** | CI implementation review runs independently with fresh LLM context; does not rely on author agent self-declarations in `tasks.md`. | **Audit Integrity**: The authoring agent can never grade its own exam. CI independent execution is the ground truth. |
+| **6. Diff-Based Test Presence Gate (`test-presence`)** | `asdlc verify` diff analyzer checks that any change to production code (`src/**`) includes matching test files (`test/**`). | **Zero Untested Code**: Shuts down AI "code dumps" that ship features without unit or integration tests. |
+| **7. Immutable Converge Protocol (`SPEC_GAP`)** | If real-world implementation exposes unworkable assumptions in the approved spec, the agent must halt. | **Anti-Drift Protection**: Silent spec mutations are blocked. The agent files a `SPEC_GAP` report; human leads re-approve via a fresh spec delta. |
 
 ## Three-Plane Architecture
 
@@ -112,9 +127,10 @@ asdlc doctor
 flowchart LR
     S1["1 · init<br/>setup + skills"] --> S2["2 · new<br/>intent + grill"]
     S2 --> S3["3 · spec pr<br/>lint + open Spec PR"]
-    S3 --> S4["4 · approve (optional)<br/>audit check"]
-    S4 --> S5["5 · apply<br/>TDD loop"]
-    S5 --> S6["6 · verify<br/>12 gates (local)"]
+    S3 --> S4["4 · approve<br/>Spec PR merge (main)"]
+    S4 --> S5["5 · apply<br/>guard + TDD loop"]
+    S5 --> S5b["5.5 · test<br/>acceptance tests"]
+    S5b --> S6["6 · verify<br/>12 gates (local)"]
     S6 --> PR2["Impl PR<br/>asdlc pr (CI AI Review)"]
     PR2 --> S7["7 · archive<br/>sync + graph"]
 
@@ -123,6 +139,7 @@ flowchart LR
     style S3 fill:#e8f4fd,stroke:#2196f3
     style S4 fill:#fff3e0,stroke:#ff9800
     style S5 fill:#e8f5e9,stroke:#4caf50
+    style S5b fill:#e8f5e9,stroke:#4caf50
     style S6 fill:#fff3e0,stroke:#ff9800
     style PR2 fill:#e8f5e9,stroke:#4caf50
     style S7 fill:#f3e5f5,stroke:#9c27b0
@@ -132,11 +149,12 @@ flowchart LR
 | :--- | :--- |
 | **1 · Init**<br>`asdlc init [--ci jenkins]` | Bootstraps OpenSpec + Graphify, governance schema, policy, and 8+ agent tools. |
 | **2 · New**<br>`asdlc new "<requirement>" [--design]` | Derives slug, auto-seeds `design.md` for UI/API systems, queries code graph, guides 3rd-party research with offline degradation, and interviews author via `batch-grill-me`. |
-| **3 · Spec PR**<br>`asdlc pr <ID> <targetBranch>` | Pre-flight BDD/AC and technical design linting (`asdlc lint`), attaches `asdlc:spec-review` label, triggers CI Spec AI Review before human approval. |
-| **4 · Approve (Optional)**<br>`asdlc approve <ID>` | *(Optional)* Explicit audit stamp after Spec PR merge. `asdlc apply` automatically detects merged PRs if skipped. |
-| **5 · Apply**<br>`asdlc apply <ID>` | Multi-tenant zero-diff guard; launches `/asdlc:apply` task-level TDD Red-Green engine guided by approved specs and `design.md`. |
-| **6 · Verify (Local)**<br>`asdlc verify <ID>` | Local pre-flight self-check across 12 deterministic gates (test-presence, tdd-evidence, AC mappings, external tests). |
-| **6.5 · Impl PR**<br>`asdlc pr <ID> <targetBranch>` | Pre-flight implementation verification, pushes impl branch, attaches `asdlc:impl-review` label, triggers CI Code AI Review before merge. |
+| **3 · Spec PR**<br>`asdlc pr <ID> <targetBranch>` | Pre-flight BDD/AC linting (`asdlc lint` enforcing scenario-to-AC coverage `R5-scenario-coverage`), attaches `asdlc:spec-review` label, triggers CI Spec AI Review before human approval. |
+| **4 · Approve**<br>`asdlc approve <ID>` | **Spec PR merge to main is the approval**: records path-limited commit SHA (`specSha`) + unlocks `READY_FOR_IMPL`. `asdlc apply` auto-detects merged PRs if approve was run in CI. |
+| **5 · Apply**<br>`asdlc apply <ID>` | **Hard Approval Guard**: physically checks `approvedSha` on `main`; **strictly refuses** execution if the spec is unapproved. Launches task-level TDD Red-Green loop (`/asdlc:apply`). |
+| **5.5 · Acceptance Tests**<br>`asdlc test <ID> [--json]` | Runs code acceptance tests mapped from specs (`- [ ] ACn: ... (test: <path>)`). Drives local TDD red-to-green transitions, and serves as the deterministic CI execution gate. |
+| **6 · Verify (Local)**<br>`asdlc verify <ID>` | Local pre-flight self-check across 12 deterministic gates: anti-tampering (`spec-tamper`), test presence, task evidence, AC mappings, external tests. |
+| **6.5 · Impl PR**<br>`asdlc pr <ID> <targetBranch>` | Pre-flight implementation verification, pushes impl branch, attaches `asdlc:impl-review` label, triggers CI Code AI Review + independent `asdlc test` execution (**Player ≠ Referee**). |
 | **7 · Archive**<br>`asdlc archive <ID>` | Syncs delta to `openspec/specs/`, creates `AGENTS.md` if missing, refreshes knowledge graph, and updates `AGENTS.md` system status. |
 
 ### Dual-PR Governance & Label Dispatch
@@ -145,8 +163,8 @@ flowchart LR
 
 | PR Phase | Trigger Moment & Pre-flight | PR Labels | CI Automation Trigger | Human Action |
 | :--- | :--- | :--- | :--- | :--- |
-| **Spec PR** | After spec drafting; runs **`asdlc lint`** (0 blockers) | `asdlc:spec-review`<br>`spec` | Runs `asdlc lint` + triggers **Spec AI Review** (clarity, BDD scenarios, architecture alignment) | TL / Domain Lead approves & merges |
-| **Impl PR** | After TDD implementation; runs **`asdlc verify`** (12 gates) | `asdlc:impl-review`<br>`impl` | Runs `asdlc verify` + triggers **Code AI Review** (diff analysis, style, edge cases) | Lead / Peer reviews code & merges |
+| **Spec PR** | After spec drafting; runs **`asdlc lint`** (0 blockers, R5 scenario coverage) | `asdlc:spec-review`<br>`spec` | Runs `asdlc lint` + triggers **Spec AI Review** (clarity, BDD scenarios, architecture alignment) | TL / Domain Lead approves & merges to `main` |
+| **Impl PR** | After TDD implementation; runs **`asdlc verify`** (12 gates) | `asdlc:impl-review`<br>`impl` | Runs `asdlc verify` + executes **`asdlc test --json`** + triggers **Code AI Review** (**Player ≠ Referee**) | Lead / Peer reviews code & merges |
 
 **Navigation, Diagnostics & Workspace Maintenance:**
 - `asdlc status <ID>`: Instant orientation on current stage and exact next command.
@@ -160,7 +178,7 @@ flowchart LR
 
 ## What `asdlc verify` Checks
 
-`asdlc verify` executes in local developer terminals and on CI (Jenkins) without drift:
+`asdlc verify` executes in local developer terminals and on CI (Jenkins/GitHub Actions) without drift:
 
 ```mermaid
 flowchart TB
@@ -183,13 +201,14 @@ flowchart TB
 
 ## Governance Principles
 
-1. **Adopt the engines, own the governance plane.** OpenSpec and Graphify are adopted, not forked.
-2. **Approval is git.** A merged spec PR *is* the human approval; the gate proves it with a path-limited `git log`.
-3. **Fail-closed.** Any verification without an approved commit fails.
-4. **Deterministic first.** Linters, diff analyzers, and schema validators are pure functions (no LLM jitter).
-5. **Enforced TDD.** Implementation diffs touching production code without tests are rejected by `test-presence`.
-6. **Ground specs in code.** Graphify AST queries ground specifications in real code structure.
-7. **One front door.** Everything runs through `asdlc` — no raw escape hatches.
+1. **Approval is Git (No Apply Before PR Merge)**: A merged Spec PR on the protected branch (`main`) *is* the human approval. The `asdlc apply` guard proves it via path-limited `git log` and physically halts if the spec is unapproved.
+2. **Cryptographic Anti-Tampering (`spec-tamper`)**: Merged to the protected branch, the spec is immutable. In an Implementation PR, any unauthorized modification to locked spec paths is immediately blocked.
+3. **Deterministic Acceptance Testing (`asdlc test`)**: Every requirement must specify test-mapped Acceptance Criteria. `asdlc test` runs code assertions — enabling local TDD red-to-green iterations and deterministic CI gates.
+4. **Player ≠ Referee Isolation**: The authoring agent can never act as its own quality gate. CI independently runs the test runner and invokes separate AI reviews with fresh context.
+5. **Full Scenario AC Coverage (`R5-scenario-coverage`)**: Spec linter enforces that every scenario declared under a requirement has at least one corresponding Acceptance Criterion (`scens.length <= acs.length`).
+6. **Enforced TDD via Test Presence (`test-presence`)**: Implementation diffs touching production code without corresponding test modifications are rejected at the gate.
+7. **Ground Specs in Code AST (Graphify)**: Graphify AST code knowledge graph queries ground specifications in real code structure and architectural hubs before drafting.
+8. **One Front Door & Fail-Closed**: Everything runs through `asdlc` wrappers — no raw escape hatches. Any missing approval or broken invariant fails closed.
 
 ---
 
@@ -210,7 +229,7 @@ flowchart TB
 
 ```bash
 npm install
-npm test        # 66 unit and integration tests (100% pass)
+npm test        # 86 unit and integration tests (100% pass)
 ```
 
 ---
