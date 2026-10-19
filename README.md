@@ -49,6 +49,7 @@ What enterprise engineering leaders and platform architects care about most when
 | **5. Player ≠ Referee Isolation** | CI implementation review runs independently with fresh LLM context; does not rely on author agent self-declarations in `tasks.md`. | **Audit Integrity**: The authoring agent can never grade its own exam. CI independent execution is the ground truth. |
 | **6. Diff-Based Test Presence Gate (`test-presence`)** | `asdlc verify` diff analyzer checks that any change to production code (`src/**`) includes matching test files (`test/**`). | **Zero Untested Code**: Shuts down AI "code dumps" that ship features without unit or integration tests. |
 | **7. Immutable Converge Protocol (`SPEC_GAP`)** | If real-world implementation exposes unworkable assumptions in the approved spec, the agent must halt. | **Anti-Drift Protection**: Silent spec mutations are blocked. The agent files a `SPEC_GAP` report; human leads re-approve via a fresh spec delta. |
+| **8. Triple-Gated Impl PR Merge** | Implementation PR merge to trunk (`main`) requires passing all three layers: CI Acceptance Tests (`asdlc test --json`), independent AI Impl Review (`asdlc-impl-review` with Player ≠ Referee), and human Tech Lead sign-off. | **Blast Radius Defense**: Prevents untested or unreviewed agent code from ever contaminating the protected branch. |
 
 ## Three-Plane Architecture
 
@@ -62,7 +63,8 @@ flowchart TD
             SK_NEW --> SK_LINT["3 · asdlc-lint<br/>BDD & AC Quality"]
             SK_LINT --> SK_APPLY["5 · asdlc-apply<br/>Task-Level TDD Engine"]
             SK_APPLY --> SK_VERIFY["6 · asdlc-verify<br/>12-Gate Audit"]
-            SK_VERIFY --> SK_ARCHIVE["7 · asdlc-archive<br/>Living Spec Sync"]
+            SK_VERIFY --> SK_GATE["Stage 6.5 Impl Gate<br/>AI AC Test + AI Review + Human TL"]
+            SK_GATE --> SK_ARCHIVE["7 · asdlc-archive<br/>Living Spec Sync"]
         end
         subgraph P3_REVIEWS ["CI Reviewers & Orientation Skills"]
             direction LR
@@ -79,12 +81,13 @@ flowchart TD
             direction LR
             CMD_INIT["init"] --> CMD_NEW["new"]
             CMD_NEW --> CMD_LINT["lint"]
-            CMD_LINT --> CMD_PR["pr"]
-            CMD_PR --> CMD_APPROVE["approve"]
+            CMD_LINT --> CMD_PR1["pr (spec)"]
+            CMD_PR1 --> CMD_APPROVE["approve"]
             CMD_APPROVE --> CMD_APPLY["apply"]
             CMD_APPLY --> CMD_TEST["test"]
             CMD_TEST --> CMD_VERIFY["verify"]
-            CMD_VERIFY --> CMD_ARCHIVE["archive"]
+            CMD_VERIFY --> CMD_PR2["pr (impl)"]
+            CMD_PR2 --> CMD_ARCHIVE["archive"]
         end
         subgraph P2_GATES ["Cryptographic & Hard Verification Engines"]
             direction LR
@@ -93,6 +96,7 @@ flowchart TD
             G_COV["R5 Scenario Coverage<br/>Scenario = AC Traceability"]
             G_RUNNER["asdlc test Runner<br/>(test: path) Execution"]
             G_PRESENCE["test-presence Gate<br/>Code Diff = Test Diff"]
+            G_TRIPLE["Triple-Review Gate<br/>AI AC Test + AI Review + Human TL"]
         end
     end
 
@@ -136,9 +140,9 @@ flowchart TD
     class P2 p2Style;
     class P1 p1Style;
     class P3_STAGES,P3_REVIEWS,P2_STAGES,P2_GATES,P1_GOV,P1_GRAPH,P1_EXEC subCard;
-    class SK_INIT,SK_NEW,SK_LINT,SK_APPLY,SK_VERIFY,SK_ARCHIVE,SK_SPECREV,SK_IMPLREV,SK_DOCTOR,SK_STATUS,M_LINT,M_POLICY,M_SCHEMA,M_AGENTS,M_GRAPH,M_GIT,M_FS,M_PATHS,M_TDD,M_TEST,M_PRTYPE,M_EXEC nodeStyle;
-    class CMD_INIT,CMD_NEW,CMD_LINT,CMD_PR,CMD_APPROVE,CMD_APPLY,CMD_TEST,CMD_VERIFY,CMD_ARCHIVE cmdStyle;
-    class G_LOCK,G_TAMPER,G_COV,G_RUNNER,G_PRESENCE gateCard;
+    class SK_INIT,SK_NEW,SK_LINT,SK_APPLY,SK_VERIFY,SK_GATE,SK_ARCHIVE,SK_SPECREV,SK_IMPLREV,SK_DOCTOR,SK_STATUS,M_LINT,M_POLICY,M_SCHEMA,M_AGENTS,M_GRAPH,M_GIT,M_FS,M_PATHS,M_TDD,M_TEST,M_PRTYPE,M_EXEC nodeStyle;
+    class CMD_INIT,CMD_NEW,CMD_LINT,CMD_PR1,CMD_APPROVE,CMD_APPLY,CMD_TEST,CMD_VERIFY,CMD_PR2,CMD_ARCHIVE cmdStyle;
+    class G_LOCK,G_TAMPER,G_COV,G_RUNNER,G_PRESENCE,G_TRIPLE gateCard;
 ```
 
 For complete technical specifications of each plane, see [docs/architecture.md](docs/architecture.md).
@@ -209,25 +213,38 @@ flowchart TD
         S5 --> S5_TDD["<b>TDD Red-Green Loop</b><br/>Red -> Green -> Refactor"]
         S5_TDD --> S5_TEST["5.5 · test<br/><b>Acceptance Tests</b><br/>Runs mapped AC assertions"]
         S5_TEST --> S6["6 · verify<br/><b>12 Local Gates</b><br/>spec-tamper + test-presence"]
-        S6 --> PR2{{"<b>Impl PR (Stage 6.5)</b><br/>CI Acceptance Tests (asdlc test)<br/>Player ≠ Referee AI Review"}}
+        S6 --> PR2{{"<b>Impl PR (Stage 6.5)</b><br/>asdlc pr (impl)"}}
+    end
+
+    subgraph PHASE_GATE ["Stage 6.5 Quality Gate · Triple-Verification Peer Review"]
+        direction LR
+        G_AC["<b>1 · CI Acceptance Test</b><br/>asdlc test --json"] --> G_AI["<b>2 · AI Impl Review</b><br/>Player ≠ Referee Audit"]
+        G_AI --> G_HUMAN{{"<b>3 · Human Final Review</b><br/>Tech Lead Sign-off"}}
     end
 
     subgraph PHASE3 ["Phase C · Closeout & Living Catalog (Trunk Archive)"]
         direction LR
-        PR2 -.->|"Peer Review & Merge"| S7["7 · archive<br/><b>Living Spec Sync</b><br/>openspec/specs/ + AST Refresh"]
+        S7["7 · archive<br/><b>Living Spec Sync</b><br/>openspec/specs/ + AST Refresh"]
     end
+
+    PR2 ==> G_AC
+    G_HUMAN -.->|"Approved & Merged to main"| S7
 
     classDef stageBox fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#f8fafc,rx:6px,ry:6px;
     classDef prBox fill:#312e81,stroke:#a855f7,stroke-width:2px,color:#ffffff,rx:10px,ry:10px;
     classDef lockBox fill:#451a03,stroke:#f59e0b,stroke-width:2px,color:#ffffff,rx:6px,ry:6px;
     classDef closeBox fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#ffffff,rx:6px,ry:6px;
+    classDef gateBox fill:#1e293b,stroke:#f59e0b,stroke-width:1.5px,color:#fef3c7,rx:6px,ry:6px;
+    classDef humanBox fill:#4c1d95,stroke:#c084fc,stroke-width:2px,color:#ffffff,rx:10px,ry:10px;
     classDef subStyle fill:#020617,stroke:#334155,stroke-width:1.5px,color:#94a3b8;
 
     class S1,S2,S3,S5,S5_TDD,S5_TEST,S6 stageBox;
     class PR1,PR2 prBox;
+    class G_AC,G_AI gateBox;
+    class G_HUMAN humanBox;
     class S4 lockBox;
     class S7 closeBox;
-    class PHASE1,PHASE2,PHASE3 subStyle;
+    class PHASE1,PHASE2,PHASE_GATE,PHASE3 subStyle;
 ```
 
 | Stage & Command | Lifecycle Action & Governance Guard |
@@ -239,8 +256,8 @@ flowchart TD
 | **5 · Apply**<br>`asdlc apply <ID>` | **Hard Approval Guard**: physically checks `approvedSha` on `main`; **strictly refuses** execution if the spec is unapproved. Launches task-level TDD Red-Green loop (`/asdlc:apply`). |
 | **5.5 · Acceptance Tests**<br>`asdlc test <ID> [--json]` | Runs code acceptance tests mapped from specs (`- [ ] ACn: ... (test: <path>)`). Drives local TDD red-to-green transitions, and serves as the deterministic CI execution gate. |
 | **6 · Verify (Local)**<br>`asdlc verify <ID>` | Local pre-flight self-check across 12 deterministic gates: anti-tampering (`spec-tamper`), test presence, task evidence, AC mappings, external tests. |
-| **6.5 · Impl PR**<br>`asdlc pr <ID> <targetBranch>` | Pre-flight implementation verification, pushes impl branch, attaches `asdlc:impl-review` label, triggers CI Code AI Review + independent `asdlc test` execution (**Player ≠ Referee**). |
-| **7 · Archive**<br>`asdlc archive <ID>` | Syncs delta to `openspec/specs/`, creates `AGENTS.md` if missing, refreshes knowledge graph, and updates `AGENTS.md` system status. |
+| **6.5 · Impl PR**<br>`asdlc pr <ID> <targetBranch>` | Pre-flight implementation verification, pushes impl branch, attaches `asdlc:impl-review` label, triggers CI Acceptance Tests (`asdlc test --json`) + CI Code AI Review (**Player ≠ Referee**). |
+| **7 · Archive**<br>`asdlc archive <ID>` | After human Tech Lead signs off on AI review + AC tests and merges Impl PR to `main`: syncs delta to `openspec/specs/`, creates `AGENTS.md` if missing, refreshes knowledge graph, and updates `AGENTS.md` system status. |
 
 ### Dual-PR Governance & Label Dispatch
 
@@ -249,7 +266,7 @@ flowchart TD
 | PR Phase | Trigger Moment & Pre-flight | PR Labels | CI Automation Trigger | Human Action |
 | :--- | :--- | :--- | :--- | :--- |
 | **Spec PR** | After spec drafting; runs **`asdlc lint`** (0 blockers, R5 scenario coverage) | `asdlc:spec-review`<br>`spec` | Runs `asdlc lint` + triggers **Spec AI Review** (clarity, BDD scenarios, architecture alignment) | TL / Domain Lead approves & merges to `main` |
-| **Impl PR** | After TDD implementation; runs **`asdlc verify`** (12 gates) | `asdlc:impl-review`<br>`impl` | Runs `asdlc verify` + executes **`asdlc test --json`** + triggers **Code AI Review** (**Player ≠ Referee**) | Lead / Peer reviews code & merges |
+| **Impl PR** | After TDD implementation; runs **`asdlc verify`** (12 gates) | `asdlc:impl-review`<br>`impl` | Runs `asdlc verify` + executes **`asdlc test --json`** (AI AC Test) + triggers **`asdlc-impl-review`** (**Player ≠ Referee**) | Tech Lead / Human Reviewer verifies AI review & AC test results, then approves & merges to `main` |
 
 **Navigation, Diagnostics & Workspace Maintenance:**
 - `asdlc status <ID>`: Instant orientation on current stage and exact next command.
