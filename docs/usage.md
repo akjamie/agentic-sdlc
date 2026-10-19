@@ -78,7 +78,7 @@ asdlc lint TECH-1234
 ```
 
 Checks: required artifacts, review verdict `APPROVE`, no blocking findings, BDD
-shape, AC→test mapping. Run before opening the spec PR.
+shape, scenario-to-AC coverage (`R5-scenario-coverage`), and AC→test mapping. Run before opening the spec PR.
 
 ### 3. Approve — merge the spec PR, then `asdlc approve <ID>`
 
@@ -105,7 +105,21 @@ asdlc apply TECH-1234
 Refuses if the spec is not approved. Then implement with `/opsx-apply` in your
 IDE using task-level TDD + converge.
 
-### 5. Verify — `asdlc verify <ID>`
+### 5. Acceptance Tests — `asdlc test <ID>`
+
+```bash
+# Local TDD validation: run tests mapped from change specs
+asdlc test TECH-1234
+
+# CI gate execution: output structured JSON for AI review
+asdlc test TECH-1234 --json
+```
+
+Executes all test files mapped via `(test: <path>)` in `specs/**/*.md`.
+- **Local TDD**: Agents run it locally to verify red-to-green transitions.
+- **CI Gate**: CI Implementation Review executes it independently to enforce **Player ≠ Referee** (blocking PR merge if any test fails).
+
+### 6. Verify — `asdlc verify <ID>`
 
 ```bash
 asdlc verify TECH-1234 --repo your-repo
@@ -113,7 +127,7 @@ asdlc verify TECH-1234 --repo your-repo
 
 Runs on the implementation PR in CI. Exit code non-zero = do not merge.
 
-### 6. Finish — `asdlc archive <ID>`
+### 7. Finish — `asdlc archive <ID>`
 
 ```bash
 asdlc archive TECH-1234
