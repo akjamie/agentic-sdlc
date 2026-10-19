@@ -56,8 +56,7 @@ What enterprise engineering leaders and platform architects care about most when
 flowchart TD
     subgraph P3 ["PLANE 3 · Agentic IDE Surface (Autonomous Skills & Conversations)"]
         direction LR
-        S_NEW["/asdlc:new<br/>(Scaffold & Graph Grounding)"]
-        S_GRILL["grilling<br/>(Batch-Grill-Me Protocol)"]
+        S_NEW["/asdlc:new<br/>(Scaffold, AST Grounding & Batch-Grill)"]
         S_LINT["/asdlc:lint<br/>(Deterministic BDD/AC Gate)"]
         S_APPLY["/asdlc:apply<br/>(Guarded TDD Red-Green)"]
         S_TEST["asdlc test<br/>(Acceptance Test Runner)"]
@@ -92,7 +91,7 @@ flowchart TD
     class P3 p3Style;
     class P2 p2Style;
     class P1 p1Style;
-    class S_NEW,S_GRILL,S_LINT,S_APPLY,S_TEST,S_VERIFY,C_GUARD,C_LINT,C_RUNNER,C_VERIFY,L_SPEC,L_TDD,L_GIT,L_GRAPH,L_POLICY nodeStyle;
+    class S_NEW,S_LINT,S_APPLY,S_TEST,S_VERIFY,C_GUARD,C_LINT,C_RUNNER,C_VERIFY,L_SPEC,L_TDD,L_GIT,L_GRAPH,L_POLICY nodeStyle;
 ```
 
 For complete technical specifications of each plane, see [docs/architecture.md](docs/architecture.md).
@@ -151,9 +150,8 @@ asdlc doctor
 flowchart TD
     subgraph PHASE1 ["Phase A · Specification & Alignment (Intent to Contract)"]
         direction LR
-        S1["1 · init<br/><b>Toolchain Setup</b><br/>OpenSpec + Graphify"] --> S2["2 · new<br/><b>Intent Scaffolding</b><br/>AST explore.md"]
-        S2 --> S2b["2.5 · grill<br/><b>Batch-Grill-Me</b><br/>Settle clarifications.md"]
-        S2b --> S3["3 · lint<br/><b>BDD/AC Gate</b><br/>R0–R8 + Scenario Coverage"]
+        S1["1 · init<br/><b>Toolchain Setup</b><br/>OpenSpec + Graphify"] --> S2["2 · new<br/><b>Scaffold + Batch-Grill-Me</b><br/>AST explore.md + clarifications.md"]
+        S2 --> S3["3 · lint<br/><b>BDD/AC Gate</b><br/>R0–R8 + Scenario Coverage"]
         S3 --> PR1{{"<b>Spec PR (Stage 3.5)</b><br/>CI Spec AI Review"}}
         PR1 -->|"Human TL Approves & Merges"| S4["4 · approve<br/><b>Cryptographic Lock</b><br/>approvedSha & ready_for_impl"]
     end
@@ -178,7 +176,7 @@ flowchart TD
     classDef closeBox fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#ffffff,rx:6px,ry:6px;
     classDef subStyle fill:#020617,stroke:#334155,stroke-width:1.5px,color:#94a3b8;
 
-    class S1,S2,S2b,S3,S5,S5_TDD,S5_TEST,S6 stageBox;
+    class S1,S2,S3,S5,S5_TDD,S5_TEST,S6 stageBox;
     class PR1,PR2 prBox;
     class S4 lockBox;
     class S7 closeBox;
