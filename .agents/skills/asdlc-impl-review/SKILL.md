@@ -76,7 +76,7 @@ Then read the approved spec to use as ground truth:
 git show origin/<baseRefName>:openspec/changes/<CHANGE_ID>/specs/<capability>/spec.md
 git show origin/<baseRefName>:openspec/changes/<CHANGE_ID>/tasks.md
 
-# Execute AI Acceptance Tests in CI (Player != Referee gate)
+# Execute Acceptance Tests in CI (Player != Referee gate)
 asdlc test <CHANGE_ID> --json
 ```
 
@@ -91,7 +91,7 @@ asdlc test <CHANGE_ID> --json
 Evaluate the full diff against all five dimensions. Mark each `PASS`, `CONCERN`, or `FAIL`.
 
 #### D1 — Spec Conformance (AC-by-AC)
-- **AI Acceptance Test Gate**: Did `asdlc test <CHANGE_ID>` pass with exit code 0? If any mapped test failed or is missing, mark as **🔴 Blocker**.
+- **Acceptance Test Gate**: Did `asdlc test <CHANGE_ID>` pass with exit code 0? If any mapped test failed or is missing, mark as **🔴 Blocker**.
 - For every `ACn:` in `specs/**/*.md`:
   - Does the implementation satisfy the exact acceptance criterion as written?
   - Is the behavior exercised in the mapped `(test: <path>)` test?

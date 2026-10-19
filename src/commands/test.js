@@ -80,7 +80,7 @@ export function runTests(changeId, opts = {}) {
   }
 
   if (!opts.json) {
-    log.info(`=== Running AI Acceptance Tests for ${slug} ===`);
+    log.info(`=== Running Acceptance Tests for ${slug} ===`);
     log.info(`Mapped ACs: ${allAcs.length} across ${uniqueTestPaths.length} test file(s):`);
     for (const ac of allAcs) {
       log.info(`  • [${ac.id}] ${ac.text} -> ${ac.testPath}`);
@@ -115,9 +115,9 @@ export function runTests(changeId, opts = {}) {
     if (res.stderr) process.stderr.write(res.stderr);
 
     if (passed) {
-      log.ok(`✓ all AI acceptance tests passed (${allAcs.length} ACs, ${uniqueTestPaths.length} files)`);
+      log.ok(`✓ all acceptance tests passed (${allAcs.length} ACs, ${uniqueTestPaths.length} files)`);
     } else {
-      log.error(`✗ AI acceptance test run failed (exit code ${res.status})`);
+      log.error(`✗ acceptance test run failed (exit code ${res.status})`);
     }
   }
 
@@ -127,7 +127,7 @@ export function runTests(changeId, opts = {}) {
 export function register(program) {
   program
     .command('test <changeId>')
-    .description('run AI acceptance tests mapped from change specs')
+    .description('run acceptance tests mapped from change specs (TDD & CI gate)')
     .option('--json', 'output structured JSON report for CI consumption')
     .option('--runner <command>', 'custom test runner command')
     .option('--repo-root <path>')
