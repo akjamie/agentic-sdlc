@@ -54,44 +54,91 @@ What enterprise engineering leaders and platform architects care about most when
 
 ```mermaid
 flowchart TD
-    subgraph P3 ["PLANE 3 · Agentic IDE Surface (Autonomous Skills & Conversations)"]
-        direction LR
-        S_NEW["/asdlc:new<br/>(Scaffold, AST Grounding & Batch-Grill)"]
-        S_LINT["/asdlc:lint<br/>(Deterministic BDD/AC Gate)"]
-        S_APPLY["/asdlc:apply<br/>(Guarded TDD Red-Green)"]
-        S_TEST["asdlc test<br/>(Acceptance Test Runner)"]
-        S_VERIFY["/asdlc:verify<br/>(12-Gate Implementation Check)"]
+    subgraph P3 ["PLANE 3 · Agentic IDE Surface (.agents/skills/ · Conversational & Autonomous)"]
+        direction TB
+        subgraph P3_STAGES ["Stage Workflow Skills (Ordered by SDLC Stage)"]
+            direction LR
+            SK_INIT["1 · asdlc-init<br/>Repo Scaffolding"] --> SK_NEW["2 · asdlc-new<br/>AST Explore + Grilling"]
+            SK_NEW --> SK_LINT["3 · asdlc-lint<br/>BDD & AC Quality"]
+            SK_LINT --> SK_APPLY["5 · asdlc-apply<br/>Task-Level TDD Engine"]
+            SK_APPLY --> SK_VERIFY["6 · asdlc-verify<br/>12-Gate Audit"]
+            SK_VERIFY --> SK_ARCHIVE["7 · asdlc-archive<br/>Living Spec Sync"]
+        end
+        subgraph P3_REVIEWS ["CI Reviewers & Orientation Skills"]
+            direction LR
+            SK_SPECREV["asdlc-spec-review<br/>Spec PR Evaluation"]
+            SK_IMPLREV["asdlc-impl-review<br/>Player ≠ Referee Impl Audit"]
+            SK_DOCTOR["asdlc-doctor<br/>Diagnostics & Auto-Fix"]
+            SK_STATUS["asdlc-status<br/>Change Dashboard"]
+        end
     end
 
-    subgraph P2 ["PLANE 2 · Governance CLI & Hard CI Gates (Deterministic, Exit-Coded)"]
-        direction LR
-        C_GUARD["Cryptographic Guard<br/>approvedSha Lock & Anti-Tamper"]
-        C_LINT["BDD / AC Linters<br/>R0–R8 + Scenario Coverage"]
-        C_RUNNER["Acceptance Runner<br/>(test: path) Mapping Execution"]
-        C_VERIFY["12 Verify Gates<br/>Test Presence + TDD Evidence"]
+    subgraph P2 ["PLANE 2 · Governance CLI & Hard CI Gates (bin/asdlc.js · Deterministic Exit Codes)"]
+        direction TB
+        subgraph P2_STAGES ["7-Stage Lifecycle CLI Commands"]
+            direction LR
+            CMD_INIT["init"] --> CMD_NEW["new"]
+            CMD_NEW --> CMD_LINT["lint"]
+            CMD_LINT --> CMD_PR["pr"]
+            CMD_PR --> CMD_APPROVE["approve"]
+            CMD_APPROVE --> CMD_APPLY["apply"]
+            CMD_APPLY --> CMD_TEST["test"]
+            CMD_TEST --> CMD_VERIFY["verify"]
+            CMD_VERIFY --> CMD_ARCHIVE["archive"]
+        end
+        subgraph P2_GATES ["Cryptographic & Hard Verification Engines"]
+            direction LR
+            G_LOCK["approvedSha Gate<br/>Commit Lock on main"]
+            G_TAMPER["spec-tamper Gate<br/>Anti-Cheat Tree Audit"]
+            G_COV["R5 Scenario Coverage<br/>Scenario = AC Traceability"]
+            G_RUNNER["asdlc test Runner<br/>(test: path) Execution"]
+            G_PRESENCE["test-presence Gate<br/>Code Diff = Test Diff"]
+        end
     end
 
-    subgraph P1 ["PLANE 1 · Core Library (src/lib/ · Pure Functions, Zero Side-Effects)"]
+    subgraph P1 ["PLANE 1 · Core Library (src/lib/ · Pure Functions, Zero Side-Effects, 100% Tested)"]
         direction LR
-        L_SPEC["speclint.js<br/>Rule Engine"]
-        L_TDD["tdd.js<br/>Evidence Tracker"]
-        L_GIT["git.js<br/>Path-Limited SHA"]
-        L_GRAPH["graphify.js<br/>AST Code Topology"]
-        L_POLICY["policy.js<br/>Governance Schema"]
+        subgraph P1_GOV ["Spec & Governance Engine"]
+            direction TB
+            M_LINT["speclint.js · R0–R8 Rules"]
+            M_POLICY["policy.js · .sdlc/policy.yaml"]
+            M_SCHEMA["schema.js · Version Pinning"]
+            M_AGENTS["agents.js · AGENTS.md Refresh"]
+        end
+        subgraph P1_GRAPH ["AST & Repository Context"]
+            direction TB
+            M_GRAPH["graphify.js · Knowledge Topology"]
+            M_GIT["git.js · Path-Limited Queries"]
+            M_FS["fs.js · Safe File Primitives"]
+            M_PATHS["paths.js · Canonical Paths"]
+        end
+        subgraph P1_EXEC ["TDD & Gate Verification"]
+            direction TB
+            M_TDD["tdd.js · Evidence Parser"]
+            M_TEST["commands/test.js · Test Runner"]
+            M_PRTYPE["prtype.js · PR Classifier"]
+            M_EXEC["exec.js · Process Isolation"]
+        end
     end
 
-    P3 -->|"Invokes CLI with --json"| P2
-    P2 -->|"Calls pure domain functions"| P1
+    P3 ==>|"Invokes CLI commands with --json"| P2
+    P2 ==>|"Calls pure library functions"| P1
 
     classDef p3Style fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#ffffff,rx:8px,ry:8px;
     classDef p2Style fill:#0f172a,stroke:#0ea5e9,stroke-width:2px,color:#ffffff,rx:8px,ry:8px;
     classDef p1Style fill:#022c22,stroke:#10b981,stroke-width:2px,color:#ffffff,rx:8px,ry:8px;
+    classDef subCard fill:#020617,stroke:#334155,stroke-width:1.5px,color:#94a3b8;
     classDef nodeStyle fill:#1e293b,stroke:#475569,stroke-width:1px,color:#f8fafc,rx:6px,ry:6px;
+    classDef cmdStyle fill:#0f172a,stroke:#38bdf8,stroke-width:1px,color:#38bdf8,font-weight:bold,rx:4px,ry:4px;
+    classDef gateCard fill:#1e293b,stroke:#f59e0b,stroke-width:1px,color:#fef3c7,rx:6px,ry:6px;
 
     class P3 p3Style;
     class P2 p2Style;
     class P1 p1Style;
-    class S_NEW,S_LINT,S_APPLY,S_TEST,S_VERIFY,C_GUARD,C_LINT,C_RUNNER,C_VERIFY,L_SPEC,L_TDD,L_GIT,L_GRAPH,L_POLICY nodeStyle;
+    class P3_STAGES,P3_REVIEWS,P2_STAGES,P2_GATES,P1_GOV,P1_GRAPH,P1_EXEC subCard;
+    class SK_INIT,SK_NEW,SK_LINT,SK_APPLY,SK_VERIFY,SK_ARCHIVE,SK_SPECREV,SK_IMPLREV,SK_DOCTOR,SK_STATUS,M_LINT,M_POLICY,M_SCHEMA,M_AGENTS,M_GRAPH,M_GIT,M_FS,M_PATHS,M_TDD,M_TEST,M_PRTYPE,M_EXEC nodeStyle;
+    class CMD_INIT,CMD_NEW,CMD_LINT,CMD_PR,CMD_APPROVE,CMD_APPLY,CMD_TEST,CMD_VERIFY,CMD_ARCHIVE cmdStyle;
+    class G_LOCK,G_TAMPER,G_COV,G_RUNNER,G_PRESENCE gateCard;
 ```
 
 For complete technical specifications of each plane, see [docs/architecture.md](docs/architecture.md).
