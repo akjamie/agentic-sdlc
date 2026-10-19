@@ -18,6 +18,7 @@ The linter evaluates spec text with pure deterministic rules (no LLM jitter):
 - **`R3-scenario`**: Every requirement must have at least one `#### Scenario:`.
 - **`R4-when / R4-then / R4-given`**: Every scenario must follow BDD structure with **WHEN**, **THEN**, and **GIVEN**.
 - **`R5-ac`**: Every requirement must have an Acceptance Criteria block (`- [ ] AC1: ...`).
+- **`R5-scenario-coverage`**: Every scenario under a requirement must have corresponding acceptance criteria (`scenarios.length <= acs.length`), preventing happy-path-only AC shortcuts when edge cases / alternative flows are specified in scenarios.
 - **`R6-ac-test`**: Every acceptance criterion must map to an explicit test file path (`(test: <path>)`).
 - **`R7-test-strategy`**: Must contain a non-empty `## Test Strategy` section.
 - **`R8-removed-reason`**: Any requirement under `## REMOVED Requirements` must document a `**Reason**`.

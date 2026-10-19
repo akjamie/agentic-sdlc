@@ -75,10 +75,14 @@ Then read the approved spec to use as ground truth:
 # Read the approved spec from the base branch
 git show origin/<baseRefName>:openspec/changes/<CHANGE_ID>/specs/<capability>/spec.md
 git show origin/<baseRefName>:openspec/changes/<CHANGE_ID>/tasks.md
+
+# Execute Acceptance Tests in CI (Player != Referee gate)
+asdlc test <CHANGE_ID> --json
 ```
 
 > [!NOTE]
 > Read the **spec first**, then the implementation diff. The spec is the ground truth; the code is the candidate.
+> Enforce **Player ≠ Referee**: CI executes `asdlc test <CHANGE_ID> --json` independently rather than trusting claims in `tasks.md`.
 
 ---
 
@@ -87,11 +91,12 @@ git show origin/<baseRefName>:openspec/changes/<CHANGE_ID>/tasks.md
 Evaluate the full diff against all five dimensions. Mark each `PASS`, `CONCERN`, or `FAIL`.
 
 #### D1 — Spec Conformance (AC-by-AC)
-For every `ACn:` in `specs/**/*.md`:
-- Does the implementation satisfy the exact acceptance criterion as written?
-- Is the behavior exercised in the mapped `(test: <path>)` test?
-- Are there any requirements in the spec with **no implementation coverage**?
-- Are there any implemented behaviors with **no corresponding AC** (scope creep)?
+- **Acceptance Test Gate**: Did `asdlc test <CHANGE_ID>` pass with exit code 0? If any mapped test failed or is missing, mark as **🔴 Blocker**.
+- For every `ACn:` in `specs/**/*.md`:
+  - Does the implementation satisfy the exact acceptance criterion as written?
+  - Is the behavior exercised in the mapped `(test: <path>)` test?
+  - Are there any requirements in the spec with **no implementation coverage**?
+  - Are there any implemented behaviors with **no corresponding AC** (scope creep)?
 
 Flag scope creep as Major: it bypasses the governance gate and introduces untested surface area.
 

@@ -14,7 +14,7 @@
 │  Audience: the AI agent inside the IDE (not the human directly)         │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  PLANE 2 — CLI Surface (bin/asdlc.js → Commander commands)              │
-│  ● init  ● new  ● lint  ● approve  ● apply  ● verify  ● archive         │
+│  ● init  ● new  ● lint  ● approve  ● apply  ● test  ● verify  ● archive │
 │  ● status  ● doctor                                                     │
 │  Audience: developers + CI pipelines (deterministic, exit-coded)        │
 ├─────────────────────────────────────────────────────────────────────────┤
@@ -134,6 +134,7 @@ export function register(program) {
 | `asdlc init --ci github-actions` | GitHub Actions template | `lib/init.initRepo()` |
 | `asdlc init --ci gitlab` | GitLab CI template | `lib/init.initRepo()` |
 | `asdlc lint <ID> --explain` | Human-readable lint result with fix hints | `lib/lint.runLint()` + hints map |
+| `asdlc test <ID> [--json]` | Run acceptance tests mapped from change specs (TDD & CI gate) | `commands/test.js` (test runner) |
 | `asdlc new <ID> --refresh` | Force graph refresh even if fresh | `lib/change.newChange()` |
 
 ---

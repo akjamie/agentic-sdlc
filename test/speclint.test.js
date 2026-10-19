@@ -60,6 +60,21 @@ test('R5: requirement without acceptance criteria', () => {
   assert.ok(codes(t).includes('R5-ac'));
 });
 
+test('R5: requirement has more scenarios than acceptance criteria (R5-scenario-coverage)', () => {
+  const extraScenarios = `#### Scenario: Edge case 1
+- **GIVEN** an error state
+- **WHEN** export fails
+- **THEN** error is logged
+
+#### Scenario: Edge case 2
+- **GIVEN** timeout
+- **WHEN** export takes too long
+- **THEN** warning is displayed
+`;
+  const t = GOOD.replace('#### Scenario: Export succeeds', `${extraScenarios}\n#### Scenario: Export succeeds`);
+  assert.ok(codes(t).includes('R5-scenario-coverage'));
+});
+
 test('R6: AC without a (test: ...) mapping', () => {
   const t = GOOD.replace('(test: ui/test/export.spec)', '');
   assert.ok(codes(t).includes('R6-ac-test'));

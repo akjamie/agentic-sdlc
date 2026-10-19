@@ -13,7 +13,7 @@
 | **[about.md](./about.md)** | **架构师 / 技术负责人** | **系统白皮书**：为什么需要 Agentic SDLC、核心哲学、7 阶段架构管道、密码学 Spec SHA 防篡改与竞品对比。 |
 | **[architecture.md](./architecture.md)** | **平台工程师 / 贡献者** | **技术实现架构**：代码模块拆解、门禁校验链路、状态机转换与扩展机制。 |
 | **[doctor.md](./doctor.md)** | **全体开发者 / CI 管理员** | **环境健康诊断手册**：`asdlc doctor` 12 维检查项详解、`--fix` 自动修复边界与人工介入指南。 |
-| **[usage.md](./usage.md)** | **命令行使用者** | **CLI 命令速查手册**：所有 11 个一级子命令参数、Flags 与退出码说明。 |
+| **[usage.md](./usage.md)** | **命令行使用者** | **CLI 命令速查手册**：完整一级子命令参数（涵盖 `test`、`apply`、`verify` 等）、Flags 与退出码说明。 |
 | **[glossary.md](./glossary.md)** | **全体成员** | **标准统一术语表**：Living Spec、Spec SHA、God Node、Tamper Gate 等概念定义。 |
 
 ---

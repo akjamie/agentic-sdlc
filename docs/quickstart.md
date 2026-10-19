@@ -107,6 +107,7 @@ asdlc lint user-login-with-jwt
 
 It validates:
 - [x] R0-R8 BDD rules (GIVEN / WHEN / THEN consistency).
+- [x] Scenario-to-AC coverage (`R5-scenario-coverage`: every scenario must have matching ACs).
 - [x] Traceable Acceptance Criteria (`AC1`, `AC2` mapped to test paths).
 - [x] Presence of all required artifacts.
 
@@ -145,12 +146,18 @@ Now tell your AI agent:
 > *"Execute `/asdlc:apply user-login-with-jwt` using strict task-level TDD."*
 
 The agent executes the immutable 5-step TDD loop:
-1. **Red**: Write a failing test matching AC1 (`npm test` -> FAIL).
-2. **Green**: Implement minimal code to pass the test (`npm test` -> PASS).
+1. **Red**: Write a failing test matching AC1 (`asdlc test user-login-with-jwt` -> FAIL).
+2. **Green**: Implement minimal code to pass the test (`asdlc test user-login-with-jwt` -> PASS).
 3. **Refactor**: Clean up implementation without altering behavior.
 4. **Evidence**: Record task verification evidence.
 5. **Converge**: Check off task in `tasks.md` and repeat for next AC.
 
+```bash
+# Validate mapped acceptance criteria at any time:
+asdlc test user-login-with-jwt
+```
+
+> **Player ≠ Referee Guard**: During the implementation PR review, CI independently runs `asdlc test <ID> --json`. If any mapped AC test fails, merge is automatically blocked regardless of what was written in `tasks.md`.
 > **Security Guard**: If the agent attempts to modify `proposal.md` or `specs/**` during implementation to cheat test requirements, `asdlc verify` will immediately detect `spec-tamper` and reject the PR!
 
 ---
@@ -263,6 +270,7 @@ asdlc lint user-login-with-jwt
 
 检查项涵盖：
 - [x] BDD 语法与 GIVEN / WHEN / THEN 规范约束。
+- [x] 场景与验收准则覆盖度（`R5-scenario-coverage`：每个场景必须有对应 AC 覆盖，杜绝仅有 Happy Path）。
 - [x] 验收准则可追踪性（每项 AC 是否绑定具体测试文件）。
 - [x] 必需产物完备性。
 
@@ -301,12 +309,18 @@ asdlc approve user-login-with-jwt
 > *"执行 `/asdlc:apply user-login-with-jwt`，遵循严格任务级 TDD。"*
 
 AI 严格遵循五步 TDD 循环：
-1. **Red**: 针对 AC1 编写失败测试用例（`npm test` -> 必须红灯报错）。
-2. **Green**: 编写业务逻辑让测试通过（`npm test` -> 绿灯通过）。
+1. **Red**: 针对 AC1 编写失败测试用例（`asdlc test user-login-with-jwt` -> 必须红灯报错）。
+2. **Green**: 编写业务逻辑让测试通过（`asdlc test user-login-with-jwt` -> 绿灯通过）。
 3. **Refactor**: 在测试保护下重构与清理代码。
 4. **Evidence**: 留存执行证明。
 5. **Converge**: 在 `tasks.md` 勾选任务，推进至下一项。
 
+```bash
+# 随时运行变更契约所映射的全部验收测试：
+asdlc test user-login-with-jwt
+```
+
+> **裁判员 ≠ 运动员门禁**：在发起代码实现 PR 时，CI 会独立执行 `asdlc test <ID> --json` 获取客观真理。任何 mapped AC 测试失败或缺失，CI 审查均直接标记为 Blocker 阻断合入，不再仅轻信任务列表中的自我声明。
 > **防篡改卫士**：如果 AI 在实施过程中试图修改 `proposal.md` 或 `specs/**` 降低测试标准，后续验证阶段将触发 `spec-tamper` 拦截并阻断合入！
 
 ---
