@@ -1,6 +1,6 @@
 ---
 name: batch-grill-me
-description: "A relentless design-tree interview that asks every frontier question at once, round by round, with recommended defaults and non-blocking fact discovery."
+description: "A relentless design-tree interview that evaluates the active frontier and asks questions in structured batches with recommended defaults and non-blocking fact discovery. Invoked via asdlc new --batch-grill or /batch-grill-me."
 aliases:
   - grilling
   - grill-me
@@ -8,7 +8,7 @@ aliases:
 
 # Batch Grilling — Relentless Design-Tree Interview (`batch-grill-me`)
 
-This skill drives the **Grilling phase** (Stage 2) of the Agentic SDLC. It operates between `asdlc new "<requirement>"` and spec authoring (`proposal.md` / `specs/**`). It can also be invoked standalone via `/batch-grill-me` or `/grill-me` for any architectural design.
+This skill drives the **Grilling phase** (Stage 2) of the Agentic SDLC when invoked in batch mode (via `asdlc new "<requirement>" --batch-grill` or `/batch-grill-me`). For interactive 1-by-1 dialogue, use `/grill-me`.
 
 Interview the author relentlessly until you reach a shared understanding. Map the requirement as a **design tree**: every decision branches into the decisions that hang off it.
 
@@ -24,10 +24,15 @@ Interview the author relentlessly until you reach a shared understanding. Map th
 
    - Never ask child or grandchild questions whose parent decision is still open in the current round.
    - If Question C1 asks *"Should we support internationalization (en + zh)?"*, you **CANNOT** ask *"Which fields should be translated?"* or *"What format should the message catalog use?"* in the same round! Those depend on C1 being answered.
-   - Asking child questions prematurely forces you to guess at parent answers, which leads directly to pseudo-questions and fake choices. Hold them for Round 2.
+   - Asking child questions prematurely forces you to guess at parent answers, which leads directly to pseudo-questions and fake choices. Hold them for later rounds.
 
 3. **Dynamic Tree Reshaping.**
    Each round the author answers reshapes the tree — settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round.
+
+4. **Early Exit / Fast-Forward Protocol**:
+   If the author says:
+   - *"Approve all recommendations"* / *"Proceed with defaults"* / *"LGTM"*
+   The agent must **immediately halt questioning**, resolve any remaining open decisions using its stated engineering recommendations, write them into `clarifications.md`, and proceed directly to drafting `proposal.md` and `specs/**`.
 
 ---
 
@@ -113,7 +118,7 @@ Active Frontier: <N> independent decisions ready for resolution.
 
 ---
 
-💡 *To proceed efficiently, reply **"Approve all recommendations"**, or specify adjustments (e.g. `Q1: B, Q2: accept`).*
+💡 *To proceed efficiently, reply **"Approve all recommendations"**, specify adjustments (e.g. `Q1: B, Q2: accept`), or type "proceed with defaults".*
 ```
 
 ---
@@ -123,8 +128,7 @@ Active Frontier: <N> independent decisions ready for resolution.
 The session is done when the **frontier is empty**:
 1. Every branch of the design tree has been visited.
 2. Nothing is left silently assumed.
-3. **Do not act until the author confirms you have reached a shared understanding** (e.g. by approving recommendations or answering all questions).
-4. Record all settled decisions in `openspec/changes/<SLUG>/clarifications.md`:
+3. Record all settled decisions in `openspec/changes/<SLUG>/clarifications.md`:
    ```markdown
    ## Settled decisions
 
@@ -133,4 +137,4 @@ The session is done when the **frontier is empty**:
    - **<Decision 2 Title>**: <Chosen Option>
      - *Rationale*: <Why this was chosen>
    ```
-5. Only after `clarifications.md` is settled may you transition to authoring `proposal.md` and `specs/**`.
+4. Only after `clarifications.md` is settled may you transition to authoring `proposal.md` and `specs/**`.

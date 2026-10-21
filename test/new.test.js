@@ -69,3 +69,52 @@ test('newChange: auto-seeds design.md when requirement mentions security or NFR 
   assert.ok(content.includes('Security Architecture & Operational NFRs'));
 });
 
+test('newChange: defaults to conversational grill-me mode with anti-fatigue guardrails', () => {
+  const repo = tmpRepo();
+  const slug = newChange('implement payment receipt webhook handler', { repoRoot: repo, openspec: false });
+  const cdir = path.join(repo, 'openspec', 'changes', slug);
+  const clarPath = path.join(cdir, 'clarifications.md');
+  const metaPath = path.join(cdir, '.openspec.yaml');
+
+  assert.ok(fs.existsSync(clarPath), 'clarifications.md must exist');
+  const clar = fs.readFileSync(clarPath, 'utf8');
+  assert.ok(clar.includes('Mode: interactive (grill-me)'), 'clarifications.md should default to interactive mode');
+  assert.ok(clar.includes('Anti-Fatigue Guardrails'), 'clarifications.md should include anti-fatigue guardrails');
+
+  const meta = fs.readFileSync(metaPath, 'utf8');
+  assert.ok(meta.includes('grillMode: "interactive"'), '.openspec.yaml should record interactive grillMode');
+});
+
+test('newChange: supports --batch-grill option for batch-grill-me frontier interview', () => {
+  const repo = tmpRepo();
+  const slug = newChange('implement payment receipt webhook handler', { repoRoot: repo, batchGrill: true, id: 'batch-webhook', openspec: false });
+  const cdir = path.join(repo, 'openspec', 'changes', slug);
+  const clarPath = path.join(cdir, 'clarifications.md');
+  const metaPath = path.join(cdir, '.openspec.yaml');
+
+  assert.ok(fs.existsSync(clarPath), 'clarifications.md must exist');
+  const clar = fs.readFileSync(clarPath, 'utf8');
+  assert.ok(clar.includes('Mode: batch-grill'), 'clarifications.md should state batch-grill mode');
+  assert.ok(clar.includes('batch-grill-me'), 'clarifications.md should instruct batch-grill-me interview');
+
+  const meta = fs.readFileSync(metaPath, 'utf8');
+  assert.ok(meta.includes('grillMode: "batch"'), '.openspec.yaml should record batch grillMode');
+});
+
+test('newChange: supports --no-grill option to bypass interactive grilling', () => {
+  const repo = tmpRepo();
+  const slug = newChange('fix typo in error message', { repoRoot: repo, grill: false, id: 'typo-fix', openspec: false });
+  const cdir = path.join(repo, 'openspec', 'changes', slug);
+  const clarPath = path.join(cdir, 'clarifications.md');
+  const metaPath = path.join(cdir, '.openspec.yaml');
+
+  assert.ok(fs.existsSync(clarPath), 'clarifications.md must exist');
+  const clar = fs.readFileSync(clarPath, 'utf8');
+  assert.ok(clar.includes('Mode: no-grill (self-settled)'), 'clarifications.md should state no-grill mode');
+  assert.ok(clar.includes('<!-- (none) -->'), 'clarifications.md should note open questions are none');
+
+  const meta = fs.readFileSync(metaPath, 'utf8');
+  assert.ok(meta.includes('grillMode: "none"'), '.openspec.yaml should record none grillMode');
+});
+
+

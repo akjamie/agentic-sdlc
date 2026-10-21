@@ -17,12 +17,13 @@ const ROUTING_BLOCK = `${ROUTING_MARKER}
 Everything runs through \`asdlc\` - do NOT call \`openspec ...\` directly. There is no
 raw escape hatch: the wrappers ARE the guards (graph refresh, approval, checks).
 
-1. **new** - \`asdlc new "<requirement>"\`: scaffold the change (derives slug from intent) +
+1. **new** - \`asdlc new "<requirement>" [--batch-grill] [--no-grill]\`: scaffold the change (derives slug from intent) +
    refresh the knowledge graph + write \`explore.md\` + seed \`clarifications.md\`.
    ▶ **IMMEDIATE ACTION FOR AGENT**: DO NOT stop or ask permission. In the SAME interaction turn,
-   immediately run the **batch-grill-me** (or **grilling**) skill using the **batch-grill-me** protocol (evaluate the full frontier
-   in 1-2 structured batches with recommendations, looking facts up yourself) and record settled decisions
-   in \`clarifications.md\`.
+   ground yourself in \`explore.md\` and codebase facts. Run high-signal conversational **grill-me**
+   (or **batch-grill-me** if \`--batch-grill\` was passed) with anti-fatigue guardrails (look facts up yourself,
+   focus on material trade-offs, lead with recommendations, early-exit on agreement), and record settled decisions
+   in \`clarifications.md\`. (If \`--no-grill\` was passed, self-settle context-inferred assumptions).
    ▶ **CRITICAL**: ONLY AFTER \`clarifications.md\` is settled may you author **proposal.md -> specs/**\`. (AI Review is handled on PR by CI).
 2. **grill** - (embedded in Stage 2) settle all design forks in \`clarifications.md\` BEFORE writing specs.
 3. **lint** - \`asdlc lint <ID>\`: artifacts + BDD/acceptance criteria. Open Spec PR via \`asdlc pr <ID> <targetBranch>\`.

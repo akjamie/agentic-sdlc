@@ -29,11 +29,14 @@ export function newChange(requirement, opts = {}) {
     log.ok(`created change '${slug}' (derived from: "${requirement}")`);
   }
 
-  // Record requirement in change metadata (.openspec.yaml)
+  // Determine grill mode: 'none' (--no-grill), 'batch' (--batch-grill), or 'interactive' (default grill-me)
+  const grillMode = opts.grill === false ? 'none' : (opts.batchGrill ? 'batch' : 'interactive');
+
+  // Record requirement and grill mode in change metadata (.openspec.yaml)
   const metaPath = path.join(cdir, '.openspec.yaml');
   if (exists(metaPath)) {
     const existing = readText(metaPath).trimEnd();
-    writeText(metaPath, `${existing}\nrequirement: ${JSON.stringify(requirement)}\n`);
+    writeText(metaPath, `${existing}\nrequirement: ${JSON.stringify(requirement)}\ngrillMode: "${grillMode}"\n`);
   }
 
   const g = ensureGraphify();
@@ -97,18 +100,20 @@ _(unavailable - graph query error)_
     }
   }
 
-  // Seed the grilling interview (skill: grilling / batch-grill-me). The agent runs it
-  // with the author in batch mode to resolve the decision frontier in 1-2 turns.
+  // Seed the grilling interview / clarification record.
   const clar = path.join(cdir, 'clarifications.md');
   if (!exists(clar)) {
-    writeText(clar, `# Clarifications: ${slug}
+    let clarContent = '';
+    if (grillMode === 'batch') {
+      clarContent = `# Clarifications: ${slug}
 
 > Requirement: "${requirement}"
+> Mode: batch-grill
 > Before writing proposal.md / specs, the agent MUST run a **batch-grill-me** interview
-> with the author (skill: \`grilling\`) and record the settled decisions here.
-> Use batch-grill-me for maximum efficiency: evaluate the design tree, present the ENTIRE
-> frontier in one structured batch (numbered Q1..Qn with concrete recommended defaults),
-> allowing the author to approve or selectively adjust decisions in 1-2 rounds.
+> with the author (skill: \`batch-grill-me\`) and record the settled decisions here.
+> Evaluate the design tree, present the ENTIRE active frontier in structured batches
+> (numbered Q1..Qn with concrete recommended defaults and trade-offs), allowing the author
+> to approve or adjust decisions.
 > Facts are the agent's job to look up; decisions are the author's to make.
 
 ## Requirement
@@ -116,15 +121,55 @@ _(unavailable - graph query error)_
 
 ## Settled decisions
 <!-- one entry per settled decision: decision -> answer, with the reason -->
-<!-- Consider key architectural dimensions: -->
-<!-- 1. Functional Scope & Seams (user journeys, error states, domain models) -->
-<!-- 2. Security & Threat Mitigation (auth, parameter validation, secrets, data privacy) -->
-<!-- 3. Operational NFRs & Performance Budgets (latency SLAs, cache TTL, rate limits) -->
 
 ## Open questions
 <!-- must be empty before the spec is written -->
-`);
-    log.ok('seeded clarifications.md (run batch-grill-me interview)');
+`;
+    } else if (grillMode === 'none') {
+      clarContent = `# Clarifications: ${slug}
+
+> Requirement: "${requirement}"
+> Mode: no-grill (self-settled)
+> Interactive grilling was skipped via \`--no-grill\`.
+> The agent MUST ground decisions in codebase facts, AST (\`explore.md\`), and existing patterns,
+> and record all settled assumptions below BEFORE authoring proposal.md / specs.
+
+## Requirement
+"${requirement}"
+
+## Settled decisions
+<!-- record all context-inferred decisions and assumptions here -->
+
+## Open questions
+<!-- (none) -->
+`;
+    } else {
+      // Default: interactive (grill-me)
+      clarContent = `# Clarifications: ${slug}
+
+> Requirement: "${requirement}"
+> Mode: interactive (grill-me)
+> Before writing proposal.md / specs, the agent runs a high-signal conversational **grill-me** interview
+> with the author (skill: \`grilling\`) and records settled decisions here.
+>
+> **Anti-Fatigue Guardrails**:
+> 1. Codebase-first: Look up facts in AST/code; NEVER ask what can be inspected.
+> 2. Material forks only: Ask only about real architectural trade-offs; decide implementation details yourself.
+> 3. Recommendation-led: Ask 1 focused question at a time with a concrete recommended default and rationale.
+> 4. Early-exit: Stop questioning immediately when material forks are settled or the author says "proceed".
+
+## Requirement
+"${requirement}"
+
+## Settled decisions
+<!-- one entry per settled decision: decision -> answer, with the reason -->
+
+## Open questions
+<!-- must be empty before the spec is written -->
+`;
+    }
+    writeText(clar, clarContent);
+    log.ok(`seeded clarifications.md (${grillMode === 'batch' ? 'batch-grill mode' : (grillMode === 'none' ? 'no-grill mode' : 'conversational grill-me mode')})`);
   }
 
   // Technical design (design.md) scaffolding:
@@ -148,10 +193,19 @@ _(unavailable - graph query error)_
   log.info('  ▶ Ground yourself in `explore.md` and research codebase facts first.');
   log.info('  ▶ Perform external search for 3rd-party APIs, vendor SDKs, and UI design patterns (enabled by default).');
   log.info('     (If search fails or offline: emit \'[WARN] External search failed or offline: <reason>. Continuing with defined steps.\' and continue without blocking).');
-  log.info('  ▶ Formulate decision frontier covering Functional scope, Security threat vectors, and Operational NFRs.');
-  log.info('  ▶ Invoke `batch-grill-me` (or `grilling`) to present structured Batch 1 questions with recommended defaults.');
-  log.info('  ▶ Record agreed decisions into `clarifications.md`.');
-  log.info('  ▶ ONLY AFTER clarifications are settled: author `proposal.md`, `specs/**`, and `design.md` (if seeded/needed).');
+  if (grillMode === 'batch') {
+    log.info('  ▶ [MODE: BATCH-GRILL] Formulate decision frontier and invoke `batch-grill-me` to present structured batches with recommended defaults.');
+    log.info('  ▶ Record agreed decisions into `clarifications.md`.');
+    log.info('  ▶ ONLY AFTER clarifications are settled: author `proposal.md`, `specs/**`, and `design.md` (if seeded/needed).');
+  } else if (grillMode === 'none') {
+    log.info('  ▶ [MODE: NO-GRILL] Interactive grilling bypassed via `--no-grill`.');
+    log.info('  ▶ Ground decisions in code/AST facts, record settled assumptions into `clarifications.md`, and proceed to `proposal.md`, `specs/**`, and `design.md` (if seeded/needed).');
+  } else {
+    log.info('  ▶ [MODE: GRILL-ME] Formulate decision frontier and run conversational, recommendation-led grilling (1 material decision at a time).');
+    log.info('     (Anti-fatigue: look up code facts first; skip micro-trivia; halt questioning when author says proceed or forks hit zero).');
+    log.info('  ▶ Record agreed decisions into `clarifications.md`.');
+    log.info('  ▶ ONLY AFTER clarifications are settled: author `proposal.md`, `specs/**`, and `design.md` (if seeded/needed).');
+  }
   log.info(`  ▶ Run \`asdlc lint ${slug}\`.`);
   return slug;
 }
@@ -164,6 +218,8 @@ export function register(program) {
     .option('--query <q>', 'graph query terms (default: extracted requirement terms)')
     .option('--design', 'explicitly generate technical design (design.md)')
     .option('--no-design', 'skip generating technical design (design.md)')
+    .option('--batch-grill', 'use batch-grill-me (present entire decision frontier in structured batches)')
+    .option('--no-grill', 'skip interactive grilling interview (self-settle decisions in clarifications.md)')
     .option('--repo-root <path>')
     .action((requirement, opts) => {
       newChange(requirement, opts);
