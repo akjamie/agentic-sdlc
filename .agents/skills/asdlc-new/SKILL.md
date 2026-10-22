@@ -15,19 +15,22 @@ This skill executes **Stage 2 (New)** of the Agentic SDLC. It transforms a natur
 When the user invokes `/asdlc:new "<requirement>"`:
 
 ```powershell
-asdlc new "<requirement>"
+asdlc new "<requirement>" [--batch-grill] [--no-grill]
 ```
 
 The CLI:
 1. Derives a clean canonical slug (e.g. `jwt-authentication-payment-api` or content-hashed `change-<id>`).
 2. Creates `openspec/changes/<SLUG>/`.
 3. Runs Graphify queries using the extracted requirement terms to discover real codebase AST nodes and call chains.
-4. Generates `explore.md` and seeds `clarifications.md`.
+4. Generates `explore.md` and seeds `clarifications.md` configured for the chosen grilling mode:
+   - **Default (conversational)**: Runs high-signal, recommendation-led `grill-me` (1 material decision at a time).
+   - **`--batch-grill`**: Evaluates the entire design tree and presents the active frontier in structured batches.
+   - **`--no-grill`**: Bypasses interactive grilling for self-evident fixes and pre-aligned tasks.
 5. **Technical Design Auto-Detection**: If the requirement touches UI/UX, frontend, APIs, services, databases, or architecture (or if `--design` is passed), seeds `design.md` with enterprise-grade technical design scaffolding.
 
 > [!IMPORTANT]
 > **NO PAUSE / CONTINUOUS EXECUTION**: Do NOT stop after `asdlc new` to ask the author "Should I start grilling?".
-> You MUST proceed immediately to Step 2 and Step 3 (**batch-grill-me** interview) in the same turn!
+> You MUST proceed immediately to Step 2 and Step 3 in the same turn!
 > Only after `clarifications.md` has all questions settled may you draft `proposal.md`, `design.md`, and `specs/**`.
 
 ### Step 2: Ground Yourself in Codebase & External Context (Strict Order)
@@ -52,18 +55,25 @@ Follow this strict discovery sequence:
      Tag any unverified external API assumptions, endpoints, schemas, or rate limits in `clarifications.md` and `design.md` with `[UNVERIFIED: <reason>]`.
      These will be explicitly surfaced on the PR review by CI/D7 for mandatory human confirmation before merge.
 
-### Step 3: Run the `batch-grill-me` Interview
-Before authoring any spec markdown, run the **`batch-grill-me`** protocol:
-1. Evaluate the open decision frontier for this feature:
-   - **Functional Seams**: Primary user flows, alternate paths, domain states, and interface contracts.
-   - **Security & Operational NFRs (When Applicable)**: For changes introducing public endpoints, handling sensitive data, or integrating external rate-limited APIs, evaluate auth boundaries and operational limits. (Do not invent synthetic numbers for simple changes where SLAs do not apply).
-2. Present all architectural forks and boundary questions in **one structured batch**:
-   - Number each question (`Q1`, `Q2`, `Q3`...).
-   - Provide concrete options (A / B / C).
-   - Supply a fact-backed **Recommended Default** grounded in codebase evidence.
-3. Invite the author to batch-approve (`"Approve all recommendations"`) or provide selective overrides.
+### Step 3: Run the Grilling Phase (Mode-Aware)
+Before authoring any spec markdown, settle all open architectural questions into `clarifications.md`:
+
+1. **If Mode is `interactive` (Default `grill-me`)**:
+   - Run conversational, recommendation-led grilling (skill: `grilling`).
+   - **Anti-Fatigue Guardrails**:
+     - *Codebase-first*: Never ask questions that can be answered by reading the code or AST.
+     - *Material forks only*: Ask only about real architectural trade-offs (e.g. storage options, error policies, backwards compatibility); decide implementation micro-details yourself.
+     - *Lead with recommendations*: Frame each question with a concrete recommended default and rationale (e.g. "Recommend Option A because... Agree, or prefer Option B?").
+     - *Early Exit*: Immediately halt questioning if the author says "proceed", "use defaults", or when open forks hit zero.
+
+2. **If Mode is `batch` (`--batch-grill` passed)**:
+   - Run `batch-grill-me` protocol: evaluate the active decision frontier and present all independent trade-offs in one structured numbered batch with recommended options.
+   - Author approves all or adjusts specific choices.
+
+3. **If Mode is `none` (`--no-grill` passed)**:
+   - Ground assumptions in AST / codebase facts, record context-inferred decisions in `clarifications.md`, leave open questions as none, and proceed directly to Step 4.
+
 4. Record every agreed answer in `openspec/changes/<SLUG>/clarifications.md` under `## Settled decisions`.
-5. If overrides unblock child questions, run Batch Round 2; otherwise close the interview.
 
 ### Step 4: Author Approved Intent Artifacts
 Once `## Open questions` in `clarifications.md` is empty, author the change documents:

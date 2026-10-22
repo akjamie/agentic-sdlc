@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@akjamie/agentic-sdlc?color=6366f1&label=npm)](https://www.npmjs.com/package/@akjamie/agentic-sdlc)
 [![license: MIT](https://img.shields.io/badge/license-MIT-10b981.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-38bdf8.svg)](https://nodejs.org/)
-[![tests](https://img.shields.io/badge/tests-86%20passing-10b981.svg)](#development--verification)
+[![tests](https://img.shields.io/badge/tests-89%20passing-10b981.svg)](#development--verification)
 
 > **Enterprise-grade Agentic SDLC governance.** Seven deterministic stages take a feature from natural-language intent to production — with every quality gate enforced by code, not by convention.
 >
@@ -52,7 +52,7 @@ OpenSpec manages spec documents, but it **enforces nothing** at runtime. Nothing
 ### Five Core Principles
 
 - **Intent-Driven Start** — `asdlc new "i want to build..."` derives a canonical slug; no artificial ticket IDs.
-- **Batch Grilling Before Specs** — the bundled **`batch-grill-me`** interview stress-tests the decision frontier in 1–2 structured rounds *before* any spec is written. Decisions are recorded in `clarifications.md`.
+- **Conversational Grilling Before Specs** — high-signal **`grill-me`** interview (or **`batch-grill-me`** via `--batch-grill`) stress-tests the decision frontier *before* any spec is written, with strict anti-fatigue guardrails. Decisions are recorded in `clarifications.md`.
 - **The Spec is Immutable** — once merged to the protected branch, the spec is locked. If reality diverges, the Converge protocol halts work (`SPEC_GAP`) and requires human re-approval via a fresh spec delta.
 - **Enforced Task-Level TDD** — `asdlc apply` requires an approved spec commit; `asdlc verify` enforces `test-presence` and `tdd-evidence` on every diff.
 - **Player ≠ Referee** — the authoring agent can never certify its own work; CI uses a separate model with fresh context.
@@ -183,10 +183,10 @@ For complete technical specifications of each plane, see [docs/architecture.md](
 
 `asdlc` ships all critical agent harnesses inside the package. They are installed automatically into `.agents/skills/` on `asdlc init` — no manual skill setup required.
 
-| Stage & Skill | Purpose & Behavior |
+| **Stage & Skill** | **Purpose & Behavior** |
 | :--- | :--- |
 | **Stage 1 · Init**<br>[`asdlc-init`](assets/skills/asdlc-init/SKILL.md) | Bootstraps repository: OpenSpec, Graphify AST engine, governance schema, policies, git hooks, and agent skills. |
-| **Stage 2 · New**<br>[`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Grounds intent in Graphify AST queries, seeds `clarifications.md`, and runs bundled **`batch-grill-me`** interview. |
+| **Stage 2 · New**<br>[`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Grounds intent in Graphify AST queries, seeds `clarifications.md`, and runs conversational `grill-me` (or `batch-grill-me` via `--batch-grill`). |
 | **Stage 3 · Spec PR**<br>[`asdlc-pr`](assets/skills/asdlc-pr/SKILL.md) | Enforces deterministic BDD/AC linting (R0–R8) and opens Spec PR (CLI → REST API → 1-click Web URL) with auto-labels. |
 | **Stage 3.5 · Spec AI Review**<br>[`asdlc-spec-review`](assets/skills/asdlc-spec-review/SKILL.md) | CI-triggered independent 6-dimension spec evaluation; posts structured findings and traceability matrix as PR comments. |
 | **Stage 4 · Approve**<br>[`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md) | Explicit audit stamp after PR merge (`specSha` + `READY_FOR_IMPL`). Auto-recognized by `apply`. |
@@ -278,7 +278,7 @@ flowchart TD
 | Stage & Command | What It Does |
 | :--- | :--- |
 | **1 · Init**<br>`asdlc init [--ci jenkins]` | Bootstraps OpenSpec + Graphify, governance schema, policy, and 8+ bundled agent skills. |
-| **2 · New**<br>`asdlc new "<requirement>"` | Derives slug, queries code AST graph, seeds `design.md` for UI/API systems, and interviews author via `batch-grill-me`. |
+| **2 · New**<br>`asdlc new "<requirement>" [--batch-grill] [--no-grill]` | Derives slug, queries code AST graph, seeds `design.md` for UI/API systems, and interviews author (conversational `grill-me` or `--batch-grill`). |
 | **3 · Spec PR**<br>`asdlc pr <ID> <branch>` | Runs `asdlc lint` (R0–R8 + `R5-scenario-coverage`), pushes spec branch, attaches `asdlc:spec-review` label, triggers CI Spec AI Review. |
 | **4 · Approve**<br>`asdlc approve <ID>` | Spec PR merge to `main` **is** the approval: records path-limited `specSha` and sets `READY_FOR_IMPL`. CI mode auto-detects merged PRs. |
 | **5 · Apply**<br>`asdlc apply <ID>` | **Hard guard**: verifies `approvedSha` on `main`, **refuses** unapproved specs, then launches the task-level TDD Red-Green loop. |
@@ -399,7 +399,7 @@ These are the design philosophy decisions behind the hard invariants — the *wh
 
 ```bash
 npm install
-npm test        # 86 unit and integration tests — 100% pass rate
+npm test        # 89 unit and integration tests — 100% pass rate
 ```
 
 The test suite covers the core governance library (`src/lib/`), all CLI commands, acceptance test execution, spec linting rules (R0–R8 + R5 scenario coverage), and verify gate logic (including `spec-tamper`, `test-presence`, and `tdd-evidence`).

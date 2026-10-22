@@ -1,33 +1,42 @@
 ---
 name: grilling
-description: "High-efficiency batch design-tree interview (batch-grill-me) for Stage 2 of Agentic SDLC. Asks every frontier question at once round by round with recommended defaults, dispatches non-blocking fact explorations, settles clarifications.md, and stops only when shared understanding is confirmed."
+description: "High-signal design-tree interview for Stage 2 of Agentic SDLC. Supports conversational grill-me (default, 1 decision at a time with anti-fatigue guardrails) and batch-grill-me (invoked via --batch-grill or /batch-grill-me) to settle clarifications.md before spec authoring."
 aliases:
-  - batch-grill-me
   - grill-me
+  - batch-grill-me
 ---
 
-# Batch Grilling — Relentless Design-Tree Interview (`grilling`)
+# Design-Tree Grilling (`grilling` / `grill-me` / `batch-grill-me`)
 
-This skill drives the **Grilling phase** (Stage 2) of the Agentic SDLC. It operates between `asdlc new "<requirement>"` and spec authoring (`proposal.md` / `specs/**`). It can also be invoked standalone via `/batch-grill-me` or `/grill-me` for any architectural design.
+This skill drives the **Grilling phase** (Stage 2) of the Agentic SDLC. It operates between `asdlc new "<requirement>"` and spec authoring (`proposal.md` / `specs/**`).
 
-Interview the author relentlessly until you reach a shared understanding. Map the requirement as a **design tree**: every decision branches into the decisions that hang off it.
+It supports two distinct execution styles depending on developer preference and CLI invocation:
+1. **Conversational `grill-me` (Default)**: Fast, iterative pair-programming dialogue. Presents **1 material decision at a time**, leading with a concrete codebase-grounded recommendation. Halts immediately when open forks hit zero or when the author fast-forwards.
+2. **`batch-grill-me` (Batch Mode, invoked via `--batch-grill` or `/batch-grill-me`)**: Presents the active decision frontier all at once in structured, numbered batches with trade-offs and recommendations.
 
 ---
 
 ## 1. Core Protocol: The Decision Tree & The Frontier
 
-1. **Work the tree in rounds.**
-   The **frontier** is every decision whose prerequisites are *already settled* — the questions you can ask *now* without guessing at answers you haven't heard yet. Ask the whole frontier in one round: number each question and give your recommended answer. Then wait for the author's answers before the next round.
+1. **Map the Design Tree**:
+   Every requirement branches into architectural decisions:
+   - Seams & Scope (data storage, protocols, domain models).
+   - Compatibility (breaking change vs deprecation).
+   - Failure & Resilience (fallback vs error propagation).
 
-2. **No Tree-Flattening (CRITICAL RULE).**
-   > **A question whose answer depends on another question still open in this round belongs to a *later* round, not this one.**
+2. **Work the Frontier**:
+   The **frontier** is every decision whose prerequisites are *already settled* — the questions you can address *now* without guessing at answers to dependent questions.
 
-   - Never ask child or grandchild questions whose parent decision is still open in the current round.
-   - If Question C1 asks *"Should we support internationalization (en + zh)?"*, you **CANNOT** ask *"Which fields should be translated?"* or *"What format should the message catalog use?"* in the same round! Those depend on C1 being answered.
-   - Asking child questions prematurely forces you to guess at parent answers, which leads directly to pseudo-questions and fake choices. Hold them for Round 2.
+3. **No Tree-Flattening (CRITICAL RULE)**:
+   > **A question whose answer depends on another open question belongs to a *later* round, not this one.**
+   Never ask child questions whose parent decision is still unsettled.
 
-3. **Dynamic Tree Reshaping.**
-   Each round the author answers reshapes the tree — settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round.
+4. **Early Exit / Fast-Forward Protocol**:
+   The author is always sovereign. If the author says:
+   - *"Proceed with your defaults"*
+   - *"LGTM / Looks good"*
+   - *"I trust your recommendations"*
+   The agent must **immediately halt questioning**, resolve any remaining open decisions using its stated engineering recommendations, write them into `clarifications.md`, and proceed directly to drafting `proposal.md` and `specs/**`.
 
 ---
 
@@ -83,9 +92,26 @@ Before emitting a batch round to the author, verify these 3 conditions:
 
 ---
 
-## 5. Batch Presentation Format
+## 5. Presentation Formats
 
-Format each round of the interview strictly as follows:
+### 5.1 Conversational `grill-me` Format (Default)
+Present **1 focused decision at a time** with a concrete recommended default:
+
+```markdown
+### 🎯 Architectural Decision: <Decision Title>
+
+<1-2 sentences explaining the architectural fork and the trade-offs>
+
+- **Option A**: <Description of Option A>
+- **Option B**: <Description of Option B>
+
+➡️ **Recommendation**: **Option A** — <Fact-backed rationale grounded in codebase/explore.md>
+
+*Reply "Agree" to proceed with Option A, specify an alternative (e.g. "Option B"), or type "proceed with all defaults" to fast-forward.*
+```
+
+### 5.2 Batch Presentation Format (`--batch-grill` or `/batch-grill-me`)
+When `--batch-grill` is passed, present all independent active frontier decisions in a single structured round:
 
 ```markdown
 ### 🎯 Batch Decision Frontier (Round <N>)
@@ -113,7 +139,7 @@ Active Frontier: <N> independent decisions ready for resolution.
 
 ---
 
-💡 *To proceed efficiently, reply **"Approve all recommendations"**, or specify adjustments (e.g. `Q1: B, Q2: accept`).*
+💡 *To proceed efficiently, reply **"Approve all recommendations"**, specify adjustments (e.g. `Q1: B, Q2: accept`), or type "proceed with defaults".*
 ```
 
 ---
