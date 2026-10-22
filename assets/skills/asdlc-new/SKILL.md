@@ -84,16 +84,19 @@ Once `## Open questions` in `clarifications.md` is empty, author the change docu
 
 2. **`design.md` (Technical Design Document - Mandatory for UI & Complex Systems)**:
    - When a change touches UI/frontend, external APIs, databases, or services, author `design.md` to define **HOW**:
-     - **Architecture & Component Interaction**: Mermaid sequence/flowchart diagrams.
+     - **Architecture & Component Interaction (`archify` recommended)**:
+       - Use the `archify` skill (`node bin/archify.mjs deliver <type> <candidate.json> architecture.html --quality showcase`) to produce a validated, standalone interactive HTML diagram (`architecture.html`) with light/dark themes and trace motion.
+       - Supported types: `architecture` (components/boundaries), `workflow` (pipelines/processes), `sequence` (API chains), `dataflow` (ETL/lineage), `lifecycle` (state transitions).
+       - Provide inline Mermaid flowchart/sequence diagram as an alternate or conversion source.
      - **Interface Contracts & Schemas**: TypeScript interfaces or JSON schemas for all requests/responses.
      - **External API Integration**: Endpoints, authentication, rate limits, client-level in-memory/TTL caching (never recreate clients per request), error taxonomy & fallbacks.
-     - **Security & Operational NFRs (Optional / When Applicable)**: Document authentication, boundary validation, secret lifecycles, and performance budgets/quotas when the architecture demands them (omit or mark N/A for changes without external dependencies or strict SLAs).
-     - **UI/UX Design Reference & Tokens (Zero tolerance for unstyled HTML)**:
-       - **Required Ground Truth Reference**: Link to human-provided mockup, Figma URL, brand styleguide, or existing CSS tokens. Do NOT invent palettes or fonts in isolation.
-       - Concrete design tokens derived from reference (colors, typography, spacing/radii).
-       - Component hierarchy (Hero/Search, Filters, Data Cards, Detail views).
-       - Responsive breakpoints: Mobile (<= 640px), Tablet (<= 1024px), Desktop (> 1024px).
-       - Mandatory interaction states: Default, Hover/Focus, Loading Skeleton, Empty State with prompt, Error Banner with retry.
+     - **Security & Operational NFRs (Optional / When Applicable)**: Document authentication, boundary validation, secret lifecycles, and performance budgets/quotas when the architecture demands them.
+     - **UI/UX Design Specifications (`frontend-design` & Vercel Guidelines)**:
+       - **Anti-AI Slop Mandate**: Zero tolerance for cliché glowing cards, arbitrary gradient text highlights, uniform pill buttons, or monotonous card grids.
+       - **Design Direction & Subject Grounding**: Real subject matter, vernacular, and domain tone (e.g., high-density analytical dashboard vs consumer app). Link to mockup, brand tokens, or benchmark URL.
+       - **Concrete Palettes & Typography**: 4–6 deliberate Hex color tokens (`--color-primary`, `--color-background`, `--color-surface`, etc.) and distinct font pairings (heading + body) with WCAG AA/AAA contrast.
+       - **Hero Treatment & Layout**: Opening hero element, responsive breakpoints (Mobile <= 640px, Tablet 641-1024px, Desktop > 1024px).
+       - **5 Mandatory States**: Default, Hover/Focus (150-200ms ease, `:focus-visible`), Loading Skeleton (never blank screens), Empty State with prompt, Error Banner with retry.
 
 3. **`specs/<capability>/spec.md`**:
    - `## Purpose`: Clear capability statement (50+ chars).

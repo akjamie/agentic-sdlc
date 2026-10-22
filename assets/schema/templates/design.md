@@ -10,7 +10,16 @@
 ## 2. System Architecture & Component Interaction
 <!--
 Component breakdown, responsibilities, data flow, and lifecycles.
-Include a Mermaid flowchart or sequence diagram where components interact:
+
+Option A (Recommended): Archify Standalone Interactive Diagram
+Use the `archify` skill to generate a validated, standalone interactive HTML diagram:
+- Diagram Type: `architecture` (components/boundaries) | `workflow` (pipelines/processes) | `sequence` (API chains) | `dataflow` (ETL/lineage) | `lifecycle` (state transitions)
+- Output Artifact: `architecture.html` (saved in change directory alongside design.md)
+- Delivery Command: `node bin/archify.mjs deliver <type> <candidate.json> architecture.html --quality showcase`
+- Link below: [Interactive Architecture Diagram](./architecture.html)
+
+Option B: Embedded Mermaid Diagram
+Where a quick inline visual is sufficient, include a Mermaid flowchart, sequenceDiagram, or stateDiagram:
 ```mermaid
 sequenceDiagram
   autonumber
@@ -52,52 +61,60 @@ MANDATORY if this change integrates external vendor APIs or services.
 ## 5. UI/UX Design, Visual Hierarchy & Aesthetics
 <!--
 MANDATORY if this change adds or modifies user interfaces (Web, Mobile, Desktop).
-Zero tolerance for unstyled, raw, or toy HTML!
+Zero tolerance for unstyled, raw, or generic "AI slop" HTML!
+Follow the `frontend-design` skill (Anthropic official) and Vercel Web Interface Guidelines.
+
+🚫 Anti-AI Slop Mandate:
+- NO generic glowing borders or arbitrary purple-on-black cards.
+- NO arbitrary gradient text wrapping a single word in a headline.
+- NO uniform pill buttons everywhere; align button variants with visual hierarchy.
+- NO monotonous 3-card grids without spatial rhythm.
 -->
 
-### 5.1 Design Reference Ground Truth (REQUIRED)
+### 5.1 Design Direction & Subject Grounding (REQUIRED)
 <!--
-Do NOT invent design tokens or palettes in isolation.
-Specify the concrete human-provided design ground truth:
+Ground the design in the domain's real vernacular and audience (e.g., high-density analytical dashboard vs playful consumer app).
 - Mockup link / Figma URL: <url or file path>
 - Brand styleguide / design tokens: <reference or existing CSS tokens file>
 - Reference application / URL: <benchmark url>
-- Key visual style notes: <e.g., modern dark card-based dashboard, rounded corners, subtle glassmorphism>
+- Design Thesis: <1-2 sentences on tone, hero moment, and personality (e.g., editorial, brutalist-clean, Swiss modern)>
 -->
 - Reference: <!-- insert link, file, or brand token reference -->
-- Style summary: <!-- 1-2 sentences on visual direction -->
+- Design Thesis: <!-- e.g., high-density devtools, restrained palette, monospace accents -->
 
 ### 5.2 Visual Theme & Design Tokens
-<!-- Derive concrete variables from the reference above: -->
+<!-- Derive 4-6 concrete, deliberate Hex codes: -->
 - Color Palette:
-  - `--color-primary`: <!-- e.g. #2563eb -->
-  - `--color-background`: <!-- e.g. #0f172a -->
-  - `--color-surface`: <!-- e.g. #1e293b -->
-  - `--color-text-primary`: <!-- e.g. #f8fafc -->
-  - `--color-text-muted`: <!-- e.g. #94a3b8 -->
-  - `--color-border`: <!-- e.g. #334155 -->
-  - `--color-accent`: <!-- e.g. #38bdf8 -->
-- Typography:
-  - Font family: <!-- e.g. 'Plus Jakarta Sans', system-ui -->
-  - Scale: base (16px), heading (24px/32px)
+  - `--color-primary`: <!-- deliberate brand hue, e.g. #4f46e5 -->
+  - `--color-background`: <!-- deep canvas base, e.g. #0b0f19 or #fafafa -->
+  - `--color-surface`: <!-- card/surface elevation, e.g. #111827 or #ffffff -->
+  - `--color-border`: <!-- subtle boundary, e.g. #1f2937 or #e5e7eb -->
+  - `--color-accent`: <!-- high-contrast secondary accent for badges/active -->
+  - `--color-text-primary`: <!-- WCAG AA/AAA compliant contrast -->
+  - `--color-text-muted`: <!-- secondary reading text -->
+- Typography Hierarchy:
+  - Heading / Display Font: <!-- e.g. 'Plus Jakarta Sans', 'Outfit', 'Syne' -->
+  - Body / UI Font: <!-- e.g. 'Inter', 'Geist', system-ui -->
+  - Monospace / Numbers: <!-- e.g. 'JetBrains Mono', tabular-nums -->
+  - Scale: hero (32px-48px, bold, -0.02em), section (20px-24px), body (14px-16px), micro (12px)
 - Spacing & Radii:
-  - `--radius`: <!-- e.g. 12px -->
+  - `--radius`: <!-- e.g. 8px / 12px -->
   - `--spacing-unit`: <!-- e.g. 8px -->
 
-### 5.3 Component Hierarchy & Responsive Breakpoints
-- Layout: Topbar/Hero, Search with debounce, Content Cards Grid, Detail Panel.
+### 5.3 Hero Moment & Component Layout
+- Hero Treatment: <!-- what first-screen element anchors the page? live preview, search bar, metrics overview -->
 - Breakpoints:
-  - Mobile (<= 640px): single-column, stacked layout.
-  - Tablet (<= 1024px): 2-column grid.
-  - Desktop (> 1024px): 3-column / sidebar + main grid.
+  - Mobile (<= 640px): single-column, tap targets >= 44px.
+  - Tablet (641px - 1024px): 2-column adaptive grid.
+  - Desktop (> 1024px): 3-column / sidebar + main grid with sticky navigation.
 
-### 5.4 Mandatory Interactive States
+### 5.4 Mandatory Interactive States (Vercel Guidelines)
 Every UI component must specify all 5 states:
-1. Default: Polished styling adhering to design tokens.
-2. Hover/Active: Micro-transitions (0.2s ease).
-3. Loading State: Skeleton cards or subtle spinners (no blank screens).
-4. Empty State: Friendly icon/illustration, descriptive message, actionable prompt.
-5. Error State: Banner with clear explanation and retry action.
+1. Default: Token-governed styling.
+2. Hover / Focus: Purposeful micro-transitions (150ms-200ms ease); visible focus rings (`:focus-visible`).
+3. Loading State: Content-shaped skeleton cards or spinners (never blank screens or layout shifts).
+4. Empty State: Domain icon/illustration, empathetic copy, and single obvious action prompt.
+5. Error State: Inline non-blocking banner with actionable message and retry button.
 
 ## 6. Security Architecture & Operational NFRs (Optional / When Applicable)
 <!--

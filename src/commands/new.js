@@ -206,6 +206,10 @@ _(unavailable - graph query error)_
     log.info('  ▶ Record agreed decisions into `clarifications.md`.');
     log.info('  ▶ ONLY AFTER clarifications are settled: author `proposal.md`, `specs/**`, and `design.md` (if seeded/needed).');
   }
+  if (shouldSeedDesign) {
+    log.info('  ▶ [ARCHITECTURE] Use `archify` skill to generate validated interactive standalone diagrams (`architecture.html`).');
+    log.info('  ▶ [UI/UX DESIGN] Ground visual specs in `frontend-design` (Anthropic) & Vercel Web Interface Guidelines.');
+  }
   log.info(`  ▶ Run \`asdlc lint ${slug}\`.`);
   return slug;
 }

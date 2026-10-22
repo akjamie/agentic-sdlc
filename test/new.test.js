@@ -29,6 +29,9 @@ test('newChange: auto-seeds design.md when requirement mentions UI or API keywor
   assert.ok(content.includes('Interface Contracts'));
   assert.ok(content.includes('External Services'));
   assert.ok(content.includes('UI/UX Design, Visual Hierarchy & Aesthetics'));
+  assert.ok(content.includes('Archify Standalone Interactive Diagram'));
+  assert.ok(content.includes('Anti-AI Slop Mandate'));
+  assert.ok(content.includes('frontend-design'));
 });
 
 test('newChange: seeds design.md when --design flag is explicitly passed', () => {
