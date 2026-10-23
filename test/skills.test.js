@@ -85,3 +85,28 @@ test('skills parity: assets/skills and .agents/skills are byte-for-byte identica
     assert.ok(assetContent.equals(agentContent), `${skillName}/SKILL.md should be identical across assets and .agents`);
   }
 });
+
+test('asdlc-impl-review: incorporates Anthropic review principles', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const content = fs.readFileSync(path.join(root, 'assets', 'skills', 'asdlc-impl-review', 'SKILL.md'), 'utf8');
+
+  // Anti-thrashing & Convergence
+  assert.match(content, /Convergence Protocol/);
+  assert.match(content, /3 rounds/);
+  assert.match(content, /Diff-Only Re-Review/);
+  assert.match(content, /Class-of-Bug Grouping/);
+  assert.match(content, /ESCALATED_TO_HUMAN/);
+
+  // Repo-Level Contract
+  assert.match(content, /REVIEW\.md/);
+  assert.match(content, /What failure looks like/);
+
+  // Risk Tiering
+  assert.match(content, /Risk-Based Tiering/);
+  assert.match(content, /Tier 1 \(Low Risk\)/);
+  assert.match(content, /Tier 3 \(High Risk\)/);
+
+  // Defect Attribution
+  assert.match(content, /\[Blocker: Introduced\]/);
+  assert.match(content, /\[Tech Debt: Pre-existing\]/);
+});

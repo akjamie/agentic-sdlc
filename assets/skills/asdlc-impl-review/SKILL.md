@@ -1,6 +1,6 @@
 ---
 name: asdlc-impl-review
-description: "Independent AI Implementation Review (Stage 6.5): evaluate an Impl PR for spec conformance, code quality, test fidelity, and production readiness before human lead approval. Accepts a GitHub PR URL or local CHANGE_ID."
+description: "Independent AI Implementation Review (Stage 6.5): evaluate an Impl PR for spec conformance, code quality, test fidelity, and production readiness before human lead approval. Incorporates Anthropic code review principles (anti-thrashing convergence, 3-round cap, repo-level REVIEW.md contracts, introduced-vs-preexisting defect attribution, and risk tiering). Accepts a GitHub PR URL or local CHANGE_ID."
 aliases:
   - impl-review
   - code-review-asdlc
@@ -12,6 +12,15 @@ This skill executes **independent AI implementation review**, triggered by CI wh
 It posts its findings as a **markdown PR comment** via the GitHub API so the human lead sees them inline on the PR.
 
 It applies the **Player ≠ Referee** principle: the reviewing agent MUST NOT be the agent that authored the implementation.
+
+### Core Philosophy: Protecting Human Time & Attention
+
+Drawing from Anthropic's engineering practices for scaling AI code reviews, this reviewer enforces:
+1. **Convergence Protocol**: Review loops must converge, not thrash. Capped at **3 rounds** max; re-reviews inspect **incremental diffs only**.
+2. **Defect Attribution**: Clearly separates defects introduced by this PR (`[Blocker: Introduced]`) from pre-existing legacy issues (`[Tech Debt: Pre-existing]`). Pre-existing flaws **never block** the PR.
+3. **Repository Contract (`REVIEW.md`)**: Respects repository-defined domain rules, failure modes, and ignore paths over generic AI opinions.
+4. **Risk-Based Tiering**: Scrutiny scales with the change's risk profile (Tier 1 Docs/Style, Tier 2 Standard, Tier 3 Critical/Auth/Billing).
+5. **Class-of-Bug Grouping**: Defect patterns are grouped into singular findings rather than fragmented into line-by-line spam.
 
 > [!IMPORTANT]
 > **Scope**: Reviews *implementation conformance and code quality* — spec adherence, test rigor, architecture, and production safety.
@@ -53,24 +62,48 @@ stage('Implementation AI Review') {
 
 ## Workflow Sequence
 
-### Step 1: Acquire PR Context
+### Step 1: Acquire PR Context & Discover Repo Contract
 
-Run the following commands to collect everything needed for review:
+Run the following commands to collect PR metadata, history, and repo review contracts:
 
 ```bash
-# List changed files and metadata
-gh pr view $PR_NUMBER --repo $REPO --json title,body,baseRefName,headRefName,files
+# 1. Fetch PR metadata and previous review comments
+gh pr view $PR_NUMBER --repo $REPO --json title,body,baseRefName,headRefName,headRefOid,comments,files
 
-# Read the full implementation diff
-gh pr diff $PR_NUMBER --repo $REPO
+# 2. Check for repository-level REVIEW.md contract
+# Checked in order: .asdlc/REVIEW.md -> openspec/REVIEW.md -> REVIEW.md
+git show HEAD:.asdlc/REVIEW.md 2>/dev/null || \
+git show HEAD:openspec/REVIEW.md 2>/dev/null || \
+git show HEAD:REVIEW.md 2>/dev/null || true
 ```
 
-Extract from the PR body or branch:
-- `CHANGE_ID` from the `**Change ID**:` field or branch name
-- `specSha` from `.openspec.yaml` (read from the base branch or PR file list)
+Extract from the PR body, comments, and repo contract:
+- `CHANGE_ID` from the `**Change ID**:` field or branch name (`asdlc/impl/<CHANGE_ID>`)
+- `specSha` from `.openspec.yaml` (read from base branch or PR files)
+- `headRefOid`: Current commit SHA under review
+- `reviewRound`: Count previous `## 🤖 AI Implementation Review` comments on this PR:
+  - If 0 previous comments → **Round 1 (Initial Review)**
+  - If 1 previous comment → **Round 2 (Re-review)**
+  - If 2 previous comments → **Round 3 (Final Automated Round)**
+  - If 3+ previous comments → **ESCALATE TO HUMAN** (Anti-thrashing limit reached)
+- `lastReviewedSha`: Extracted from the `> **Commit SHA**:` line of the most recent AI review comment.
 
-Then read the approved spec to use as ground truth:
+#### Repository Review Contract (`REVIEW.md`)
+If a `REVIEW.md` exists, parse and enforce its declared specifications:
+- **What failure looks like**: Domain-specific definitions of defect (e.g., "for billing: currency precision loss; for router: unhandled 404 fallback").
+- **Path Exclusions / Ignores**: Exclude auto-generated files, lockfiles, or fixture dumps from review scrutiny.
+- **Non-Negotiable Invariants**: Explicit architectural rules that supersede generic style preferences.
 
+#### Risk-Based Tiering
+Classify the PR into one of three risk tiers based on files changed (not author seniority):
+- **Tier 1 (Low Risk)**: Documentation, comments, copy, purely additive test fixtures, styling/CSS.
+  *Protocol*: Single-pass lightweight check for factual accuracy, typos, and broken links.
+- **Tier 2 (Standard Risk)**: Standard application features, domain services, UI state, API endpoints.
+  *Protocol*: Full 5-dimension review, AC Conformance Matrix, test fidelity check.
+- **Tier 3 (High Risk)**: Auth/security, payment/billing, cryptography, DB migrations, core CI/governance engine.
+  *Protocol*: Rigorous scrutiny, failure-mode analysis, strict zero-tolerance for untested edge cases, mandatory human lead sign-off.
+
+#### Read Approved Spec Ground Truth
 ```bash
 # Read the approved spec from the base branch
 git show origin/<baseRefName>:openspec/changes/<CHANGE_ID>/specs/<capability>/spec.md
@@ -86,21 +119,58 @@ asdlc test <CHANGE_ID> --json
 
 ---
 
-### Step 2: Apply the Five Review Dimensions
+### Step 2: Determine Diff Scope & Anti-Thrashing Protocol
 
-Evaluate the full diff against all five dimensions. Mark each `PASS`, `CONCERN`, or `FAIL`.
+To prevent infinite review-author thrashing and fatigue:
+
+#### A. Diff-Only Re-Review (Rounds 2 & 3)
+- **Round 1**: Inspect the full PR diff:
+  ```bash
+  gh pr diff $PR_NUMBER --repo $REPO
+  ```
+- **Round 2+**: Inspect **ONLY** the incremental diff since the last reviewed commit:
+  ```bash
+  git diff $lastReviewedSha...$headRefOid
+  ```
+  *Never re-review unchanged baseline code or lines previously deemed acceptable.*
+
+#### B. Thread Resolution & Accounting
+On re-reviews (Rounds 2 & 3), audit each previously reported Blocker and Major finding:
+- **✅ Resolved**: Explicitly verified as fixed in the incremental diff.
+- **⚠️ Disputed / Justified**: Author provided clear architectural justification or documented trade-off in PR comments.
+- **❌ Unresolved**: Finding remains unaddressed without justification.
+
+#### C. Class-of-Bug Grouping
+Do not post 10 separate line comments for the same recurring pattern (e.g., missing timeout on HTTP requests or unhandled nulls).
+Roll them up into a single finding citing all affected locations:
+> *"Class of Bug: Missing timeoutMs on outbound fetch calls in 4 handlers (`api/users.ts:42`, `api/billing.ts:88`, ...)"*
+
+#### D. No-Repeat Suppression
+Do not re-surface previously posted findings unless the author explicitly claimed to fix them in the current commit and failed.
+
+#### E. 3-Round Convergence Cap
+If Round 3 completes with unresolved blockers:
+- Set verdict to `🔴 ESCALATED_TO_HUMAN`.
+- Do not trigger further automated loops.
+- Provide a concise summary of the impasse for the human lead.
+
+---
+
+### Step 3: Apply the Five Review Dimensions
+
+Evaluate the diff against all five dimensions, informed by `REVIEW.md` and spec ground truth. Mark each `PASS`, `CONCERN`, or `FAIL`.
 
 #### D1 — Spec Conformance (AC-by-AC)
-- **Acceptance Test Gate**: Did `asdlc test <CHANGE_ID>` pass with exit code 0? If any mapped test failed or is missing, mark as **🔴 Blocker**.
+- **Acceptance Test Gate**: Did `asdlc test <CHANGE_ID>` pass with exit code 0? If any mapped test failed or is missing, mark as **🔴 Blocker: Introduced**.
 - For every `ACn:` in `specs/**/*.md`:
   - Does the implementation satisfy the exact acceptance criterion as written?
   - Is the behavior exercised in the mapped `(test: <path>)` test?
   - Are there any requirements in the spec with **no implementation coverage**?
   - Are there any implemented behaviors with **no corresponding AC** (scope creep)?
-
-Flag scope creep as Major: it bypasses the governance gate and introduces untested surface area.
+- Flag scope creep as Major: it bypasses the governance gate and introduces untested surface area.
 
 #### D2 — Code Quality & Architecture
+- **REVIEW.md Compliance**: Adheres to all repository-declared architectural invariants.
 - **Deep modules**: Does each new module expose a simple interface hiding a complex interior? Flag shallow wrappers that leak implementation detail.
 - **Single Responsibility**: Does each function / class do one thing? Flag functions mixing IO and business logic in the same body.
 - **Error propagation**: Are errors surfaced explicitly (typed error objects or Result types), not swallowed silently?
@@ -112,7 +182,7 @@ Flag scope creep as Major: it bypasses the governance gate and introduces untest
 - Are mocks **minimal and scoped**? A mock replacing an entire subsystem and always returning a happy-path fixture is a vacuous test.
 - Does each test exercise the **failure path** as well as the happy path?
 - Does `tasks.md` contain real test runner output for every `[x]` task (not just "✅ done")?
-- Are edge cases from the spec (e.g. rainy-day ranking, high-temp advisory, upstream-API-unavailable fallback) each exercised by a distinct test case?
+- Are edge cases from the spec each exercised by a distinct test case?
 
 #### D4 — Production Readiness & Performance
 - **NFRs met**: If the spec declares a latency SLA, is there a test or benchmark that fails when the SLA is violated?
@@ -128,31 +198,20 @@ Flag scope creep as Major: it bypasses the governance gate and introduces untest
 
 ---
 
-### Step 3: Build the AC Conformance Matrix
+### Step 4: Formulate Findings with Defect Attribution
 
-For each `ACn:` in the approved spec, produce one row:
+Every finding must include strict defect attribution to avoid penalizing the PR author for legacy codebase flaws:
 
-| AC | Spec Assertion | Implemented In | Test File | Status |
-| :--- | :--- | :--- | :--- | :--- |
-| AC1 | <assertion text> | src/<module>.ts | test/<feature>.test.ts | ✅ PASS / ❌ MISSING |
-
-Mark `❌ MISSING` for any AC whose implementation or test cannot be located in the diff.
-
----
-
-### Step 4: Formulate Findings
-
-Classify each finding:
-
-- **🔴 Blocker** — AC not implemented, test always passes regardless of code, hard-coded secret, resource leak, spec-forbidden behavior present. Blocks merge.
-- **🟡 Major** — Scope creep (code not covered by any AC), vacuous mock, missing timeout on upstream HTTP call, PII in logs.
-- **🟢 Advisory** — Naming clarity, minor refactor opportunity, optional performance improvement.
+- **🔴 [Blocker: Introduced]** — Broken AC, test cheating/vacuous mock, regression, hardcoded secret, or resource leak **introduced by this PR**. **Blocks merge.**
+- **🟡 [Major: Introduced]** — Material defect introduced by this PR (scope creep, missing error handling, unhandled edge case). Requires resolution or author justification.
+- **⚪ [Tech Debt: Pre-existing]** — Existing legacy codebase flaw or code smell observed in touched files but **not introduced by this PR**. **DOES NOT block merge.** Documented separately for backlog tracking.
+- **🟢 [Advisory]** — Non-blocking suggestions for readability, naming clarity, or optional polish.
 
 ---
 
 ### Step 5: Post PR Comment
 
-Compose the review as markdown and post it as a PR comment using the GitHub API:
+Compose the review markdown and post it as a PR comment using the GitHub API:
 
 ```bash
 gh pr comment $PR_NUMBER --repo $REPO --body "$(cat <<'EOF'
@@ -167,8 +226,11 @@ Format the comment body strictly as:
 ## 🤖 AI Implementation Review — `<CHANGE_ID>`
 
 > **Reviewer**: AI Independent Implementation Reviewer (`asdlc-impl-review`)
+> **Commit SHA**: `<headRefOid>`
 > **Base spec SHA**: `<specSha>`
-> **Verdict**: ✅ APPROVE | 🔴 REQUEST_CHANGES
+> **Risk Tier**: Tier 1 (Low) | Tier 2 (Standard) | Tier 3 (High)
+> **Review Round**: Round 1 of 3 | Round 2 of 3 | Round 3 of 3 (Final)
+> **Verdict**: ✅ APPROVE | 🔴 REQUEST_CHANGES | ⚠️ ESCALATED_TO_HUMAN
 
 ### Dimension Scores
 
@@ -186,16 +248,28 @@ Format the comment body strictly as:
 | :--- | :--- | :--- | :--- | :--- |
 | AC1 | <assertion text> | src/<module>.ts | test/<feature>.test.ts | ✅ PASS |
 
-### 🔴 Blocking Findings
-<!-- Omit section if none -->
-1. **[Blocker]** `<file>:<line-range>` — AC<n>: <description of gap or violation>
+<!-- On Rounds 2 and 3, include Thread Resolution Accounting -->
+### 🔄 Re-Review Accounting (Round <round>)
+| Finding from Previous Round | Status | Resolution / Author Rationale |
+| :--- | :---: | :--- |
+| #1 Missing timeout in fetch | ✅ Resolved | Added 5000ms AbortSignal in `src/http.ts` |
+| #2 Scope creep helper | ⚠️ Justified | Author noted shared utility needed for next phase |
 
-### 🟡 Major Findings
+### 🔴 Blocking Findings (Introduced)
 <!-- Omit section if none -->
-1. **[Major]** <description>
+1. **[Blocker: Introduced]** `<file>:<line-range>` — AC<n>: <description of gap or violation>
+
+### 🟡 Major Findings (Introduced)
+<!-- Omit section if none -->
+1. **[Major: Introduced]** `<file>:<line-range>` — <description>
+
+### ⚪ Tech Debt: Pre-existing Codebase Observations
+<!-- Non-blocking; omit section if none -->
+1. **[Tech Debt: Pre-existing]** `<file>:<line-range>` — <description of pre-existing legacy issue, untouched by PR>
 
 ### 🟢 Advisory Notes
 <!-- Omit section if none -->
+1. **[Advisory]** <description>
 
 ---
 *Human lead: review the findings above, then merge when satisfied. After merge, run `asdlc archive <CHANGE_ID>`.*
@@ -205,15 +279,16 @@ Format the comment body strictly as:
 
 ### Step 6: Set CI Status
 
-After posting the comment:
+After posting the comment, set the commit status check:
 
 - **If APPROVE**: set CI check status to `success` (green). The PR is unblocked for lead approval and merge.
 - **If REQUEST_CHANGES**: set CI check status to `failure` (red). The PR is blocked until blockers are resolved.
+- **If ESCALATED_TO_HUMAN**: set CI check status to `failure` (red) with description noting human arbitration is required.
 
 ```bash
 gh api repos/$REPO/statuses/$SHA \
   -f state="success|failure" \
   -f context="asdlc/impl-ai-review" \
-  -f description="AI Impl Review: APPROVE|REQUEST_CHANGES" \
+  -f description="AI Impl Review: APPROVE | REQUEST_CHANGES | ESCALATED_TO_HUMAN" \
   -f target_url="$PR_URL"
 ```
