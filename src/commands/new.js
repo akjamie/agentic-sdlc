@@ -206,6 +206,11 @@ _(unavailable - graph query error)_
     log.info('  ▶ Record agreed decisions into `clarifications.md`.');
     log.info('  ▶ ONLY AFTER clarifications are settled: author `proposal.md`, `specs/**`, and `design.md` (if seeded/needed).');
   }
+  if (shouldSeedDesign) {
+    log.info('  ▶ [ARCHITECTURE] Generate architecture diagram (embedded Mermaid flowchart / sequenceDiagram).');
+    log.info('  ▶ [API DESIGN] Follow `api-design` skill (RESTful nouns, Stripe-style / RFC 7807 errors, idempotency, cursor pagination).');
+    log.info('  ▶ [UI/UX DESIGN] Ground visual specs in `frontend-design` (Anthropic) & Vercel Web Interface Guidelines.');
+  }
   log.info(`  ▶ Run \`asdlc lint ${slug}\`.`);
   return slug;
 }

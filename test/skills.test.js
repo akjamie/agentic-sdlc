@@ -17,6 +17,8 @@ test('asdlc skills list: lists bundled skills including spec-review and impl-rev
   assert.match(out, /asdlc-impl-review/);
   assert.match(out, /asdlc-apply/);
   assert.match(out, /batch-grill-me/);
+  assert.match(out, /frontend-design/);
+  assert.match(out, /api-design/);
 });
 
 test('asdlc skills install: fails with hint when not in repo and --global is omitted', () => {
@@ -61,5 +63,25 @@ test('installGlobalSkills: installs skills into requested tools directories', ()
   } finally {
     os.homedir = origHome;
     fs.rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
+test('skills parity: assets/skills and .agents/skills are byte-for-byte identical', () => {
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const assetsSkills = path.join(repoRoot, 'assets', 'skills');
+  const dotAgentsSkills = path.join(repoRoot, '.agents', 'skills');
+
+  const assetList = fs.readdirSync(assetsSkills).sort();
+  const agentList = fs.readdirSync(dotAgentsSkills).sort();
+  assert.deepEqual(assetList, agentList, 'skills directory list should match');
+
+  for (const skillName of assetList) {
+    const assetFile = path.join(assetsSkills, skillName, 'SKILL.md');
+    const agentFile = path.join(dotAgentsSkills, skillName, 'SKILL.md');
+    assert.ok(fs.existsSync(assetFile), `${assetFile} must exist`);
+    assert.ok(fs.existsSync(agentFile), `${agentFile} must exist`);
+    const assetContent = fs.readFileSync(assetFile);
+    const agentContent = fs.readFileSync(agentFile);
+    assert.ok(assetContent.equals(agentContent), `${skillName}/SKILL.md should be identical across assets and .agents`);
   }
 });
