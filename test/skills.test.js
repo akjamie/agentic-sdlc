@@ -109,4 +109,14 @@ test('asdlc-impl-review: incorporates Anthropic review principles', () => {
   // Defect Attribution
   assert.match(content, /\[Blocker: Introduced\]/);
   assert.match(content, /\[Tech Debt: Pre-existing\]/);
+
+  // Base Branch Trusted Contract & Shallow Clone Resilience
+  assert.match(content, /origin\/<baseRefName>:\.asdlc\/REVIEW\.md/);
+  assert.match(content, /fetch origin \$lastReviewedSha/);
+  assert.match(content, /merge-base --is-ancestor/);
+
+  // Structural actionable findings for AI & Human
+  assert.match(content, /Action Required/);
+  assert.match(content, /Impact/);
+  assert.match(content, /R<round>-#/);
 });

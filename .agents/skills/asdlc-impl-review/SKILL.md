@@ -18,9 +18,10 @@ It applies the **Player ≠ Referee** principle: the reviewing agent MUST NOT be
 Drawing from Anthropic's engineering practices for scaling AI code reviews, this reviewer enforces:
 1. **Convergence Protocol**: Review loops must converge, not thrash. Capped at **3 rounds** max; re-reviews inspect **incremental diffs only**.
 2. **Defect Attribution**: Clearly separates defects introduced by this PR (`[Blocker: Introduced]`) from pre-existing legacy issues (`[Tech Debt: Pre-existing]`). Pre-existing flaws **never block** the PR.
-3. **Repository Contract (`REVIEW.md`)**: Respects repository-defined domain rules, failure modes, and ignore paths over generic AI opinions.
-4. **Risk-Based Tiering**: Scrutiny scales with the change's risk profile (Tier 1 Docs/Style, Tier 2 Standard, Tier 3 Critical/Auth/Billing).
+3. **Repository Contract (`REVIEW.md`)**: Respects repository-defined domain rules, failure modes, and ignore paths from the trusted base branch over generic AI opinions.
+4. **Risk-Based Tiering**: Scrutiny scales with the change's risk profile (Tier 1 Docs/Style, Tier 2 Standard, Tier 3 Critical/Auth/Billing). Highest-risk file sets the PR tier.
 5. **Class-of-Bug Grouping**: Defect patterns are grouped into singular findings rather than fragmented into line-by-line spam.
+6. **Structural & Actionable Findings**: Every finding provides explicit Location, Defect, Impact, and Action Required for instant clarity to both AI agents and human leads.
 
 > [!IMPORTANT]
 > **Scope**: Reviews *implementation conformance and code quality* — spec adherence, test rigor, architecture, and production safety.
@@ -70,11 +71,13 @@ Run the following commands to collect PR metadata, history, and repo review cont
 # 1. Fetch PR metadata and previous review comments
 gh pr view $PR_NUMBER --repo $REPO --json title,body,baseRefName,headRefName,headRefOid,comments,files
 
-# 2. Check for repository-level REVIEW.md contract
+# 2. Check for repository-level REVIEW.md contract from trusted base branch
 # Checked in order: .asdlc/REVIEW.md -> openspec/REVIEW.md -> REVIEW.md
-git show HEAD:.asdlc/REVIEW.md 2>/dev/null || \
-git show HEAD:openspec/REVIEW.md 2>/dev/null || \
-git show HEAD:REVIEW.md 2>/dev/null || true
+# IMPORTANT: Always read from origin/<baseRefName>, NEVER from PR HEAD,
+# to prevent self-review bypasses (e.g., PR injecting path exclusions or rewriting failure definitions).
+git show origin/<baseRefName>:.asdlc/REVIEW.md 2>/dev/null || \
+git show origin/<baseRefName>:openspec/REVIEW.md 2>/dev/null || \
+git show origin/<baseRefName>:REVIEW.md 2>/dev/null || true
 ```
 
 Extract from the PR body, comments, and repo contract:
@@ -85,23 +88,23 @@ Extract from the PR body, comments, and repo contract:
   - If 0 previous comments → **Round 1 (Initial Review)**
   - If 1 previous comment → **Round 2 (Re-review)**
   - If 2 previous comments → **Round 3 (Final Automated Round)**
-  - If 3+ previous comments → **ESCALATE TO HUMAN** (Anti-thrashing limit reached)
+  - If 3+ previous comments → **ESCALATED TO HUMAN** (Anti-thrashing limit reached: do NOT post another review comment; set CI status to failure pointing to previous escalation).
 - `lastReviewedSha`: Extracted from the `> **Commit SHA**:` line of the most recent AI review comment.
 
 #### Repository Review Contract (`REVIEW.md`)
-If a `REVIEW.md` exists, parse and enforce its declared specifications:
+If a `REVIEW.md` exists on the base branch, parse and enforce its declared specifications:
 - **What failure looks like**: Domain-specific definitions of defect (e.g., "for billing: currency precision loss; for router: unhandled 404 fallback").
 - **Path Exclusions / Ignores**: Exclude auto-generated files, lockfiles, or fixture dumps from review scrutiny.
 - **Non-Negotiable Invariants**: Explicit architectural rules that supersede generic style preferences.
 
 #### Risk-Based Tiering
-Classify the PR into one of three risk tiers based on files changed (not author seniority):
+Classify the PR into one of three risk tiers based on files changed (**highest-risk file sets the PR tier**):
 - **Tier 1 (Low Risk)**: Documentation, comments, copy, purely additive test fixtures, styling/CSS.
-  *Protocol*: Single-pass lightweight check for factual accuracy, typos, and broken links.
+  *Protocol*: Single-pass lightweight check for factual accuracy, typos, and broken links. Skip the AC Conformance Matrix unless specific ACs were defined in the spec.
 - **Tier 2 (Standard Risk)**: Standard application features, domain services, UI state, API endpoints.
   *Protocol*: Full 5-dimension review, AC Conformance Matrix, test fidelity check.
-- **Tier 3 (High Risk)**: Auth/security, payment/billing, cryptography, DB migrations, core CI/governance engine.
-  *Protocol*: Rigorous scrutiny, failure-mode analysis, strict zero-tolerance for untested edge cases, mandatory human lead sign-off.
+- **Tier 3 (High Risk)**: Auth/security, payment/billing, cryptography, DB migrations, core CI/governance engine, or **any PR modifying `REVIEW.md` or governance files**.
+  *Protocol*: Rigorous scrutiny, failure-mode analysis, strict zero-tolerance for untested edge cases, mandatory human lead sign-off. Flag governance modification explicitly in the review body.
 
 #### Read Approved Spec Ground Truth
 ```bash
@@ -130,12 +133,24 @@ To prevent infinite review-author thrashing and fatigue:
   ```
 - **Round 2+**: Inspect **ONLY** the incremental diff since the last reviewed commit:
   ```bash
-  git diff $lastReviewedSha...$headRefOid
+  # Ensure lastReviewedSha is available in shallow CI clones
+  git cat-file -e $lastReviewedSha^{commit} 2>/dev/null || \
+    git fetch origin $lastReviewedSha --depth=1 2>/dev/null || \
+    git fetch origin $baseRefName --depth=50 2>/dev/null || true
+
+  # Check for force-push / history rewrite:
+  # If lastReviewedSha is not an ancestor of headRefOid, reset to fresh Round 1 full diff
+  if ! git merge-base --is-ancestor $lastReviewedSha $headRefOid 2>/dev/null; then
+    echo "Force-push or rebase detected: commit history was rewritten. Resetting to full-diff review."
+    gh pr diff $PR_NUMBER --repo $REPO
+  else
+    git diff $lastReviewedSha...$headRefOid
+  fi
   ```
   *Never re-review unchanged baseline code or lines previously deemed acceptable.*
 
 #### B. Thread Resolution & Accounting
-On re-reviews (Rounds 2 & 3), audit each previously reported Blocker and Major finding:
+On re-reviews (Rounds 2 & 3), audit each previously reported Blocker and Major finding using stable IDs (`R1-#1`, `R1-#2`, `R2-#1`):
 - **✅ Resolved**: Explicitly verified as fixed in the incremental diff.
 - **⚠️ Disputed / Justified**: Author provided clear architectural justification or documented trade-off in PR comments.
 - **❌ Unresolved**: Finding remains unaddressed without justification.
@@ -150,7 +165,7 @@ Do not re-surface previously posted findings unless the author explicitly claime
 
 #### E. 3-Round Convergence Cap
 If Round 3 completes with unresolved blockers:
-- Set verdict to `🔴 ESCALATED_TO_HUMAN`.
+- Set verdict to `⚠️ ESCALATED_TO_HUMAN`.
 - Do not trigger further automated loops.
 - Provide a concise summary of the impasse for the human lead.
 
@@ -198,9 +213,9 @@ Evaluate the diff against all five dimensions, informed by `REVIEW.md` and spec 
 
 ---
 
-### Step 4: Formulate Findings with Defect Attribution
+### Step 4: Formulate Structural Findings with Defect Attribution
 
-Every finding must include strict defect attribution to avoid penalizing the PR author for legacy codebase flaws:
+Every finding must follow a structured schema with explicit defect attribution so that findings are unambiguously actionable for both AI agents and human engineers:
 
 - **🔴 [Blocker: Introduced]** — Broken AC, test cheating/vacuous mock, regression, hardcoded secret, or resource leak **introduced by this PR**. **Blocks merge.**
 - **🟡 [Major: Introduced]** — Material defect introduced by this PR (scope creep, missing error handling, unhandled edge case). Requires resolution or author justification.
@@ -243,6 +258,7 @@ Format the comment body strictly as:
 | D5 Security & Secret Hygiene | ✅ / ⚠️ / ❌ | <one-line summary> |
 
 ### AC Conformance Matrix
+<!-- For Tier 1 changes with no spec ACs, replace table with: "*Tier 1 change — AC Conformance Matrix omitted.*" -->
 
 | AC | Spec Assertion | Implemented In | Test File | Status |
 | :--- | :--- | :--- | :--- | :--- |
@@ -250,22 +266,37 @@ Format the comment body strictly as:
 
 <!-- On Rounds 2 and 3, include Thread Resolution Accounting -->
 ### 🔄 Re-Review Accounting (Round <round>)
-| Finding from Previous Round | Status | Resolution / Author Rationale |
-| :--- | :---: | :--- |
-| #1 Missing timeout in fetch | ✅ Resolved | Added 5000ms AbortSignal in `src/http.ts` |
-| #2 Scope creep helper | ⚠️ Justified | Author noted shared utility needed for next phase |
+| Finding ID | Previous Finding Summary | Status | Resolution / Author Rationale |
+| :---: | :--- | :---: | :--- |
+| `R1-#1` | Missing 5000ms timeout in fetch | ✅ Resolved | Added `AbortSignal.timeout(5000)` in `src/http.ts:24` |
+| `R1-#2` | Scope creep helper `parseAmount` | ⚠️ Justified | Author rationale: Shared utility required for currency normalization |
 
 ### 🔴 Blocking Findings (Introduced)
-<!-- Omit section if none -->
-1. **[Blocker: Introduced]** `<file>:<line-range>` — AC<n>: <description of gap or violation>
+<!-- Omit section if none. Use structural format for AI/Human clarity -->
+- **ID**: `R<round>-#<num>`
+  - **Category**: `Spec Conformance` | `Code Quality` | `Test Fidelity` | `Production Readiness` | `Security`
+  - **Rule / AC**: `<ACn or REVIEW.md invariant or Dimension D1-D5>`
+  - **Location**: `<file>:<line-range>`
+  - **Defect**: `<concise statement of what is broken>`
+  - **Impact**: `<why this breaks correctness, security, or production>`
+  - **Action Required**: `<exact condition or code fix required to resolve>`
 
 ### 🟡 Major Findings (Introduced)
 <!-- Omit section if none -->
-1. **[Major: Introduced]** `<file>:<line-range>` — <description>
+- **ID**: `R<round>-#<num>`
+  - **Category**: `<category>`
+  - **Location**: `<file>:<line-range>`
+  - **Defect**: `<description>`
+  - **Impact**: `<impact>`
+  - **Action Required**: `<action required>`
 
 ### ⚪ Tech Debt: Pre-existing Codebase Observations
 <!-- Non-blocking; omit section if none -->
-1. **[Tech Debt: Pre-existing]** `<file>:<line-range>` — <description of pre-existing legacy issue, untouched by PR>
+- **ID**: `DEBT-#<num>`
+  - **Location**: `<file>:<line-range>`
+  - **Defect**: `<description of pre-existing legacy issue, untouched by PR>`
+  - **Attribution**: Pre-existing code untouched by this PR diff.
+  - **Status**: Non-blocking. Logged for tech debt backlog.
 
 ### 🟢 Advisory Notes
 <!-- Omit section if none -->
