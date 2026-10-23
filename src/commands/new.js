@@ -208,6 +208,7 @@ _(unavailable - graph query error)_
   }
   if (shouldSeedDesign) {
     log.info('  ▶ [ARCHITECTURE] Use `archify` skill to generate validated interactive standalone diagrams (`architecture.html`).');
+    log.info('  ▶ [API DESIGN] Follow `api-design` skill (RESTful nouns, RFC 7807 errors, idempotency, cursor pagination).');
     log.info('  ▶ [UI/UX DESIGN] Ground visual specs in `frontend-design` (Anthropic) & Vercel Web Interface Guidelines.');
   }
   log.info(`  ▶ Run \`asdlc lint ${slug}\`.`);

@@ -88,8 +88,15 @@ Once `## Open questions` in `clarifications.md` is empty, author the change docu
        - Use the `archify` skill (`node bin/archify.mjs deliver <type> <candidate.json> architecture.html --quality showcase`) to produce a validated, standalone interactive HTML diagram (`architecture.html`) with light/dark themes and trace motion.
        - Supported types: `architecture` (components/boundaries), `workflow` (pipelines/processes), `sequence` (API chains), `dataflow` (ETL/lineage), `lifecycle` (state transitions).
        - Provide inline Mermaid flowchart/sequence diagram as an alternate or conversion source.
-     - **Interface Contracts & Schemas**: TypeScript interfaces or JSON schemas for all requests/responses.
-     - **External API Integration**: Endpoints, authentication, rate limits, client-level in-memory/TTL caching (never recreate clients per request), error taxonomy & fallbacks.
+     - **Interface Contracts & Schemas (`api-design` recommended)**:
+       - Follow the `api-design` skill for RESTful conventions (plural nouns, kebab-case, hierarchical nesting, zero verbs in URLs).
+       - Specify exact TypeScript interfaces or JSON schemas for request/response payloads.
+       - Standardize on RFC 7807 error envelopes (`{ error: { code, message, details } }`). Never return `200 OK` with an error body.
+       - Define explicit pagination strategy: cursor-based (`cursor`, `limit`, `has_more`) or offset-based.
+     - **External API Integration & Resilience**:
+       - Endpoints, authentication, rate limits (`X-RateLimit-*`), client-level in-memory/TTL caching (never recreate clients per request).
+       - Mutating endpoints must specify `Idempotency-Key` header with deduplication cache.
+       - Error taxonomy, fallback degradation, and exponential backoff retry with jitter.
      - **Security & Operational NFRs (Optional / When Applicable)**: Document authentication, boundary validation, secret lifecycles, and performance budgets/quotas when the architecture demands them.
      - **UI/UX Design Specifications (`frontend-design` & Vercel Guidelines)**:
        - **Anti-AI Slop Mandate**: Zero tolerance for cliché glowing cards, arbitrary gradient text highlights, uniform pill buttons, or monotonous card grids.

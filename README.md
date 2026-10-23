@@ -186,7 +186,8 @@ For complete technical specifications of each plane, see [docs/architecture.md](
 | **Stage & Skill** | **Purpose & Behavior** |
 | :--- | :--- |
 | **Stage 1 · Init**<br>[`asdlc-init`](assets/skills/asdlc-init/SKILL.md) | Bootstraps repository: OpenSpec, Graphify AST engine, governance schema, policies, git hooks, and agent skills. |
-| **Stage 2 · New**<br>[`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Grounds intent in Graphify AST queries, seeds `clarifications.md`, runs conversational `grill-me` (or `--batch-grill`), and generates `design.md` with `archify` interactive diagrams & `frontend-design`. |
+| **Stage 2 · New**<br>[`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Grounds intent in Graphify AST queries, seeds `clarifications.md`, runs conversational `grill-me` (or `--batch-grill`), and generates `design.md` with `archify`, `api-design`, and `frontend-design`. |
+| **API Design**<br>[`api-design`](assets/skills/api-design/SKILL.md) | Enforces enterprise RESTful standards: plural noun URLs, RFC 7807 error envelopes, cursor pagination, `Idempotency-Key` headers, and rate-limiting resilience. |
 | **UI/UX Design**<br>[`frontend-design`](assets/skills/frontend-design/SKILL.md) | Enforces Anthropic official `frontend-design` & Vercel Web Interface Guidelines: anti-AI slop, bespoke 4–6 hex palettes, typography pairings, hero moments, and 5 mandatory states. |
 | **Stage 3 · Spec PR**<br>[`asdlc-pr`](assets/skills/asdlc-pr/SKILL.md) | Enforces deterministic BDD/AC linting (R0–R8) and opens Spec PR (CLI → REST API → 1-click Web URL) with auto-labels. |
 | **Stage 3.5 · Spec AI Review**<br>[`asdlc-spec-review`](assets/skills/asdlc-spec-review/SKILL.md) | CI-triggered independent 6-dimension spec evaluation; posts structured findings and traceability matrix as PR comments. |

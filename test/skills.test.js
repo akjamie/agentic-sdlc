@@ -18,6 +18,7 @@ test('asdlc skills list: lists bundled skills including spec-review and impl-rev
   assert.match(out, /asdlc-apply/);
   assert.match(out, /batch-grill-me/);
   assert.match(out, /frontend-design/);
+  assert.match(out, /api-design/);
 });
 
 test('asdlc skills install: fails with hint when not in repo and --global is omitted', () => {

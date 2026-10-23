@@ -39,18 +39,60 @@ sequenceDiagram
 ## 3. Interface Contracts & Data Models
 <!--
 Specify exact TypeScript interfaces, JSON schemas, or DTO structures.
-Define request, response, and domain models to eliminate ambiguity during implementation.
+Follow the `api-design` skill for enterprise REST conventions.
+
+1. Resource Endpoint Definitions:
+   - Method + Path: e.g. `POST /api/v1/payment-intents` (plural nouns, kebab-case, no verbs in URLs)
+   - Headers: `Content-Type: application/json`, `Idempotency-Key` (for mutations)
+   - Request DTO:
+     ```typescript
+     interface CreatePaymentIntentRequest {
+       amountCents: number;
+       currency: 'usd' | 'eur' | 'cny';
+       customerId: string;
+       metadata?: Record<string, string>;
+     }
+     ```
+   - Success Response DTO (200 / 201):
+     ```typescript
+     interface PaymentIntentResponse {
+       data: {
+         id: string;
+         status: 'requires_payment_method' | 'succeeded' | 'canceled';
+         amountCents: number;
+         createdAt: string; // ISO 8601 UTC
+       };
+     }
+     ```
+   - Error Response Contract (RFC 7807 compatible):
+     ```typescript
+     interface ApiErrorResponse {
+       error: {
+         code: string;       // e.g. 'validation_failed', 'resource_not_found'
+         message: string;    // Human-readable summary
+         details?: Array<{ field: string; code: string; message: string }>;
+         requestId?: string;
+       };
+     }
+     ```
+2. Pagination Contract (when returning collections):
+   - Cursor-based (preferred): `cursor`, `limit`, `has_more`, `next_cursor`
+   - Offset-based (admin tables): `page`, `per_page`, `total`, `total_pages`
 -->
 
 ## 4. External Services & 3rd-Party API Integration
 <!--
 MANDATORY if this change integrates external vendor APIs or services.
+Follow `api-design` resilience patterns.
 - Endpoints & Authentication: Exact URLs, parameters, headers, and secret management.
 - Rate Limiting & Quotas: Upstream limit constraints (e.g. 100 req/min, 5,000/day).
 - Client Lifecycle & Caching Strategy:
   - Cache type: in-memory Map / TTL cache / Redis.
   - Cache key formulation, TTL duration, eviction policy.
   - Lifecycle: Reuse client instance (singleton/service pool); NEVER re-instantiate clients per request.
+- Idempotency & Retry Policy:
+  - Header: `Idempotency-Key: <uuid>` on outbound mutations.
+  - Exponential backoff with jitter on 429 / 503; respect `Retry-After`.
 - Error Taxonomy & Degradation/Fallback:
   - Ambiguous input: Candidate list returned, never wrong guess.
   - Upstream 4xx/5xx / Quota exhaustion: User-friendly error message, fallback cache, retry with exponential backoff.

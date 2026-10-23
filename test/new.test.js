@@ -32,6 +32,8 @@ test('newChange: auto-seeds design.md when requirement mentions UI or API keywor
   assert.ok(content.includes('Archify Standalone Interactive Diagram'));
   assert.ok(content.includes('Anti-AI Slop Mandate'));
   assert.ok(content.includes('frontend-design'));
+  assert.ok(content.includes('api-design'));
+  assert.ok(content.includes('Idempotency-Key'));
 });
 
 test('newChange: seeds design.md when --design flag is explicitly passed', () => {
