@@ -10,9 +10,8 @@
 ## 2. System Architecture & Component Interaction
 <!--
 Component breakdown, responsibilities, data flow, and lifecycles.
+Embed a self-contained Mermaid flowchart, sequenceDiagram, or stateDiagram:
 
-Option A (Default): Embedded Mermaid Diagram
-Include a self-contained Mermaid flowchart, sequenceDiagram, or stateDiagram:
 ```mermaid
 sequenceDiagram
   autonumber
@@ -27,14 +26,6 @@ sequenceDiagram
   Svc-->>Client: Normalized contract
   Client-->>User: Render state (success/empty/error)
 ```
-
-Option B: Archify Standalone Interactive Diagram (Companion Skill)
-If the `archify` skill is installed in your agent environment, you can generate an interactive standalone SVG/HTML diagram:
-- Prerequisite: Requires the external `archify` agent skill (with `bin/archify.mjs`). If not installed, use Option A above.
-- Diagram Type: `architecture` (components/boundaries) | `workflow` (pipelines/processes) | `sequence` (API chains) | `dataflow` (ETL/lineage) | `lifecycle` (state transitions)
-- Output Artifact: `architecture.html` (saved in change directory alongside design.md)
-- Delivery Command: `node <archify-path>/bin/archify.mjs deliver <type> <candidate.json> architecture.html --quality showcase` (requires `archify` skill installed)
-- Link below: [Interactive Architecture Diagram](./architecture.html)
 -->
 
 ## 3. Interface Contracts & Data Models

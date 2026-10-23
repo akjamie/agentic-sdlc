@@ -85,8 +85,7 @@ Once `## Open questions` in `clarifications.md` is empty, author the change docu
 2. **`design.md` (Technical Design Document - Mandatory for UI & Complex Systems)**:
    - When a change touches UI/frontend, external APIs, databases, or services, author `design.md` to define **HOW**:
      - **Architecture & Component Interaction**:
-       - Default: Embed clean Mermaid flowcharts or sequence diagrams directly in `design.md`.
-       - Optional standalone visual: When the external `archify` companion skill is installed in the agent environment, agents may generate a validated, standalone interactive HTML diagram (`architecture.html`) with light/dark themes and trace motion (`architecture`, `workflow`, `sequence`, `dataflow`, `lifecycle`). If `archify` is not installed, use embedded Mermaid.
+       - Embed clean, self-contained Mermaid flowcharts, sequence diagrams, or state transitions directly in `design.md`. Keep diagrams focused on component boundaries, responsibilities, and request/response lifecycles.
      - **Interface Contracts & Schemas (`api-design` recommended)**:
        - Follow the `api-design` skill for RESTful conventions (plural nouns, kebab-case, hierarchical nesting, zero verbs in URLs).
        - Specify exact TypeScript interfaces or JSON schemas for request/response payloads.
