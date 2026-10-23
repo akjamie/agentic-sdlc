@@ -1,9 +1,9 @@
 ---
 name: api-design
-description: "Industry-standard RESTful API design guidelines: resource naming, HTTP semantics, RFC 7807 error taxonomy, cursor pagination, idempotency keys, and rate-limiting resilience."
+description: "Industry-standard RESTful API design guidelines: resource naming, HTTP semantics, structured error taxonomy (Stripe-style and RFC 7807), cursor pagination, idempotency keys, and rate-limiting resilience."
 license: MIT
 metadata:
-  origin: "Best-of-market REST standards (Stripe, Zalando, Google API Design Guide, RFC 7807)"
+  origin: "Best-of-market REST standards (Stripe, Zalando, Google API Design Guide, RFC 7807 / RFC 9457, RFC 9110)"
 ---
 
 # Enterprise RESTful API Design Guidelines
@@ -45,7 +45,7 @@ This skill guides coding agents to design consistent, resilient, and developer-f
 | **GET** | Yes | Yes | `200 OK` | Retrieve resource representation without side effects. |
 | **POST** | No | No | `201 Created` (with `Location`) | Create a new subordinate resource or trigger a process. |
 | **PUT** | Yes | No | `200 OK` / `204 No Content` | Complete replacement of the identified resource. |
-| **PATCH** | Yes (when design requires) | No | `200 OK` / `204 No Content` | Partial modification of specific resource attributes. |
+| **PATCH** | No (RFC 9110) | No | `200 OK` / `204 No Content` | Partial modification of specific resource attributes (can be made idempotent with JSON Patch or conditional headers). |
 | **DELETE** | Yes | No | `204 No Content` | Remove resource; subsequent calls return `404` or `204`. |
 
 ### 🎯 Status Code Invariants
@@ -87,7 +87,11 @@ interface CollectionResponse<T> {
 }
 ```
 
-### 🚨 Standardized Error Envelope (RFC 7807 Compatible)
+### 🚨 Standardized Error Envelopes
+
+Choose one consistent error representation across the API:
+
+#### Option A: Stripe-Style Error Envelope (Recommended for Developer-Facing Web APIs)
 ```json
 {
   "error": {
@@ -110,6 +114,28 @@ interface CollectionResponse<T> {
 }
 ```
 
+#### Option B: RFC 7807 Problem Details (`application/problem+json`)
+IETF standard format specifying machine-readable problem details for HTTP APIs:
+```json
+{
+  "type": "https://api.example.com/errors/validation-failed",
+  "title": "Validation Failed",
+  "status": 422,
+  "detail": "The request payload failed validation on 2 fields",
+  "instance": "/api/v1/payment-intents",
+  "invalid_params": [
+    {
+      "name": "email",
+      "reason": "Must be a valid RFC 5322 email address"
+    },
+    {
+      "name": "amount_cents",
+      "reason": "Amount must be greater than 0"
+    }
+  ]
+}
+```
+
 ---
 
 ## 4. Pagination Strategies
@@ -126,7 +152,7 @@ interface CollectionResponse<T> {
     }
   }
   ```
-- **Advantages**: Stable under concurrent inserts/deletes, consistent performance ($O(1)$ indexed lookup), no duplicate records.
+- **Advantages**: Stable under concurrent inserts/deletes, consistent performance (O(1) indexed lookup), no duplicate records.
 
 ### 2. Offset-Based Pagination (Acceptable for Internal Admin Tables)
 - **Request**: `GET /api/v1/users?page=2&per_page=50`

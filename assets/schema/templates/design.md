@@ -11,15 +11,8 @@
 <!--
 Component breakdown, responsibilities, data flow, and lifecycles.
 
-Option A (Recommended): Archify Standalone Interactive Diagram
-Use the `archify` skill to generate a validated, standalone interactive HTML diagram:
-- Diagram Type: `architecture` (components/boundaries) | `workflow` (pipelines/processes) | `sequence` (API chains) | `dataflow` (ETL/lineage) | `lifecycle` (state transitions)
-- Output Artifact: `architecture.html` (saved in change directory alongside design.md)
-- Delivery Command: `node bin/archify.mjs deliver <type> <candidate.json> architecture.html --quality showcase`
-- Link below: [Interactive Architecture Diagram](./architecture.html)
-
-Option B: Embedded Mermaid Diagram
-Where a quick inline visual is sufficient, include a Mermaid flowchart, sequenceDiagram, or stateDiagram:
+Option A (Default): Embedded Mermaid Diagram
+Include a self-contained Mermaid flowchart, sequenceDiagram, or stateDiagram:
 ```mermaid
 sequenceDiagram
   autonumber
@@ -34,6 +27,14 @@ sequenceDiagram
   Svc-->>Client: Normalized contract
   Client-->>User: Render state (success/empty/error)
 ```
+
+Option B: Archify Standalone Interactive Diagram (Companion Skill)
+If the `archify` skill is installed in your agent environment, you can generate an interactive standalone SVG/HTML diagram:
+- Prerequisite: Requires the external `archify` agent skill (with `bin/archify.mjs`). If not installed, use Option A above.
+- Diagram Type: `architecture` (components/boundaries) | `workflow` (pipelines/processes) | `sequence` (API chains) | `dataflow` (ETL/lineage) | `lifecycle` (state transitions)
+- Output Artifact: `architecture.html` (saved in change directory alongside design.md)
+- Delivery Command: `node <archify-path>/bin/archify.mjs deliver <type> <candidate.json> architecture.html --quality showcase` (requires `archify` skill installed)
+- Link below: [Interactive Architecture Diagram](./architecture.html)
 -->
 
 ## 3. Interface Contracts & Data Models
@@ -64,7 +65,8 @@ Follow the `api-design` skill for enterprise REST conventions.
        };
      }
      ```
-   - Error Response Contract (RFC 7807 compatible):
+   - Error Response Contract:
+     Option A: Stripe-style Error Envelope (Recommended for Developer APIs)
      ```typescript
      interface ApiErrorResponse {
        error: {
@@ -73,6 +75,17 @@ Follow the `api-design` skill for enterprise REST conventions.
          details?: Array<{ field: string; code: string; message: string }>;
          requestId?: string;
        };
+     }
+     ```
+     Option B: RFC 7807 Problem Details (Content-Type: application/problem+json)
+     ```typescript
+     interface ProblemDetailsResponse {
+       type: string;       // URI reference (e.g. 'https://api.example.com/errors/validation-failed')
+       title: string;      // Short summary (e.g. 'Validation Failed')
+       status: number;     // HTTP status code (e.g. 422)
+       detail?: string;    // Specific occurrence explanation
+       instance?: string;  // URI identifying specific occurrence (e.g. '/api/v1/orders/123')
+       invalidParams?: Array<{ name: string; reason: string }>;
      }
      ```
 2. Pagination Contract (when returning collections):

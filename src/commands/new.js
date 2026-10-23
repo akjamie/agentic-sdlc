@@ -207,8 +207,8 @@ _(unavailable - graph query error)_
     log.info('  ▶ ONLY AFTER clarifications are settled: author `proposal.md`, `specs/**`, and `design.md` (if seeded/needed).');
   }
   if (shouldSeedDesign) {
-    log.info('  ▶ [ARCHITECTURE] Use `archify` skill to generate validated interactive standalone diagrams (`architecture.html`).');
-    log.info('  ▶ [API DESIGN] Follow `api-design` skill (RESTful nouns, RFC 7807 errors, idempotency, cursor pagination).');
+    log.info('  ▶ [ARCHITECTURE] Generate architecture diagram (embedded Mermaid by default, or `archify` companion skill if installed).');
+    log.info('  ▶ [API DESIGN] Follow `api-design` skill (RESTful nouns, Stripe-style / RFC 7807 errors, idempotency, cursor pagination).');
     log.info('  ▶ [UI/UX DESIGN] Ground visual specs in `frontend-design` (Anthropic) & Vercel Web Interface Guidelines.');
   }
   log.info(`  ▶ Run \`asdlc lint ${slug}\`.`);
