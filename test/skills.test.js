@@ -120,3 +120,16 @@ test('asdlc-impl-review: incorporates Anthropic review principles', () => {
   assert.match(content, /Impact/);
   assert.match(content, /R<round>-#/);
 });
+
+test('asdlc-apply: strictly forbids auto-creating PRs or implicit pushing', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const content = fs.readFileSync(path.join(root, 'assets', 'skills', 'asdlc-apply', 'SKILL.md'), 'utf8');
+
+  // Enforces stage boundary: apply is strictly local implementation
+  assert.match(content, /Stage Boundary Guard — No Automatic PR Creation/);
+  assert.match(content, /NEVER automatically push commits to origin or open a Pull Request during `apply`/);
+  assert.match(content, /Strictly local implementation — never auto-creates PRs/);
+
+  // Must NOT contain instructions to execute asdlc pr inside apply
+  assert.doesNotMatch(content, /execute asdlc pr to open the Implementation PR/i);
+});

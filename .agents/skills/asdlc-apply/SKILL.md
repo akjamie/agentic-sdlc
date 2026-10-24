@@ -1,6 +1,6 @@
 ---
 name: asdlc-apply
-description: "Execute Stage 5 of Agentic SDLC: guard verification followed by strict task-level TDD loop (Red -> Green -> Refactor -> Evidence -> Converge) from tasks.md."
+description: "Execute Stage 5 of Agentic SDLC: guard verification followed by strict task-level TDD loop (Red -> Green -> Refactor -> Evidence -> Converge) from tasks.md. Strictly local implementation — never auto-creates PRs."
 ---
 
 # /asdlc:apply - Task-Level TDD Implementation Engine
@@ -95,8 +95,8 @@ When a change introduces or modifies user-facing interfaces (web, mobile, or des
 
 ---
 
-### Step 4: Run Verification Gate
-Once all tasks in `tasks.md` are checked and evidenced, run `asdlc verify`:
+### Step 4: Run Local Verification Check
+Once all tasks in `tasks.md` are checked and evidenced, run `asdlc verify <CHANGE_ID>` locally:
 
 ```powershell
 asdlc verify <CHANGE_ID>
@@ -111,18 +111,23 @@ Verify that all checks pass:
 - `BDD + acceptance criteria`
 - `openspec-validate`
 
+If any check fails, resolve the issue locally within the TDD loop and re-run `asdlc verify <CHANGE_ID>`.
+
 ---
 
-### Step 5: Open Implementation PR
-Once `asdlc verify <CHANGE_ID>` passes, execute `asdlc pr` to open the Implementation PR:
+### Step 5: Implementation Complete (Do NOT Auto-Create PR)
 
-```powershell
-asdlc pr <CHANGE_ID> <targetBranch>
-```
+> [!CAUTION]
+> **Stage Boundary Guard — No Automatic PR Creation**:
+> `asdlc-apply` is strictly the **local implementation engine** (Stage 5).
+> **NEVER automatically push commits to origin or open a Pull Request during `apply`.**
+> Pushing code to a remote repository and opening a PR is a public, collaborative action with team-wide visibility, git ref mutation, and CI compute costs.
+>
+> An agent executing `apply` must NEVER run `asdlc pr` or `git push` on its own.
 
-`asdlc pr` will:
-1. Automatically detect this is an **Implementation PR** (status is `ready_for_impl`, spec is approved, tasks are complete, and source changes exist).
-2. Run `asdlc verify <CHANGE_ID>` as a pre-flight guard (requiring all 12 verification checks to pass).
-3. Commit implementation code and test evidence, then push to origin.
-4. Pre-provision and attach `asdlc:impl-review` and `impl` labels to trigger CI Code AI Review.
-
+Once local verification passes:
+1. Summarize the completed tasks and verification results for the developer.
+2. Inform the developer that the implementation is verified locally and ready:
+   > "🎉 Implementation complete! All tasks in `tasks.md` are implemented with TDD evidence, and all local verification checks passed.
+   > When you are ready to open the Implementation PR, run:
+   > `asdlc pr <CHANGE_ID> <targetBranch>` (or trigger `/asdlc:pr`)."

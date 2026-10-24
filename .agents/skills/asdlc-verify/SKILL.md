@@ -46,10 +46,20 @@ If any check outputs `[FAIL]`:
 - **`BDD + AC`**: An acceptance criterion points to a test file that does not exist. Create the missing test file.
 - **`external` (unit tests)**: Run the failing test command, debug the failure, fix the code, and re-run.
 
-### Step 3: Transition to Post-Merge Testing & Archive (If Passed)
+### Step 3: Next Actions (Depending on Lifecycle Stage)
 When all checks output `[PASS]` and verify succeeds:
-Inform the human developer:
-> "🎉 Verification passed! All 12 gates satisfied.
-> Complete any remaining post-merge integration testing and human stakeholder review.
-> Once satisfied, explicitly close and finalize the change by running:
-> `/asdlc:archive <CHANGE_ID>`"
+
+- **Scenario A: Pre-PR Local Implementation Verification (Stage 6)**
+  If running on a feature branch before opening the Implementation PR:
+  Inform the developer:
+  > "🎉 Local verification passed! All 12 gates satisfied.
+  > When you are ready to submit this implementation for CI AI review and team approval, run:
+  > `asdlc pr <CHANGE_ID> <targetBranch>` (or trigger `/asdlc:pr`).
+  > *(The agent will NOT automatically open a PR without your explicit command).* "
+
+- **Scenario B: Post-Merge Trunk Verification (Stage 6 -> Stage 7)**
+  If running after the Implementation PR has been approved and merged into the protected target branch (`main`):
+  Inform the developer:
+  > "🎉 Post-merge verification passed! All 12 gates verified on the target branch.
+  > To close out and archive this change into the master specification catalog, run:
+  > `asdlc archive <CHANGE_ID>` (or trigger `/asdlc:archive`)."
