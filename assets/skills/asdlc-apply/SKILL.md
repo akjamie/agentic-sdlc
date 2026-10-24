@@ -1,6 +1,6 @@
 ---
 name: asdlc-apply
-description: "Execute Stage 5 of Agentic SDLC: guard verification followed by strict task-level TDD loop (Red -> Green -> Refactor -> Evidence -> Converge) from tasks.md."
+description: "Execute Stage 5 of Agentic SDLC: guard verification followed by strict task-level TDD loop (Red -> Green -> Refactor -> Evidence -> Converge) from tasks.md. Defaults to local-only implementation; auto-PR is permitted only with explicit delegation via --auto-pr."
 ---
 
 # /asdlc:apply - Task-Level TDD Implementation Engine
@@ -22,14 +22,15 @@ This skill executes **Stage 5 (Apply)** of the Agentic SDLC. It enforces strict 
 Before editing any implementation or test code, run the apply guard:
 
 ```powershell
-asdlc apply <CHANGE_ID>
+asdlc apply <CHANGE_ID> [--auto-pr] [--target-branch <ref>]
 ```
 
-`asdlc apply` deterministically verifies four cryptographic preconditions:
+`asdlc apply` deterministically verifies cryptographic preconditions:
 1. **Target Branch Approved Commit (`approvedSha`)**: Confirms that a commit touching the locked paths (`proposal.md` and `specs/**`) is physically merged into the target branch (`main` or `origin/main`).
 2. **Change State Machine (`ready_for_impl`)**: Confirms `.openspec.yaml` has been transitioned to `status: ready_for_impl` (via `asdlc approve <ID>`).
 3. **Spec Fingerprint Integrity (`specSha`)**: Verifies that the declared `specSha` in `.openspec.yaml` exactly matches the `approvedSha` on the protected branch.
 4. **Working Tree Tamper Defense**: Ensures that locked spec files (`proposal.md`, `specs/**`) have no uncommitted local modifications.
+5. **PR Authority Delegation (`--auto-pr`)**: By default, `apply` operates in **local-only mode** (`autoPr: false`). Supplying `--auto-pr` explicitly delegates authority to automatically create an Implementation PR after verification passes (persisted to `.openspec.yaml`).
 
 - If `asdlc apply` fails: **STOP immediately**. Follow the provided hint (e.g. merge Spec PR or run `asdlc approve`).
 - If `asdlc apply` succeeds: Proceed to Step 2.
@@ -95,8 +96,8 @@ When a change introduces or modifies user-facing interfaces (web, mobile, or des
 
 ---
 
-### Step 4: Run Verification Gate
-Once all tasks in `tasks.md` are checked and evidenced, run `asdlc verify`:
+### Step 4: Run Local Verification Check
+Once all tasks in `tasks.md` are checked and evidenced, run `asdlc verify <CHANGE_ID>` locally:
 
 ```powershell
 asdlc verify <CHANGE_ID>
@@ -111,18 +112,37 @@ Verify that all checks pass:
 - `BDD + acceptance criteria`
 - `openspec-validate`
 
+If any check fails, resolve the issue locally within the TDD loop and re-run `asdlc verify <CHANGE_ID>`.
+
 ---
 
-### Step 5: Open Implementation PR
-Once `asdlc verify <CHANGE_ID>` passes, execute `asdlc pr` to open the Implementation PR:
+### Step 5: Implementation Complete & Submission Protocol (Dual-Mode Authority)
 
-```powershell
-asdlc pr <CHANGE_ID> <targetBranch>
-```
+Once all tasks in `tasks.md` are marked complete with captured evidence and local `asdlc verify <CHANGE_ID>` passes (all 12 verification gates exit 0), determine the submission path based on explicit authority:
 
-`asdlc pr` will:
-1. Automatically detect this is an **Implementation PR** (status is `ready_for_impl`, spec is approved, tasks are complete, and source changes exist).
-2. Run `asdlc verify <CHANGE_ID>` as a pre-flight guard (requiring all 12 verification checks to pass).
-3. Commit implementation code and test evidence, then push to origin.
-4. Pre-provision and attach `asdlc:impl-review` and `impl` labels to trigger CI Code AI Review.
+#### Path A: Default Local Mode (Safe Default, `autoPr: false` or unspecified)
+> [!CAUTION]
+> **Stage Boundary Guard — No Automatic PR Creation by Default**:
+> `asdlc-apply` is strictly the **local implementation engine** (Stage 5).
+> **NEVER automatically push commits to origin or open a Pull Request during `apply` by default.**
+> Pushing code to a remote repository and opening a PR is a public, collaborative action with team-wide visibility, git ref mutation, and CI compute costs.
+>
+> In default mode, an agent executing `apply` must NEVER run `asdlc pr` or `git push` on its own.
 
+1. Summarize completed tasks and verification results for the developer.
+2. Inform the developer that the implementation is verified locally and ready:
+   > "🎉 Implementation complete! All tasks in `tasks.md` are implemented with TDD evidence, and all local verification checks passed.
+   > When you are ready to open the Implementation PR, run:
+   > `asdlc pr <CHANGE_ID> <targetBranch>` (or trigger `/asdlc:pr`)."
+
+#### Path B: Explicit Delegation Mode (`--auto-pr` or explicit intent)
+> [!TIP]
+> **Authorized Agent Delegation Channel**:
+> When the user has explicitly authorized automatic PR creation (via `asdlc apply <CHANGE_ID> --auto-pr`, `autoPr: true` in `.openspec.yaml`, or explicit user prompt instructions):
+>
+> 1. Confirm that `asdlc verify <CHANGE_ID>` exited 0 with all verification checks passing cleanly.
+> 2. The agent is authorized to automatically open the Implementation PR via:
+>    ```powershell
+>    asdlc pr <CHANGE_ID> <targetBranch>
+>    ```
+> 3. Provide the resulting PR link to the user and announce readiness for AI / Human Implementation Review.

@@ -144,6 +144,51 @@ test('apply: automatically recognizes PR merge on target branch and syncs status
   assert.match(metaText, /specSha:/);
 });
 
+test('apply: writes autoPr: true to .openspec.yaml when --auto-pr is passed', () => {
+  const repo = tmpRepo();
+  const dir = scaffold(repo, 'TECH-1');
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'spec'], { cwd: repo });
+  mergeChange('TECH-1', { repoRoot: repo });
+
+  const exit = applyGuard('TECH-1', { repoRoot: repo, protectedBranch: 'main', autoPr: true });
+  assert.equal(exit, 0);
+
+  const metaText = fs.readFileSync(path.join(dir, '.openspec.yaml'), 'utf8');
+  assert.match(metaText, /autoPr: true/);
+});
+
+test('apply: writes autoPr: false to .openspec.yaml when --no-auto-pr is passed', () => {
+  const repo = tmpRepo();
+  const dir = scaffold(repo, 'TECH-1');
+  fs.appendFileSync(path.join(dir, '.openspec.yaml'), 'autoPr: true\n');
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'spec'], { cwd: repo });
+  mergeChange('TECH-1', { repoRoot: repo });
+
+  const exit = applyGuard('TECH-1', { repoRoot: repo, protectedBranch: 'main', autoPr: false });
+  assert.equal(exit, 0);
+
+  const metaText = fs.readFileSync(path.join(dir, '.openspec.yaml'), 'utf8');
+  assert.match(metaText, /autoPr: false/);
+  assert.doesNotMatch(metaText, /autoPr: true/);
+});
+
+test('apply: writes targetBranch to .openspec.yaml when provided', () => {
+  const repo = tmpRepo();
+  const dir = scaffold(repo, 'TECH-1');
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'spec'], { cwd: repo });
+  mergeChange('TECH-1', { repoRoot: repo });
+
+  const exit = applyGuard('TECH-1', { repoRoot: repo, targetBranch: 'main' });
+  assert.equal(exit, 0);
+
+  const metaText = fs.readFileSync(path.join(dir, '.openspec.yaml'), 'utf8');
+  assert.match(metaText, /targetBranch: "main"/);
+});
+
+
 test('apply: fails when locked spec files have uncommitted local modifications', () => {
   const repo = tmpRepo();
   const dir = scaffold(repo, 'TECH-1');
