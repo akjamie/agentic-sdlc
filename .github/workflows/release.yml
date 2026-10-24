@@ -136,8 +136,8 @@ jobs:
       - name: Publish to GitHub Packages
         if: steps.version_check.outputs.release_gpr == 'true'
         run: |
-          echo "@akjamie:registry=https://npm.pkg.github.com" > ~/.npmrc
-          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> ~/.npmrc
-          npm publish --registry=https://npm.pkg.github.com --tag ${{ github.event.inputs.tag || 'latest' }}
+          echo "@akjamie:registry=https://npm.pkg.github.com" > /tmp/gpr.npmrc
+          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> /tmp/gpr.npmrc
+          NPM_CONFIG_USERCONFIG=/tmp/gpr.npmrc npm publish --registry=https://npm.pkg.github.com --tag ${{ github.event.inputs.tag || 'latest' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
