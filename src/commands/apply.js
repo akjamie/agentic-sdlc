@@ -23,7 +23,13 @@ export function applyGuard(changeId, opts = {}) {
     const sha = text.match(/^\s*specSha:\s*['"]?([^\s'"]+)['"]?\s*$/m);
     const status = text.match(/^\s*status:\s*['"]?([^\s'"]+)['"]?\s*$/m);
     const tb = text.match(/^\s*targetBranch:\s*['"]?([^\s'"]+)['"]?\s*$/m);
-    meta = { specSha: sha ? sha[1] : null, status: status ? status[1] : null, targetBranch: tb ? tb[1] : null };
+    const apr = text.match(/^\s*autoPr:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+    meta = {
+      specSha: sha ? sha[1] : null,
+      status: status ? status[1] : null,
+      targetBranch: tb ? tb[1] : null,
+      autoPr: apr ? apr[1] : null,
+    };
   }
 
   const branch = opts.targetBranch
@@ -79,7 +85,28 @@ export function applyGuard(changeId, opts = {}) {
     log.ok(`${slug}: recognized PR approval on ${branch} (synced state to ready_for_impl @ ${approvedSha.slice(0, 8)})`);
   }
 
-  // 6. Tasks checklist presence
+  // 6. Explicit Auto-PR Delegation Handling
+  if (opts.autoPr !== undefined && exists(metaPath)) {
+    let metaText = readText(metaPath);
+    const upsertKey = (text, key, val) => {
+      const re = new RegExp(`^\\s*${key}:\\s*.*$`, 'm');
+      return re.test(text) ? text.replace(re, `${key}: ${val}`) : `${text.trimEnd()}\n${key}: ${val}\n`;
+    };
+    metaText = upsertKey(metaText, 'autoPr', opts.autoPr ? 'true' : 'false');
+    writeText(metaPath, metaText);
+  }
+
+  if (opts.targetBranch && exists(metaPath)) {
+    let metaText = readText(metaPath);
+    const upsertKey = (text, key, val) => {
+      const re = new RegExp(`^\\s*${key}:\\s*.*$`, 'm');
+      return re.test(text) ? text.replace(re, `${key}: "${val}"`) : `${text.trimEnd()}\n${key}: "${val}"\n`;
+    };
+    metaText = upsertKey(metaText, 'targetBranch', opts.targetBranch);
+    writeText(metaPath, metaText);
+  }
+
+  // 7. Tasks checklist presence
   const tasksPath = path.join(cdir, 'tasks.md');
   if (!exists(tasksPath)) {
     fail(`'${slug}' missing tasks.md`, {
@@ -88,7 +115,13 @@ export function applyGuard(changeId, opts = {}) {
     });
   }
 
+  const isAutoPr = opts.autoPr === true || (opts.autoPr === undefined && meta.autoPr === 'true');
   log.ok(`${slug} is APPROVED on ${branch} (specSha: ${approvedSha.slice(0, 8)}, state: ready_for_impl)`);
+  if (isAutoPr) {
+    log.info(`Auto-PR delegation: ENABLED (agent is authorized to open Implementation PR once tasks & verify pass).`);
+  } else {
+    log.info(`Auto-PR delegation: DISABLED (local-only mode; run \`asdlc pr\` when ready to submit).`);
+  }
   log.info(`Ready for implementation. Follow task-level TDD loop in tasks.md.`);
   return 0;
 }
@@ -107,6 +140,9 @@ export function register(program) {
     .command('apply <changeId>')
     .description('guard before implementing: the spec must be approved on the protected branch')
     .option('--protected-branch <ref>', 'branch the approved spec must be merged into', 'origin/main')
+    .option('--target-branch <ref>', 'target branch to merge into')
+    .option('--auto-pr', 'explicitly delegate authority to automatically open Implementation PR after verification passes')
+    .option('--no-auto-pr', 'disable automatic Implementation PR creation (default)')
     .option('--repo-root <path>')
     .action((changeId, opts) => {
       process.exitCode = applyGuard(changeId, opts);

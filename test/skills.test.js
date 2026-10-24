@@ -121,15 +121,18 @@ test('asdlc-impl-review: incorporates Anthropic review principles', () => {
   assert.match(content, /R<round>-#/);
 });
 
-test('asdlc-apply: strictly forbids auto-creating PRs or implicit pushing', () => {
+test('asdlc-apply: defaults to local-only implementation and enforces explicit delegation for PR creation', () => {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const content = fs.readFileSync(path.join(root, 'assets', 'skills', 'asdlc-apply', 'SKILL.md'), 'utf8');
 
-  // Enforces stage boundary: apply is strictly local implementation
-  assert.match(content, /Stage Boundary Guard — No Automatic PR Creation/);
-  assert.match(content, /NEVER automatically push commits to origin or open a Pull Request during `apply`/);
-  assert.match(content, /Strictly local implementation — never auto-creates PRs/);
+  // Enforces stage boundary: apply is strictly local implementation by default
+  assert.match(content, /Stage Boundary Guard — No Automatic PR Creation by Default/);
+  assert.match(content, /NEVER automatically push commits to origin or open a Pull Request during `apply` by default/);
+  assert.match(content, /Defaults to local-only implementation/);
 
-  // Must NOT contain instructions to execute asdlc pr inside apply
-  assert.doesNotMatch(content, /execute asdlc pr to open the Implementation PR/i);
+  // Verifies explicit delegation channel (--auto-pr)
+  assert.match(content, /--auto-pr/);
+  assert.match(content, /Authorized Agent Delegation Channel/);
+  assert.match(content, /asdlc apply <CHANGE_ID> \[--auto-pr\]/);
 });
+
