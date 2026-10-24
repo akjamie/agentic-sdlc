@@ -22,6 +22,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
   id-token: write
 
 jobs:
@@ -61,14 +62,34 @@ jobs:
           echo "pkg_name=$PKG_NAME" >> "$GITHUB_OUTPUT"
           echo "pkg_ver=$PKG_VER" >> "$GITHUB_OUTPUT"
 
-          # Check if this exact version is already published on npm
-          PUBLISHED_VER=$(npm view "$PKG_NAME@$PKG_VER" version 2>/dev/null || echo "")
-          if [ "$PUBLISHED_VER" = "$PKG_VER" ]; then
-            echo "Version $PKG_VER is already published on npm. Skipping release."
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          # 1. Check public NPM registry
+          NPM_VER=$(npm view "$PKG_NAME@$PKG_VER" version 2>/dev/null || echo "")
+          if [ "$NPM_VER" = "$PKG_VER" ]; then
+            echo "Version $PKG_VER is already published on npmjs.org."
+            echo "release_npm=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Version $PKG_VER is NOT yet published on npm! Triggering release."
+            echo "Version $PKG_VER is NOT yet published on npmjs.org! Will publish to NPM."
+            echo "release_npm=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          # 2. Check GitHub Packages registry
+          echo "@akjamie:registry=https://npm.pkg.github.com" > /tmp/.gpr_npmrc
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" >> /tmp/.gpr_npmrc
+          GPR_VER=$(NPM_CONFIG_USERCONFIG=/tmp/.gpr_npmrc npm view "$PKG_NAME@$PKG_VER" version --registry=https://npm.pkg.github.com 2>/dev/null || echo "")
+          rm -f /tmp/.gpr_npmrc
+          if [ "$GPR_VER" = "$PKG_VER" ]; then
+            echo "Version $PKG_VER is already published on GitHub Packages."
+            echo "release_gpr=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Version $PKG_VER is NOT yet published on GitHub Packages! Will publish to GitHub Packages."
+            echo "release_gpr=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ "$NPM_VER" != "$PKG_VER" ] || [ "$GPR_VER" != "$PKG_VER" ]; then
             echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "All registries up to date. Skipping release."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Install dependencies
@@ -106,8 +127,17 @@ jobs:
             echo "Release $TAG already exists."
           fi
 
-      - name: Publish to NPM
-        if: steps.version_check.outputs.should_release == 'true'
+      - name: Publish to NPM (npmjs.org)
+        if: steps.version_check.outputs.release_npm == 'true'
         run: npm publish --access public --tag ${{ github.event.inputs.tag || 'latest' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish to GitHub Packages
+        if: steps.version_check.outputs.release_gpr == 'true'
+        run: |
+          echo "@akjamie:registry=https://npm.pkg.github.com" > ~/.npmrc
+          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> ~/.npmrc
+          npm publish --registry=https://npm.pkg.github.com --tag ${{ github.event.inputs.tag || 'latest' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
