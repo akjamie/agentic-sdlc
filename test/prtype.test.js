@@ -18,13 +18,42 @@ test('first change dir with only spec files -> spec', () => {
   assert.equal(r.type, 'spec');
 });
 
-test('first PR mixing spec + source -> invalid', () => {
-  const r = classifyPR({
+test('first PR mixing spec + source -> invalid when level is unlevelled or L2/L3', () => {
+  const rDefault = classifyPR({
     changedFiles: ['openspec/changes/tech-1/proposal.md', 'src/main.js'],
     changeOnMain: false, policy,
   });
-  assert.equal(r.type, 'invalid');
+  assert.equal(rDefault.type, 'invalid');
+
+  const rL2 = classifyPR({
+    changedFiles: ['openspec/changes/tech-1/proposal.md', 'src/main.js'],
+    changeOnMain: false, policy, level: 'L2',
+  });
+  assert.equal(rL2.type, 'invalid');
+
+  const rL3 = classifyPR({
+    changedFiles: ['openspec/changes/tech-1/proposal.md', 'src/main.js'],
+    changeOnMain: false, policy, level: 'L3',
+  });
+  assert.equal(rL3.type, 'invalid');
 });
+
+test('first PR mixing spec + source -> impl when level is L0 or L1 (single PR flow)', () => {
+  const rL1 = classifyPR({
+    changedFiles: ['openspec/changes/tech-1/proposal.md', 'openspec/changes/tech-1/specs/demo/spec.md', 'src/main.js'],
+    changeOnMain: false, policy, level: 'L1',
+  });
+  assert.equal(rL1.type, 'impl');
+  assert.match(rL1.reason, /single PR flow for L1/);
+
+  const rL0 = classifyPR({
+    changedFiles: ['openspec/changes/tech-1/proposal.md', 'src/main.js'],
+    changeOnMain: false, policy, level: 'L0',
+  });
+  assert.equal(rL0.type, 'impl');
+  assert.match(rL0.reason, /single PR flow for L0/);
+});
+
 
 test('change dir already on main + tasks/source -> impl', () => {
   const r = classifyPR({

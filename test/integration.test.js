@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { runLint } from '../src/commands/lint.js';
 import { applyGuard } from '../src/commands/apply.js';
 import { mergeChange } from '../src/commands/approve.js';
+import { runVerify } from '../src/commands/verify.js';
 
 function tmpRepo() {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'asdlc-int-'));
@@ -256,3 +257,41 @@ test('approve: auto-creates review.md with APPROVE and specSha upon spec merge',
   const metaText = fs.readFileSync(path.join(dir, '.openspec.yaml'), 'utf8');
   assert.match(metaText, /status: ready_for_impl/);
 });
+
+test('apply: allows direct implementation when level is L1 (Single PR mode)', () => {
+  const repo = tmpRepo();
+  const dir = scaffold(repo, 'QUICK-1');
+  // Seed with level: L1
+  fs.appendFileSync(path.join(dir, '.openspec.yaml'), 'level: "L1"\n');
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'spec'], { cwd: repo });
+
+  // applyGuard should pass directly WITHOUT requiring specSha or prior merge to main!
+  const exit = applyGuard('QUICK-1', { repoRoot: repo, protectedBranch: 'main' });
+  assert.equal(exit, 0);
+
+  const metaText = fs.readFileSync(path.join(dir, '.openspec.yaml'), 'utf8');
+  assert.match(metaText, /status:\s*"ready_for_impl"/);
+});
+
+test('verify: outputs human-gate based on level (L1 auto-merge allowed vs L3 mandatory human approval)', () => {
+  const repo = tmpRepo();
+  const dirL1 = scaffold(repo, 'QUICK-1');
+  fs.appendFileSync(path.join(dirL1, '.openspec.yaml'), 'level: "L1"\n');
+  fs.mkdirSync(path.join(repo, 'tests'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'tests', 'demo.test.js'), '// test\n');
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'impl(quick-1)'], { cwd: repo });
+
+  // Verify L1 passes all gates including approved-spec and flow-state in Single PR mode
+  const exitL1 = runVerify('QUICK-1', { repoRoot: repo, skipOpenspec: true, protectedBranch: 'main' });
+  assert.equal(exitL1, 0, 'L1 should pass verify in single-PR mode');
+
+  // Verify L3 requires human gate
+  const dirL3 = scaffold(repo, 'SEC-1');
+  fs.appendFileSync(path.join(dirL3, '.openspec.yaml'), 'level: "L3"\n');
+  // L3 has not been approved on main, so approved-spec should fail
+  const exitL3 = runVerify('SEC-1', { repoRoot: repo, skipOpenspec: true, protectedBranch: 'main' });
+  assert.notEqual(exitL3, 0, 'L3 must fail without approved spec commit');
+});
+

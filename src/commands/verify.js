@@ -10,6 +10,7 @@ import { lintSpecText, countBlockers } from '../lib/speclint.js';
 import { checkSchema } from '../lib/schema.js';
 import { loadPolicy, isAdvisory, DEFAULT_POLICY, matchesAny } from '../lib/policy.js';
 import { classifyPR } from '../lib/prtype.js';
+import { isSinglePrLevel, requiresHumanReview, readChangeLevel } from '../lib/level.js';
 import { checkTestPresence, checkTaskEvidence } from '../lib/tdd.js';
 import { log, dim } from '../lib/log.js';
 
@@ -23,7 +24,12 @@ function meta(repoRoot, changeId) {
   const text = readText(p);
   const sha = text.match(/^\s*specSha:\s*['"]?([^\s'"]+)['"]?\s*$/m);
   const status = text.match(/^\s*status:\s*['"]?([^\s'"]+)['"]?\s*$/m);
-  return { specSha: sha ? sha[1] : null, status: status ? status[1] : null };
+  const lvl = text.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+  return {
+    specSha: sha ? sha[1] : null,
+    status: status ? status[1] : null,
+    level: lvl ? lvl[1].toUpperCase() : null,
+  };
 }
 
 function readYamlConfig(repoRoot) {
@@ -114,19 +120,19 @@ export function runVerify(changeId, opts = {}) {
   const base = opts.base ?? branch;
   const head = opts.head ?? 'HEAD';
 
-  const changedFiles = (git(['diff', '--name-only', `${base}...${head}`], repoRoot, { allowFail: true }) ?? '')
-    .split(/\r?\n/).filter(Boolean);
-  const changeOnMain = changeOnRef(repoRoot, branch, slug);
-  const pr = classifyPR({ changedFiles, changeOnMain, policy, emergency: opts.emergency });
-  add('pr-type', pr.type === 'invalid' ? 'fail' : 'pass', `type=${pr.type} (${pr.reason})`);
-
   const cdir = changeDir(repoRoot, slug);
   if (!exists(cdir)) {
     add('change', 'fail', `change '${slug}' not found`);
     return finish(results, policy);
   }
   add('change', 'pass', slug);
-  const { specSha, status } = meta(repoRoot, changeId);
+  const { specSha, status, level: changeLevel } = meta(repoRoot, changeId);
+
+  const changedFiles = (git(['diff', '--name-only', `${base}...${head}`], repoRoot, { allowFail: true }) ?? '')
+    .split(/\r?\n/).filter(Boolean);
+  const changeOnMain = changeOnRef(repoRoot, branch, slug);
+  const pr = classifyPR({ changedFiles, changeOnMain, policy, emergency: opts.emergency, level: changeLevel, repoRoot });
+  add('pr-type', pr.type === 'invalid' ? 'fail' : 'pass', `type=${pr.type} (${pr.reason})`);
 
   const required = ['proposal.md', 'tasks.md'];
   const missing = required.filter((f) => !exists(path.join(cdir, f)));
@@ -137,20 +143,37 @@ export function runVerify(changeId, opts = {}) {
 
   const lockedPaths = [`openspec/changes/${slug}/proposal.md`, `openspec/changes/${slug}/specs`];
   const approvedSha = lastCommitTouching(repoRoot, branch, lockedPaths);
-  if (!approvedSha) add('approved-spec', 'fail', `no commit on locked paths is merged into ${branch} (not approved)`);
-  else if (specSha && specSha !== approvedSha) add('approved-spec', 'fail', `declared specSha ${specSha.slice(0, 8)} != approved commit ${approvedSha.slice(0, 8)}`);
-  else add('approved-spec', 'pass', `approved commit ${approvedSha.slice(0, 8)} on ${branch}`);
+  if (isSinglePrLevel(changeLevel)) {
+    add('approved-spec', 'pass', `${changeLevel} single-PR mode (spec approval co-located in implementation PR)`);
+  } else if (!approvedSha) {
+    add('approved-spec', 'fail', `no commit on locked paths is merged into ${branch} (not approved)`);
+  } else if (specSha && specSha !== approvedSha) {
+    add('approved-spec', 'fail', `declared specSha ${specSha.slice(0, 8)} != approved commit ${approvedSha.slice(0, 8)}`);
+  } else {
+    add('approved-spec', 'pass', `approved commit ${approvedSha.slice(0, 8)} on ${branch}`);
+  }
 
-  // Lightweight tamper guard: in an implementation PR, locked spec files MUST NOT be modified
+  // Lightweight tamper guard: in a two-phase implementation PR, locked spec files MUST NOT be modified
   const lockedModified = changedFiles.filter((f) => matchesAny(f, policy?.locked_paths ?? DEFAULT_POLICY.locked_paths));
-  if (pr.type === 'impl' && lockedModified.length > 0) {
+  if (!isSinglePrLevel(changeLevel) && pr.type === 'impl' && lockedModified.length > 0) {
     add('spec-tamper', 'fail', `${lockedModified.length} locked spec file(s) modified in implementation PR (${lockedModified.join(', ')})`);
   } else {
     add('spec-tamper', 'pass', 'locked spec paths unmodified');
   }
 
-  add('flow-state', status === 'ready_for_impl' ? 'pass' : 'fail',
-    status === 'ready_for_impl' ? 'READY_FOR_IMPL' : `status is ${status ?? 'unset'} (run: asdlc approve ${changeId})`);
+  if (isSinglePrLevel(changeLevel)) {
+    add('flow-state', 'pass', `${changeLevel} single-PR mode (direct implementation)`);
+  } else {
+    add('flow-state', status === 'ready_for_impl' ? 'pass' : 'fail',
+      status === 'ready_for_impl' ? 'READY_FOR_IMPL' : `status is ${status ?? 'unset'} (run: asdlc approve ${changeId})`);
+  }
+
+  const humanReview = requiresHumanReview(changeLevel, { contractTestVerified: opts.contractTestVerified });
+  if (humanReview) {
+    add('human-gate', 'pass', `${changeLevel ?? 'unlevelled'}: mandatory human lead approval required before merge (auto-merge DENIED)`);
+  } else {
+    add('human-gate', 'pass', `${changeLevel ?? 'unlevelled'}: auto-merge permitted once AI review passes (no human review required)`);
+  }
 
   const tasksPath = path.join(cdir, 'tasks.md');
   const unchecked = exists(tasksPath) ? countUncheckedTasks(readText(tasksPath)) : Infinity;

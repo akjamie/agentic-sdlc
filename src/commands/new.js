@@ -7,6 +7,7 @@ import { runOpenspec } from '../lib/openspec.js';
 import { runShell } from '../lib/exec.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
+import { inferInitialLevel, isSinglePrLevel } from '../lib/level.js';
 
 // STAGE 1 of the spec (v10: explore + propose are ONE step).
 //   1) scaffold the change through OpenSpec (derives canonical slug from requirement)
@@ -32,11 +33,24 @@ export function newChange(requirement, opts = {}) {
   // Determine grill mode: 'none' (--no-grill), 'batch' (--batch-grill), or 'interactive' (default grill-me)
   const grillMode = opts.grill === false ? 'none' : (opts.batchGrill ? 'batch' : 'interactive');
 
-  // Record requirement and grill mode in change metadata (.openspec.yaml)
+  // Infer governance level (L0, L1, L2, L3)
+  const { level, reason: levelReason } = inferInitialLevel({
+    requirement,
+    explicitLevel: opts.level,
+    repoRoot,
+  });
+
+  // Record requirement, grill mode, and governance level in change metadata (.openspec.yaml)
   const metaPath = path.join(cdir, '.openspec.yaml');
   if (exists(metaPath)) {
     const existing = readText(metaPath).trimEnd();
-    writeText(metaPath, `${existing}\nrequirement: ${JSON.stringify(requirement)}\ngrillMode: "${grillMode}"\n`);
+    writeText(metaPath, `${existing}\nrequirement: ${JSON.stringify(requirement)}\ngrillMode: "${grillMode}"\nlevel: "${level}"\nlevelReason: ${JSON.stringify(levelReason)}\n`);
+  }
+
+  if (isSinglePrLevel(level)) {
+    log.ok(`assigned governance level: ${level} (${levelReason}) - [Single PR mode: code & specs in one PR]`);
+  } else {
+    log.ok(`assigned governance level: ${level} (${levelReason}) - [Spec-first mode: Spec PR required before implementation]`);
   }
 
   const g = ensureGraphify();
@@ -225,6 +239,7 @@ export function register(program) {
     .option('--no-design', 'skip generating technical design (design.md)')
     .option('--batch-grill', 'use batch-grill-me (present entire decision frontier in structured batches)')
     .option('--no-grill', 'skip interactive grilling interview (self-settle decisions in clarifications.md)')
+    .option('--level <level>', 'explicit governance level (L0, L1, L2, L3)')
     .option('--repo-root <path>')
     .action((requirement, opts) => {
       newChange(requirement, opts);

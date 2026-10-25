@@ -88,6 +88,10 @@ export async function createPR(changeId, targetBranch, opts = {}) {
     .split(/\r?\n/).filter(Boolean);
   const hasSourceChanges = diffFiles.some((f) => !f.startsWith(`openspec/changes/${slug}/`));
 
+  const lvlMatch = metaText.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+  const changeLevel = lvlMatch ? lvlMatch[1].toUpperCase() : null;
+  const isSinglePr = changeLevel === 'L0' || changeLevel === 'L1';
+
   let prType;
   if (opts.type) {
     prType = opts.type.toLowerCase();
@@ -96,6 +100,7 @@ export async function createPR(changeId, targetBranch, opts = {}) {
     changeStatus === 'ready_for_impl' ||
     Boolean(specSha) ||
     currentBranch.startsWith('impl/') ||
+    (isSinglePr && hasSourceChanges) ||
     (hasSourceChanges && (checkedCount > 0 || uncheckedCount === 0))
   ) {
     prType = 'impl';
