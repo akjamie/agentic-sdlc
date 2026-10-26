@@ -1,9 +1,9 @@
 # agentic-sdlc
 
 [![npm version](https://img.shields.io/npm/v/@akjamie/agentic-sdlc?color=6366f1&label=npm)](https://www.npmjs.com/package/@akjamie/agentic-sdlc)
-[![license: MIT](https://img.shields.io/badge/license-MIT-10b981.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18-38bdf8.svg)](https://nodejs.org/)
-[![tests](https://img.shields.io/badge/tests-89%20passing-10b981.svg)](#development--verification)
+[![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-10b981.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D20.19.0-38bdf8.svg)](https://nodejs.org/)
+[![tests](https://img.shields.io/badge/tests-113%20passing-10b981.svg)](#development--verification)
 
 > **Enterprise-grade Agentic SDLC governance.** Seven deterministic stages take a feature from natural-language intent to production — with every quality gate enforced by code, not by convention.
 >
@@ -417,4 +417,17 @@ Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct
 
 ## License
 
-[MIT](LICENSE)
+Licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE) for copyright and attribution details.
+
+---
+
+## Citation & Attribution
+
+If you use `agentic-sdlc` or its governance architecture in your enterprise projects, research, or articles, please cite and attribute:
+
+```markdown
+Project: agentic-sdlc (Enterprise Agentic SDLC Governance)
+Author: akjamie
+Repository: https://github.com/akjamie/agentic-sdlc
+License: Apache-2.0
+```

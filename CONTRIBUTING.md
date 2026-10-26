@@ -177,6 +177,10 @@ Every Pull Request triggers automated CI pipelines that verify:
 3. **Spec & Tamper integrity**: Ensures approved specs cannot be silently altered.
 4. **Independent AI Review**: CI runs an automated implementation review using a fresh, un-polluted AI context (`asdlc-impl-review`).
 
+## Licensing
+
+By contributing to `agentic-sdlc`, you agree that your contributions will be licensed under its [Apache License, Version 2.0](LICENSE).
+
 ---
 
 ## Questions or Need Help?
