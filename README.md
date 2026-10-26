@@ -394,6 +394,7 @@ These are the design philosophy decisions behind the hard invariants — the *wh
 | [docs/glossary.md](docs/glossary.md) | Formally locked domain model and SDLC vocabulary. |
 | [docs/blueprint.html](docs/blueprint.html) | Enterprise Agentic SDLC Blueprint (English). |
 | [docs/blueprint.zh.html](docs/blueprint.zh.html) | Enterprise Agentic SDLC Blueprint (Chinese). |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guide, development workflow, and PR quality gates. |
 
 ---
 
@@ -401,10 +402,16 @@ These are the design philosophy decisions behind the hard invariants — the *wh
 
 ```bash
 npm install
-npm test        # 89 unit and integration tests — 100% pass rate
+npm test        # 113 unit and integration tests — 100% pass rate
 ```
 
-The test suite covers the core governance library (`src/lib/`), all CLI commands, acceptance test execution, spec linting rules (R0–R8 + R5 scenario coverage), and verify gate logic (including `spec-tamper`, `test-presence`, and `tdd-evidence`).
+The test suite covers the core governance library (`src/lib/`), all CLI commands, acceptance test execution, spec linting rules (R0–R8 + R5 scenario coverage), and verify gate logic (including `spec-tamper`, `test-presence`, `risk-escape`, and `tdd-evidence`).
+
+---
+
+## Contributing
+
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, development workflow, and pull request process.
 
 ---
 
