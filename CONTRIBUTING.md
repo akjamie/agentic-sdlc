@@ -2,30 +2,30 @@
 
 Thank you for your interest in contributing to **agentic-sdlc**! 
 
-`agentic-sdlc` provides deterministic, enterprise-grade governance for AI agent-driven software development. We welcome contributions ranging from bug fixes and documentation improvements to new governance checks and agent skills.
+This repository contains the source code for the `asdlc` CLI toolchain and its governance engine. We welcome contributions from the community, whether you are fixing a CLI bug, adding a new command, improving verification heuristics, or enhancing documentation.
+
+> **Note**: This guide is for developers contributing code directly to this CLI repository. You do not need to run `asdlc new` or follow a multi-stage spec process to contribute here—standard, straightforward GitHub Pull Requests are used.
 
 ---
 
 ## Table of Contents
 
 - [Code of Conduct](#code-of-conduct)
-- [Architecture & Governance Model](#architecture--governance-model)
-  - [Change Levels (L0 - L3)](#change-levels-l0---l3)
-- [Getting Started](#getting-started)
+- [Repository Structure](#repository-structure)
+- [Development Setup](#development-setup)
   - [Prerequisites](#prerequisites)
-  - [Local Setup](#local-setup)
-- [Development Workflow](#development-workflow)
-  - [Running Tests](#running-tests)
-  - [Syntax & Lint Check](#syntax--lint-check)
-  - [Local CLI Invocation](#local-cli-invocation)
-- [Contribution Guidelines & Invariants](#contribution-guidelines--invariants)
+  - [Getting the Code](#getting-the-code)
+  - [Local Testing & Debugging](#local-testing--debugging)
+- [Engineering Guidelines & Invariants](#engineering-guidelines--invariants)
   - [1. Zero-Config & Convention over Configuration](#1-zero-config--convention-over-configuration)
-  - [2. Cross-Platform Rigor (Windows, macOS, Linux)](#2-cross-platform-rigor-windows-macos-linux)
-  - [3. Test Presence & TDD](#3-test-presence--tdd)
-  - [4. Bundled Skills Parity](#4-bundled-skills-parity)
-- [Pull Request & Review Process](#pull-request--review-process)
+  - [2. Minimal Dependencies](#2-minimal-dependencies)
+  - [3. Cross-Platform Compatibility (Windows, macOS, Linux)](#3-cross-platform-compatibility-windows-macos-linux)
+  - [4. Test-Driven Changes](#4-test-driven-changes)
+  - [5. Bundled Skills Parity](#5-bundled-skills-parity)
+- [Submitting a Pull Request](#submitting-a-pull-request)
   - [Commit Message Conventions](#commit-message-conventions)
-  - [CI Quality Gates](#ci-quality-gates)
+  - [PR Checklist](#pr-checklist)
+- [Licensing](#licensing)
 
 ---
 
@@ -35,64 +35,58 @@ We are committed to providing a welcoming, inclusive, and harassment-free enviro
 
 ---
 
-## Architecture & Governance Model
+## Repository Structure
 
-`agentic-sdlc` enforces quality through deterministic code gates rather than manual discipline:
-- **The Spec is the authority**: Requirements are captured as testable acceptance criteria with Given/When/Then scenarios.
-- **The Gate is the law**: Hard barriers prevent untracked drift, missing tests, or unapproved tampering.
-- **Player ≠ Referee**: Authoring agents cannot certify their own implementations; independent AI reviews run in fresh CI contexts.
+Understanding where things live in the repository:
 
-### Change Levels (L0 - L3)
-
-Contributions are evaluated based on their blast radius and risk:
-
-| Level | Blast Radius | Workflow | Merge Authority |
-| :--- | :--- | :--- | :--- |
-| **L0 (Trivial)** | Documentation, typos, comments, formatting | **Single PR** (code & docs together) | Automated merge once CI passes |
-| **L1 (Bounded)** | Localized bug fixes, internal helpers, test updates | **Single PR** (code & tests together) | Independent AI review passes $\to$ auto-merge |
-| **L2 (Cross-Boundary)**| Public CLI commands, API schemas, shared AST models | **Spec-First** (Spec PR $\to$ Impl PR) | Component Owner / Contract test verified |
-| **L3 (Critical)** | Security, authentication, cryptography, destructive ops | **Spec-First** (Strict two-phase) | **Mandatory Human Lead Approval** (auto-merge denied) |
+```text
+agentic-sdlc/
+├── bin/
+│   └── asdlc.js              # Executable CLI entrypoint (#!/usr/bin/env node)
+├── src/
+│   ├── commands/             # CLI command implementations (new, apply, verify, init, doctor, etc.)
+│   ├── lib/                  # Reusable governance core (risk.js, level.js, git.js, fs.js, etc.)
+│   └── index.js              # Programmatic export
+├── assets/                   # Bundled templates and assets distributed with the package
+│   ├── schema/               # Built-in OpenSpec schemas
+│   ├── skills/               # Bundled agent skills (.md definitions)
+│   └── githooks/             # Standard git hook templates
+├── .agents/skills/           # Repository's local agent skills mirror (must stay in parity with assets/skills)
+├── test/                     # Automated unit and integration tests (node:test)
+├── CONTRIBUTING.md           # This guide
+├── LICENSE                   # Apache 2.0 License
+├── NOTICE                    # Copyright & attribution notice
+└── README.md                 # Project overview and documentation
+```
 
 ---
 
-## Getting Started
+## Development Setup
 
 ### Prerequisites
 
 - **Node.js**: `>= 20.19.0` (Native ES Modules required)
 - **Git**: `>= 2.30.0`
 - **npm**: `>= 10.0.0`
-- *(Optional)* Python 3.10+ with `uv` or `pipx` if running Graphify AST queries locally.
 
-### Local Setup
+### Getting the Code
 
-1. **Fork and clone the repository**:
+1. **Fork** the repository on GitHub.
+2. **Clone** your fork locally:
    ```bash
    git clone https://github.com/<your-username>/agentic-sdlc.git
    cd agentic-sdlc
    ```
-
-2. **Install dependencies**:
+3. **Install dependencies**:
    ```bash
    npm install
    ```
-   *(Note: The codebase has zero bloated runtime dependencies; only `commander` and `yaml` are used).*
 
-3. **Verify the environment**:
-   ```bash
-   npm test
-   ```
-   All unit and integration tests should pass cleanly.
+### Local Testing & Debugging
 
----
+We rely on Node.js's native test runner (`node --test`). No third-party test runners are needed:
 
-## Development Workflow
-
-### Running Tests
-
-We use Node.js's native test runner (`node --test`). No external runners (like Jest or Mocha) are required:
-
-- **Run all tests**:
+- **Run the full test suite**:
   ```bash
   npm test
   ```
@@ -102,88 +96,73 @@ We use Node.js's native test runner (`node --test`). No external runners (like J
   node --test test/level.test.js
   node --test test/verify.test.js
   ```
-
-### Syntax & Lint Check
-
-Check syntax integrity across entry points:
-```bash
-npm run lint
-```
-
-### Local CLI Invocation
-
-You can test the CLI locally without installing globally:
-```bash
-node bin/asdlc.js --help
-node bin/asdlc.js status
-```
+- **Run the CLI directly from source**:
+  ```bash
+  node bin/asdlc.js --help
+  node bin/asdlc.js status
+  node bin/asdlc.js doctor
+  ```
 
 ---
 
-## Contribution Guidelines & Invariants
+## Engineering Guidelines & Invariants
 
-To keep the repository clean, reliable, and enterprise-grade, please follow these non-negotiable architectural principles:
+When contributing code to this CLI, please adhere to these core architectural invariants:
 
 ### 1. Zero-Config & Convention over Configuration
-Avoid introducing ad-hoc YAML or JSON configuration files unless strictly necessary. Configuration fatigue hurts usability. Sensible defaults, deterministic conventions, and built-in heuristics (like the risk assessment engine in `src/lib/risk.js`) should be favored.
+Avoid introducing complex configuration files for the CLI unless strictly necessary. Built-in, sensible defaults and deterministic conventions (such as standard change directories and built-in risk evaluation heuristics in `src/lib/risk.js`) should always take precedence over sprawling config options.
 
-### 2. Cross-Platform Rigor (Windows, macOS, Linux)
-- Always normalize file paths to POSIX `/` forward slashes before regex or path matching.
-- Protect filesystem cleanup and file copies against Windows transient file locks (`EBUSY` / `EPERM`) by using retry loops (see `src/lib/fs.js`).
-- Never assume shell built-ins (e.g., `grep`, `which`, `head`) exist natively on Windows environments.
+### 2. Minimal Dependencies
+The CLI is designed to be lightweight, fast, and secure. We intentionally keep runtime dependencies to an absolute minimum (`commander` for CLI parsing and `yaml` for YAML handling). Think twice before introducing any external npm package.
 
-### 3. Test Presence & TDD
-- Every new feature, command, or bug fix **must** be accompanied by automated tests in `test/`.
-- The `test-presence` gate in `asdlc verify` will fail any pull request that modifies functional source code under `src/` without corresponding test files.
+### 3. Cross-Platform Compatibility (Windows, macOS, Linux)
+The CLI runs in diverse environments across enterprise developer machines and CI runners:
+- Normalize file paths using POSIX forward slashes (`/`) when processing paths or matching regex.
+- When working with files and temporary directories, protect against transient file locks on Windows (`EBUSY` / `EPERM`) using retry loops (see `copyTree` and `removeDir` in `src/lib/fs.js`).
+- Never rely on POSIX-only shell utilities (like `grep`, `awk`, `sed`, or `/dev/null`) inside Node.js scripts.
 
-### 4. Bundled Skills Parity
-- Agent skills live in `assets/skills/<skill-name>/SKILL.md` and are mirrored in `.agents/skills/<skill-name>/SKILL.md`.
-- **Invariant**: If you modify or add an agent skill, both directories **must remain 100% byte-for-byte identical**. CI runs a strict parity test (`test/skills-parity.test.js`) to enforce this.
+### 4. Test-Driven Changes
+- Any bug fix, refactoring, or new CLI command must be accompanied by automated unit or integration tests in `test/`.
+- Tests should clean up their temporary files in `finally` blocks or using unique temp directories.
+
+### 5. Bundled Skills Parity
+- Out-of-the-box agent skills are located in `assets/skills/<skill-name>/SKILL.md` and mirrored in `.agents/skills/<skill-name>/SKILL.md`.
+- **Strict Invariant**: Any change to a skill must update both copies simultaneously so that they remain **100% byte-for-byte identical**. CI will fail if parity is broken.
 
 ---
 
-## Pull Request & Review Process
+## Submitting a Pull Request
 
-### Creating a Branch
+1. **Create a topic branch**:
+   ```bash
+   git checkout -b fix/windows-file-lock
+   # or
+   git checkout -b feat/add-json-output-flag
+   ```
+2. **Make your changes** and add relevant tests.
+3. **Verify locally**:
+   ```bash
+   npm test
+   npm run lint
+   ```
+   Ensure all tests pass and there are no syntax issues.
+4. **Commit your changes** following [Conventional Commits](https://www.conventionalcommits.org/):
+   - `feat:` New CLI command or functional capability
+   - `fix:` Bug fix or error handling improvement
+   - `docs:` Documentation updates
+   - `test:` Adding or refining test suites
+   - `refactor:` Code restructuring without functional behavior changes
+   - `chore:` Dependency or build updates
 
-Create a descriptive feature or fix branch from `main`:
-```bash
-git checkout -b feat/add-new-verifier
-# or
-git checkout -b fix/windows-path-normalization
-```
+   *Example*:
+   ```bash
+   git commit -m "feat(risk): add destructive DDL detection to assessment engine"
+   ```
+5. **Push and open a Pull Request**:
+   Push to your fork and open a PR against the `main` branch of `akjamie/agentic-sdlc`. Describe the rationale behind the change and any testing details.
 
-### Commit Message Conventions
-
-We adhere to [Conventional Commits](https://www.conventionalcommits.org/):
-
-- `feat:` New feature or CLI capability
-- `fix:` Bug fix or defect remediation
-- `docs:` Documentation improvements or typos
-- `test:` Adding or updating test suites
-- `refactor:` Code changes that neither fix a bug nor add a feature
-- `chore:` Dependency bumps, CI configuration, or maintenance
-
-*Example*:
-```bash
-git commit -m "feat(risk): add destructive DDL detection to assessment engine"
-```
-
-### CI Quality Gates
-
-Every Pull Request triggers automated CI pipelines that verify:
-1. **Full test pass**: `node --test` across all suites (Linux, macOS, Windows).
-2. **Skills byte-parity**: Verifies identical content between `assets/skills/` and `.agents/skills/`.
-3. **Spec & Tamper integrity**: Ensures approved specs cannot be silently altered.
-4. **Independent AI Review**: CI runs an automated implementation review using a fresh, un-polluted AI context (`asdlc-impl-review`).
+---
 
 ## Licensing
 
-By contributing to `agentic-sdlc`, you agree that your contributions will be licensed under its [Apache License, Version 2.0](LICENSE).
-
----
-
-## Questions or Need Help?
-
-- Feel free to open an **[Issue](https://github.com/akjamie/agentic-sdlc/issues)** on GitHub.
-- Discussions and architectural enhancement proposals are always welcome!
+`agentic-sdlc` is licensed under the [Apache License, Version 2.0](LICENSE). By contributing to this repository, you agree that your contributions will be licensed under the terms of the Apache 2.0 License. See the [NOTICE](NOTICE) file for copyright details.
