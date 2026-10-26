@@ -1,23 +1,54 @@
 import path from 'node:path';
 import { exists, readText } from './fs.js';
 import { changeDir } from './paths.js';
-import { assessRisk, RISK_LEVELS } from './risk.js';
+import { assess, loadLatestAssessment } from '../assess/index.js';
+import { RISK_LEVELS } from '../assess/rules/builtin.js';
 
 export const LEVELS = RISK_LEVELS;
 
-export function inferInitialLevel({ requirement = '', explicitLevel, repoRoot } = {}) {
+export function inferInitialLevel({ requirement = '', explicitLevel, repoRoot, changeId } = {}) {
   if (explicitLevel) {
     const norm = String(explicitLevel).toUpperCase();
     if (LEVELS[norm]) {
-      return { level: norm, reason: `explicitly specified via --level ${norm}` };
+      return {
+        level: norm,
+        changeType: 'change',
+        reason: `explicitly specified via --level ${norm}`,
+        workflowMode: norm === 'L0' || norm === 'L1' ? 'single-pr' : 'spec-first',
+        implementationReview: norm === 'L3' ? 'ai+human' : 'ai',
+        assessment: null
+      };
     }
   }
 
-  const assessment = assessRisk({ requirement, repoRoot });
+  const result = assess({
+    stage: 'new',
+    changeId: changeId || 'provisional',
+    requirement,
+    repoRoot,
+    persist: Boolean(repoRoot && changeId)
+  });
+
+  // Extract the most descriptive reason
+  let reason = 'bounded local module change';
+  const allEvidence = [
+    ...(result.vectors.v2_security.evidence || []),
+    ...(result.vectors.v3_topology.evidence || []),
+    ...(result.vectors.v1_intent.evidence || [])
+  ];
+  if (allEvidence.length > 0) {
+    reason = allEvidence[0].summary;
+  } else if (result.reason_codes && result.reason_codes.length > 0) {
+    reason = result.reason_codes[0];
+  }
+
   return {
-    level: assessment.level,
-    reason: assessment.reasons[0] || 'bounded local module change',
-    assessment
+    level: result.risk.level,
+    changeType: result.change_type,
+    reason,
+    workflowMode: result.governance.workflow_mode,
+    implementationReview: result.governance.implementation_review,
+    assessment: result
   };
 }
 

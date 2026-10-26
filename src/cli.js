@@ -14,6 +14,7 @@ import { register as registerDoctor } from './commands/doctor.js';
 import { register as registerUpgrade } from './commands/upgrade.js';
 import { register as registerUpdate } from './commands/update.js';
 import { register as registerSkills } from './commands/skills.js';
+import { register as registerAssess } from './commands/assess.js';
 import { AsdlcError } from './lib/errors.js';
 import { log } from './lib/log.js';
 
@@ -43,6 +44,7 @@ export function buildCli() {
   registerUpdate(program); // update repo state: skills, AST graph (KB) & AGENTS.md
   registerUpgrade(program); // upgrade toolchain (asdlc, openspec, graphify, schema)
   registerSkills(program); // manage & install bundled agent skills (repo or global CI)
+  registerAssess(program); // evaluate risk & governance requirements (CI & local tool)
 
   program.addHelpText('after', `
 The flow:

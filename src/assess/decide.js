@@ -1,0 +1,139 @@
+import { LEVEL_RANK, DEFAULT_GOVERNANCE, L0_DETERMINISTIC_PATTERNS } from './rules/builtin.js';
+
+/**
+ * Decides final risk level, confidence, and verdict from vector findings.
+ */
+export function decideAssessment({
+  stage,
+  v1,
+  v2,
+  v3,
+  changedFiles = [],
+  previous = null,
+  baseline = null,
+  error = null
+} = {}) {
+  // 1. Exception / Crash Fallback to Global Default (§5.5)
+  if (error) {
+    return {
+      level: DEFAULT_GOVERNANCE.level,
+      confidence: 'low',
+      status: 'defaulted',
+      verdict: 'defaulted',
+      defaulted_cause: typeof error === 'string' ? error : error.message || 'Assessment error',
+      governance: { ...DEFAULT_GOVERNANCE },
+      reason_codes: ['DEFAULTED'],
+      transition: {
+        from_level: previous?.risk?.level || null,
+        to_level: DEFAULT_GOVERNANCE.level,
+        direction: previous ? (LEVEL_RANK[DEFAULT_GOVERNANCE.level] > LEVEL_RANK[previous.risk.level] ? 'up' : 'same') : 'initial',
+        triggers: ['Assessment crashed or failed, fallen back to safe global defaults']
+      }
+    };
+  }
+
+  // 2. Rank calculation: max(V1, V2, V3)
+  const vectorLevels = [v1.level, v2.level, v3.level];
+  let calculatedLevel = 'L1';
+  let maxRank = 1;
+
+  for (const lvl of vectorLevels) {
+    const r = LEVEL_RANK[lvl] ?? 1;
+    if (r > maxRank) {
+      maxRank = r;
+      calculatedLevel = lvl;
+    }
+  }
+
+  // 3. Positive Proof for L0 (§2.2):
+  // L0 requires positive proof. If changed files exist, ALL must be documentation/non-executable.
+  if (changedFiles.length > 0) {
+    const norm = changedFiles.map((f) => f.replace(/\\/g, '/'));
+    const allDoc = norm.every((f) => L0_DETERMINISTIC_PATTERNS.some((p) => p.test(f)));
+    if (allDoc && maxRank <= 1) {
+      calculatedLevel = 'L0';
+    } else if (calculatedLevel === 'L0' && !allDoc) {
+      // Cannot claim L0 if non-doc files are modified
+      calculatedLevel = 'L1';
+    }
+  } else if (v1.level === 'L0' && maxRank <= 1 && v2.no_signal && v3.no_signal) {
+    calculatedLevel = 'L0';
+  }
+
+  // 4. Determine Confidence & Unresolved
+  const allUnresolved = [
+    ...(v1.unresolved || []),
+    ...(v2.unresolved || []),
+    ...(v3.unresolved || [])
+  ];
+
+  let confidence = 'high';
+  if (v1.confidence === 'low' || v2.confidence === 'low' || v3.confidence === 'low') {
+    confidence = 'low';
+  } else if (v1.confidence === 'medium' || v2.confidence === 'medium' || v3.confidence === 'medium') {
+    confidence = 'medium';
+  }
+
+  // 5. Monotonic Escalation (§5.1 & §9.1): Auto recalculation only goes UP
+  let finalLevel = calculatedLevel;
+  let direction = 'initial';
+  let triggers = [];
+  const reason_codes = [];
+
+  const prevLevel = previous?.risk?.level || baseline?.risk?.level || null;
+
+  if (prevLevel) {
+    const prevRank = LEVEL_RANK[prevLevel] ?? 1;
+    const curRank = LEVEL_RANK[finalLevel] ?? 1;
+
+    if (curRank > prevRank) {
+      direction = 'up';
+      triggers.push(`Level escalated from ${prevLevel} to ${finalLevel}`);
+      if (stage === 'impl') {
+        reason_codes.push('ESCALATED_IN_IMPL');
+      } else {
+        reason_codes.push('SOFT_SIGNAL_ESCALATION');
+      }
+    } else {
+      direction = 'same';
+      finalLevel = prevLevel; // Never demote automatically
+    }
+  }
+
+  // Collect Reason Codes
+  const hasHardRule = [...(v1.evidence || []), ...(v2.evidence || []), ...(v3.evidence || [])]
+    .some((e) => e.signal === 'hard');
+  if (hasHardRule) {
+    reason_codes.push('HARD_RULE_HIT');
+  }
+
+  if (finalLevel === 'L3') {
+    reason_codes.push('SECURITY_BOUNDARY_POSSIBLE');
+  }
+
+  const mandatoryHuman = Boolean(v1.mandatory_human_review || v2.mandatory_human_review || v3.mandatory_human_review);
+
+  // Determine Verdict
+  let verdict = 'ok';
+  let status = stage === 'new' ? 'provisional' : 'ready';
+
+  if (direction === 'up') {
+    verdict = 'escalated';
+  }
+
+  return {
+    level: finalLevel,
+    confidence,
+    status,
+    verdict,
+    reason_codes: [...new Set(reason_codes)],
+    mandatory_human_review: mandatoryHuman,
+    unresolved: allUnresolved,
+    transition: {
+      from_level: prevLevel,
+      to_level: finalLevel,
+      direction,
+      triggers
+    }
+  };
+}

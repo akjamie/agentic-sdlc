@@ -1,0 +1,158 @@
+export const HARNESS_RULES_VERSION = '2026.10.0';
+export const ENGINE_VERSION = '1.2.0';
+
+export const RISK_LEVELS = {
+  L0: 'L0',
+  L1: 'L1',
+  L2: 'L2',
+  L3: 'L3',
+};
+
+export const LEVEL_RANK = {
+  L0: 0,
+  L1: 1,
+  L2: 2,
+  L3: 3,
+};
+
+/**
+ * Global default fallback governance (Specification §5.5)
+ * Applied when assessment crashes, times out, or baseline is corrupted.
+ * Fixed at L2 (not L3) to avoid total tool paralysis while closing all automation.
+ */
+export const DEFAULT_GOVERNANCE = {
+  level: 'L2',
+  workflow_mode: 'spec-first',
+  spec_approval: 'human',
+  implementation_review: 'ai+human',
+  auto_approval: 'disabled'
+};
+
+/**
+ * Hard Signal Rules (§5.2):
+ * Deterministic path patterns, migration types, CI/CD, agent governance files.
+ * Can trigger single-veto up to L3.
+ */
+export const HARD_RULES = [
+  // 1. Critical Governance Plane & CI/CD Files (L3)
+  {
+    id: 'HARD_GOV_PLANE',
+    level: 'L3',
+    signal: 'hard',
+    mandatory_human_review: true,
+    patterns: [
+      /^\.github\/workflows\//i,
+      /(^|\/)Jenkinsfile$/i,
+      /(^|\/)AGENTS\.md$/i,
+      /(^|\/)\.githooks\//i,
+      /(^|\/)openspec\/config\.yaml$/i
+    ],
+    summary: 'Modifies governance plane, CI workflows, or Agent instruction files'
+  },
+  // 2. High-Risk Security, Credentials & Cryptography (L3)
+  {
+    id: 'HARD_SECURITY_CREDENTIALS',
+    level: 'L3',
+    signal: 'hard',
+    mandatory_human_review: true,
+    patterns: [
+      /(^|\/)(auth|security|session|mfa|kms)\//i,
+      /\.(pem|key|cert|p12|jks)$/i,
+      /(^|\/)secrets?\.[a-z0-9]+$/i
+    ],
+    summary: 'Touches security, cryptographic keys, authentication, or secrets'
+  },
+  // 3. Financial, Billing & Ledgers (L3)
+  {
+    id: 'HARD_FINANCIAL_ASSETS',
+    level: 'L3',
+    signal: 'hard',
+    mandatory_human_review: true,
+    patterns: [
+      /(^|\/)(payment|billing|ledger|clearing|settlement|wallet)\//i
+    ],
+    summary: 'Touches core financial accounting, settlement, or payment ledger paths'
+  },
+  // 4. Destructive Database Operations (L3)
+  {
+    id: 'HARD_DESTRUCTIVE_DDL',
+    level: 'L3',
+    signal: 'hard',
+    mandatory_human_review: true,
+    patterns: [
+      /(^|\/)migrations\/.*(drop|truncate|purge|destructive)/i
+    ],
+    summary: 'Executes destructive, irreversible schema or data deletion operations'
+  },
+  // 5. Public API Contracts & Shared Schemas (L2)
+  {
+    id: 'HARD_API_CONTRACT',
+    level: 'L2',
+    signal: 'hard',
+    mandatory_human_review: false,
+    patterns: [
+      /(^|\/)(api|protos?|schemas?)\//i,
+      /(^|\/)(openapi|swagger)\.[a-z0-9]+$/i,
+      /\.(proto|graphql|prisma)$/i
+    ],
+    summary: 'Modifies public API contracts, Protobuf specs, or shared schemas'
+  },
+  // 6. Database Migrations & Data Models (L2)
+  {
+    id: 'HARD_DB_MIGRATION',
+    level: 'L2',
+    signal: 'hard',
+    mandatory_human_review: false,
+    patterns: [
+      /(^|\/)migrations?\//i,
+      /(^|\/)db\/(schema|models?)\//i
+    ],
+    summary: 'Modifies database migrations, tables, or persistence schemas'
+  },
+  // 7. Supply Chain & Build Manifests (L2)
+  {
+    id: 'HARD_SUPPLY_CHAIN',
+    level: 'L2',
+    signal: 'hard',
+    mandatory_human_review: false,
+    patterns: [
+      /(^|\/)(package\.json|pnpm-lock\.yaml|package-lock\.json|yarn\.lock)$/i,
+      /(^|\/)(go\.mod|go\.sum|Cargo\.toml|Cargo\.lock|pom\.xml|build\.gradle)$/i,
+      /(^|\/)(Dockerfile.*|Containerfile.*|docker-compose.*)$/i,
+      /(^|\/)(helm|k8s|terraform)\//i
+    ],
+    summary: 'Touches dependency manifests, lockfiles, containers, or infra code'
+  }
+];
+
+/**
+ * Deterministic Proof of L0 Trivial Change (§2.2):
+ * All files must match documentation or non-executable patterns.
+ * Never touches code, CI, configs, or agent files.
+ */
+export const L0_DETERMINISTIC_PATTERNS = [
+  /^docs\//i,
+  /\.md$/i,
+  /\.txt$/i,
+  /^LICENSE$/i,
+  /^NOTICE$/i
+];
+
+/**
+ * Soft Signal Dictionaries (Heuristics / Intent):
+ * Capped at L2 unless specific High-Confidence security evidence.
+ */
+export const SOFT_KEYWORDS = {
+  L3_CRITICAL: [
+    'payment', 'refund', 'billing', 'ledger', 'wallet', 'clearing',
+    'auth', 'oauth', 'jwt', 'session', 'mfa', 'rbac', 'kms', 'secret',
+    'pii', 'gdpr', 'tax-id', 'ssn', 'drop table', 'truncate table', 'purge data'
+  ],
+  L2_BOUNDARY: [
+    'api', 'openapi', 'grpc', 'protobuf', 'graphql', 'webhook',
+    'database', 'migration', 'schema', 'table', 'docker', 'k8s'
+  ],
+  L0_TRIVIAL: [
+    'typo', 'readme', 'documentation', 'doc', 'docs', 'formatting', 'whitespace'
+  ]
+};
