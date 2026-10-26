@@ -33,7 +33,8 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
   // 2. Check Requirement Semantics for Architecture / Schema / Infra
   const topoKeywords = [
     'api', 'endpoint', 'openapi', 'swagger', 'grpc', 'protobuf', 'graphql', 'webhook',
-    'database', 'migration', 'schema', 'table', 'ddl', 'model', 'workflow', 'docker', 'k8s', 'helm'
+    'fastapi', 'springboot', 'spring boot', 'controller', 'rest api', 'router',
+    'database', 'migration', 'schema', 'table', 'ddl', 'model', 'docker', 'k8s', 'helm'
   ];
 
   for (const kw of topoKeywords) {

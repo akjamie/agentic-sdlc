@@ -34,20 +34,17 @@ export const DEFAULT_GOVERNANCE = {
  * Can trigger single-veto up to L3.
  */
 export const HARD_RULES = [
-  // 1. Critical Governance Plane & CI/CD Files (L3)
+  // 1. Critical Governance Plane (L3)
   {
     id: 'HARD_GOV_PLANE',
     level: 'L3',
     signal: 'hard',
     mandatory_human_review: true,
     patterns: [
-      /^\.github\/workflows\//i,
-      /(^|\/)Jenkinsfile$/i,
       /(^|\/)AGENTS\.md$/i,
-      /(^|\/)\.githooks\//i,
       /(^|\/)openspec\/config\.yaml$/i
     ],
-    summary: 'Modifies governance plane, CI workflows, or Agent instruction files'
+    summary: 'Modifies core Agent governance constitution (AGENTS.md or openspec/config.yaml)'
   },
   // 2. High-Risk Security, Credentials & Cryptography (L3)
   {
@@ -84,18 +81,49 @@ export const HARD_RULES = [
     ],
     summary: 'Executes destructive, irreversible schema or data deletion operations'
   },
-  // 5. Public API Contracts & Shared Schemas (L2)
+  // 5. Public API Contracts & Framework Handlers (L2 - Spec-First)
   {
     id: 'HARD_API_CONTRACT',
     level: 'L2',
     signal: 'hard',
     mandatory_human_review: false,
     patterns: [
+      // Schema & IDL definitions
       /(^|\/)(api|protos?|schemas?)\//i,
       /(^|\/)(openapi|swagger)\.[a-z0-9]+$/i,
-      /\.(proto|graphql|prisma)$/i
+      /\.(proto|graphql|gql|thrift)$/i,
+      // Spring Boot (Java / Kotlin)
+      /(^|\/).*Controller\.(java|kt)$/i,
+      /(^|\/).*Resource\.(java|kt)$/i,
+      /(^|\/).*Endpoint\.(java|kt)$/i,
+      /(^|\/)(controllers?|endpoints?|resources?)\/.*\.(java|kt)$/i,
+      // FastAPI / Python web frameworks
+      /(^|\/)(routers?|endpoints?)\/.*\.py$/i,
+      /(^|\/).*(router|controller|endpoint).*\.py$/i,
+      // Node.js / NestJS / Express / Next.js
+      /(^|\/).*\.controller\.(ts|js)$/i,
+      /(^|\/)(pages|app|server)\/api\/.*\.(ts|js|tsx|jsx)$/i,
+      /(^|\/)routes?\/.*\.(ts|js)$/i,
+      // Go web handlers
+      /(^|\/).*(handler|router|controller).*\.go$/i,
+      /(^|\/)(handlers?|routers?|controllers?)\/.*\.go$/i
     ],
-    summary: 'Modifies public API contracts, Protobuf specs, or shared schemas'
+    summary: 'Modifies public API contracts, controllers, routers, or schemas (Spring Boot, FastAPI, NestJS, Go, Proto, OpenAPI)'
+  },
+  // 6. CI/CD Workflows & Git Hooks (L1 Tooling / Routine Dev)
+  {
+    id: 'HARD_CI_TOOLING',
+    level: 'L1',
+    signal: 'hard',
+    mandatory_human_review: false,
+    patterns: [
+      /^\.github\/workflows\//i,
+      /(^|\/)Jenkinsfile$/i,
+      /(^|\/)\.githooks\//i,
+      /(^|\/)\.husky\//i,
+      /(^|\/)\.gitlab-ci\.ya?ml$/i
+    ],
+    summary: 'Modifies CI/CD pipeline workflows, Git hooks, or developer tooling'
   },
   // 6. Database Migrations & Data Models (L2)
   {

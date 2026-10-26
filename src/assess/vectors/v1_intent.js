@@ -12,7 +12,7 @@ export function evaluateV1Intent({ requirement = '', specDelta = '', changedFile
   // Infer Change Type if not provided
   let inferredType = changeType;
   if (!inferredType) {
-    if (/\b(doc|docs|readme|typo|format|clean|dependency|upgrade|refactor)\b/i.test(req)) {
+    if (/\b(doc|docs|readme|typo|format|clean|ci|workflow|action|hook|dependency|upgrade|refactor)\b/i.test(req)) {
       inferredType = 'chore';
     } else if (/\b(fix|bug|defect|issue|error|patch|resolve)\b/i.test(req)) {
       inferredType = 'fix';
