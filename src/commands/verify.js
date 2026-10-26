@@ -11,6 +11,7 @@ import { checkSchema } from '../lib/schema.js';
 import { loadPolicy, isAdvisory, DEFAULT_POLICY, matchesAny } from '../lib/policy.js';
 import { classifyPR } from '../lib/prtype.js';
 import { isSinglePrLevel, requiresHumanReview, readChangeLevel } from '../lib/level.js';
+import { assessRisk } from '../lib/risk.js';
 import { checkTestPresence, checkTaskEvidence } from '../lib/tdd.js';
 import { log, dim } from '../lib/log.js';
 
@@ -168,11 +169,19 @@ export function runVerify(changeId, opts = {}) {
       status === 'ready_for_impl' ? 'READY_FOR_IMPL' : `status is ${status ?? 'unset'} (run: asdlc approve ${changeId})`);
   }
 
-  const humanReview = requiresHumanReview(changeLevel, { contractTestVerified: opts.contractTestVerified });
-  if (humanReview) {
-    add('human-gate', 'pass', `${changeLevel ?? 'unlevelled'}: mandatory human lead approval required before merge (auto-merge DENIED)`);
+  const riskAssessment = assessRisk({ changedFiles, currentLevel: changeLevel, repoRoot });
+  if (riskAssessment.escalated) {
+    add('risk-escape', 'fail', `governance escalation: declared ${changeLevel} but modified ${riskAssessment.level} files (${riskAssessment.reasons.join('; ')})`);
   } else {
-    add('human-gate', 'pass', `${changeLevel ?? 'unlevelled'}: auto-merge permitted once AI review passes (no human review required)`);
+    add('risk-escape', 'pass', `conforms to ${changeLevel || 'unlevelled'} risk boundary`);
+  }
+
+  const effectiveLevel = riskAssessment.escalated ? riskAssessment.level : changeLevel;
+  const humanReview = requiresHumanReview(effectiveLevel, { contractTestVerified: opts.contractTestVerified });
+  if (humanReview) {
+    add('human-gate', 'pass', `${effectiveLevel ?? 'unlevelled'}: mandatory human lead approval required before merge (auto-merge DENIED)`);
+  } else {
+    add('human-gate', 'pass', `${effectiveLevel ?? 'unlevelled'}: auto-merge permitted once AI review passes (no human review required)`);
   }
 
   const tasksPath = path.join(cdir, 'tasks.md');

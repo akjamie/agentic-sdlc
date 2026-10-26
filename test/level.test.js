@@ -18,7 +18,7 @@ test('inferInitialLevel: identifies L3 sensitive keywords', () => {
 
   const r2 = inferInitialLevel({ requirement: 'update jwt password encryption' });
   assert.equal(r2.level, LEVELS.L3);
-  assert.match(r2.reason, /password/);
+  assert.match(r2.reason, /jwt|password|security/);
 });
 
 test('inferInitialLevel: identifies L2 cross-boundary keywords', () => {

@@ -52,9 +52,6 @@ export function doctor(opts = {}) {
     if (exists(cfgPath)) { try { cfgSchema = (readYaml(cfgPath) ?? {}).schema ?? null; } catch { /* ignore */ } }
     add('repo config schema', cfgSchema === 'agentic-repo-change' ? 'pass' : 'warn', cfgSchema ?? 'unset');
 
-    const policy = exists(path.join(repoRoot, '.sdlc', 'policy.yaml'));
-    add('.sdlc/policy.yaml', policy ? 'pass' : 'warn', policy ? '' : 'missing (run `asdlc init`)');
-
     let hooksPath = null;
     try { hooksPath = git(['config', '--get', 'core.hooksPath'], repoRoot, { allowFail: true }); } catch { /* ignore */ }
     add('.githooks', hooksPath === '.githooks' ? 'pass' : 'warn', hooksPath === '.githooks' ? 'core.hooksPath=.githooks' : `core.hooksPath=${hooksPath ?? 'unset'}`);
@@ -98,17 +95,7 @@ export function doctor(opts = {}) {
       } catch (e) { log.warn(`fix failed for .gitignore: ${e.message}`); }
     }
 
-    // 3. .sdlc/policy.yaml
-    if (!policy && exists(policyAssetFile)) {
-      try {
-        const pdir = path.join(repoRoot, '.sdlc');
-        ensureDir(pdir);
-        copyTree(policyAssetFile, path.join(pdir, 'policy.yaml'));
-        log.ok('fixed: created .sdlc/policy.yaml from template');
-      } catch (e) { log.warn(`fix failed for policy: ${e.message}`); }
-    }
-
-    // 4. .githooks
+    // 3. .githooks
     if (hooksPath !== '.githooks') {
       try {
         if (exists(githooksAssetDir)) {

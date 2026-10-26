@@ -1,30 +1,11 @@
 import path from 'node:path';
 import { exists, readText } from './fs.js';
 import { changeDir } from './paths.js';
-import { DEFAULT_POLICY, loadPolicy } from './policy.js';
+import { assessRisk, RISK_LEVELS } from './risk.js';
 
-export const LEVELS = {
-  L0: 'L0',
-  L1: 'L1',
-  L2: 'L2',
-  L3: 'L3',
-};
+export const LEVELS = RISK_LEVELS;
 
-export const SENSITIVE_KEYWORDS = [
-  'auth', 'password', 'secret', 'token', 'permission', 'crypto', 'credential',
-  'jwt', 'session', 'oauth', 'rbac', 'iam', 'key'
-];
-
-export const BOUNDARY_KEYWORDS = [
-  'api', 'database', 'migration', 'schema', 'openapi', 'rest', 'grpc',
-  'config', 'docker', 'k8s', 'workflow', 'deploy', 'table', 'model'
-];
-
-export const TRIVIAL_KEYWORDS = [
-  'doc', 'docs', 'typo', 'readme', 'comment', 'formatting', 'whitespace'
-];
-
-export function inferInitialLevel({ requirement = '', explicitLevel, repoRoot, policy } = {}) {
+export function inferInitialLevel({ requirement = '', explicitLevel, repoRoot } = {}) {
   if (explicitLevel) {
     const norm = String(explicitLevel).toUpperCase();
     if (LEVELS[norm]) {
@@ -32,35 +13,12 @@ export function inferInitialLevel({ requirement = '', explicitLevel, repoRoot, p
     }
   }
 
-  const pol = policy ?? (repoRoot ? loadPolicy(repoRoot) : DEFAULT_POLICY);
-  const text = String(requirement).toLowerCase();
-
-  // 1. Check L3 Sensitive Keywords
-  for (const kw of SENSITIVE_KEYWORDS) {
-    const re = new RegExp(`\\b${kw}\\b`, 'i');
-    if (re.test(text)) {
-      return { level: LEVELS.L3, reason: `touches security/sensitive domain keyword '${kw}'` };
-    }
-  }
-
-  // 2. Check L2 Boundary Keywords
-  for (const kw of BOUNDARY_KEYWORDS) {
-    const re = new RegExp(`\\b${kw}\\b`, 'i');
-    if (re.test(text)) {
-      return { level: LEVELS.L2, reason: `touches cross-boundary/infrastructure keyword '${kw}'` };
-    }
-  }
-
-  // 3. Check L0 Trivial Keywords
-  for (const kw of TRIVIAL_KEYWORDS) {
-    const re = new RegExp(`\\b${kw}\\b`, 'i');
-    if (re.test(text)) {
-      return { level: LEVELS.L0, reason: `trivial change matching keyword '${kw}'` };
-    }
-  }
-
-  // 4. Default: L1 Bounded Change
-  return { level: LEVELS.L1, reason: 'bounded local module change' };
+  const assessment = assessRisk({ requirement, repoRoot });
+  return {
+    level: assessment.level,
+    reason: assessment.reasons[0] || 'bounded local module change',
+    assessment
+  };
 }
 
 export function isSinglePrLevel(level) {
@@ -82,3 +40,4 @@ export function readChangeLevel(repoRoot, changeId) {
   const m = metaText.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
   return m ? m[1].toUpperCase() : null;
 }
+

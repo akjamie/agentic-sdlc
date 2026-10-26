@@ -38,8 +38,25 @@ export function copyTree(src, dest) {
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const from = path.join(src, entry.name);
     const to = path.join(dest, entry.name);
-    if (entry.isDirectory()) copyTree(from, to);
-    else fs.copyFileSync(from, to);
+    if (entry.isDirectory()) {
+      copyTree(from, to);
+    } else {
+      let attempts = 0;
+      while (attempts < 3) {
+        try {
+          fs.copyFileSync(from, to);
+          break;
+        } catch (e) {
+          if (e.code === 'EBUSY' && attempts < 2) {
+            attempts++;
+            const end = Date.now() + 50;
+            while (Date.now() < end) {}
+          } else {
+            throw e;
+          }
+        }
+      }
+    }
   }
 }
 
