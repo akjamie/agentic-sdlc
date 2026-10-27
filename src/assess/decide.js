@@ -1,4 +1,5 @@
 import { LEVEL_RANK, DEFAULT_GOVERNANCE, L0_DETERMINISTIC_PATTERNS } from './rules/builtin.js';
+import { judgeChangeSemantics } from './ai_judge.js';
 
 /**
  * Decides final risk level, confidence, and verdict from vector findings.
@@ -50,14 +51,19 @@ export function decideAssessment({
   }
 
   // 3. Positive Proof for L0 (§2.2):
-  // L0 requires positive proof. If changed files exist, ALL must be documentation/non-executable.
-  if (changedFiles.length > 0) {
+  // Pure Documentation or Pure Test changes evaluated by AI Semantic Judge
+  const aiJudgment = judgeChangeSemantics({ changedFiles });
+  if (aiJudgment.is_pure_test && maxRank <= 1 && !v2.mandatory_human_review && !v3.mandatory_human_review) {
+    calculatedLevel = 'L0';
+  } else if (aiJudgment.is_pure_doc && maxRank <= 1 && !v2.mandatory_human_review && !v3.mandatory_human_review) {
+    calculatedLevel = 'L0';
+  } else if (changedFiles.length > 0) {
     const norm = changedFiles.map((f) => f.replace(/\\/g, '/'));
     const allDoc = norm.every((f) => L0_DETERMINISTIC_PATTERNS.some((p) => p.test(f)));
     if (allDoc && maxRank <= 1) {
       calculatedLevel = 'L0';
-    } else if (calculatedLevel === 'L0' && !allDoc) {
-      // Cannot claim L0 if non-doc files are modified
+    } else if (calculatedLevel === 'L0' && !allDoc && !aiJudgment.is_pure_test) {
+      // Cannot claim L0 if non-doc and non-test files are modified
       calculatedLevel = 'L1';
     }
   } else if (v1.level === 'L0' && maxRank <= 1 && v2.no_signal && v3.no_signal) {

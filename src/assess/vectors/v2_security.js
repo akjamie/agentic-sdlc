@@ -1,4 +1,5 @@
 import { HARD_RULES, isTestOrDocFile } from '../rules/builtin.js';
+import { judgeChangeSemantics } from '../ai_judge.js';
 
 export function evaluateV2Security({ requirement = '', changedFiles = [], repoRoot = null } = {}) {
   const req = String(requirement || '').toLowerCase();
@@ -72,10 +73,10 @@ export function evaluateV2Security({ requirement = '', changedFiles = [], repoRo
     }
   }
 
-  const isDocIntent = /\b(typo|readme|docs?|documentation|comments?|whitespace)\b/i.test(req) &&
-    !/\b(implement|create|delete|drop|truncate|purge|migrate|deploy|release|leak|vulnerability)\b/i.test(req);
+  const aiJudgment = judgeChangeSemantics({ requirement: req, changedFiles });
+  const isDocOrTest = aiJudgment.is_pure_test || aiJudgment.is_pure_doc;
 
-  if (!isDocIntent) {
+  if (!isDocOrTest) {
     if (compoundHit) {
       no_signal = false;
       level = 'L3';

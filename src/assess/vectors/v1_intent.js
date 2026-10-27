@@ -1,4 +1,5 @@
 import { LEVEL_RANK } from '../rules/builtin.js';
+import { judgeChangeSemantics } from '../ai_judge.js';
 
 export function evaluateV1Intent({ requirement = '', specDelta = '', changedFiles = [], changeType = null } = {}) {
   const req = String(requirement || '').toLowerCase();
@@ -35,18 +36,26 @@ export function evaluateV1Intent({ requirement = '', specDelta = '', changedFile
     });
   }
 
-  // 2. Pure Documentation Demotion Check
-  if (/\b(typo|readme|docs?|documentation|comments?|whitespace)\b/i.test(req)) {
-    if (!/\b(implement|create|delete|drop|truncate|purge|migrate|execute|leak|vulnerability)\b/i.test(req)) {
-      level = 'L0';
-      inferredType = 'chore';
-      evidence.push({
-        id: 'V1_DOC_INTENT',
-        kind: 'task_statement',
-        signal: 'soft',
-        summary: 'Intent is purely documentation, typo, or comment editing'
-      });
-    }
+  // 2. AI Semantic Classification: Pure Test or Pure Doc Evaluation (L0)
+  const aiJudgment = judgeChangeSemantics({ requirement: req, changedFiles });
+  if (aiJudgment.is_pure_test) {
+    level = 'L0';
+    inferredType = 'chore';
+    evidence.push({
+      id: 'V1_AI_TEST_EVALUATION',
+      kind: 'ai_evaluation',
+      signal: 'soft',
+      summary: aiJudgment.rationale || 'AI Semantic Evaluation: Change is strictly test suites/mocks (evaluated as L0 trivial/routine)'
+    });
+  } else if (aiJudgment.is_pure_doc) {
+    level = 'L0';
+    inferredType = 'chore';
+    evidence.push({
+      id: 'V1_AI_DOC_EVALUATION',
+      kind: 'ai_evaluation',
+      signal: 'soft',
+      summary: aiJudgment.rationale || 'AI Semantic Evaluation: Intent is purely documentation, typo, or comment editing'
+    });
   }
 
   // If empty input

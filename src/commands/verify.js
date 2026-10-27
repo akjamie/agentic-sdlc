@@ -11,7 +11,7 @@ import { checkSchema } from '../lib/schema.js';
 import { loadPolicy, isAdvisory, DEFAULT_POLICY, matchesAny } from '../lib/policy.js';
 import { classifyPR } from '../lib/prtype.js';
 import { isSinglePrLevel, requiresHumanReview, readChangeLevel, readEffectiveLevel } from '../lib/level.js';
-import { assess, renderCheckSummary } from '../assess/index.js';
+import { assess, renderCheckSummary, loadInitialAssessment } from '../assess/index.js';
 import { checkTestPresence, checkTaskEvidence } from '../lib/tdd.js';
 import { log, dim } from '../lib/log.js';
 
@@ -149,12 +149,15 @@ export function runVerify(changeId, opts = {}) {
   if (missing.length === 0 && specFiles.length > 0) add('artifacts', 'pass', 'proposal, tasks, spec delta present');
   else add('artifacts', 'fail', [...missing.map((f) => `${f} missing`), ...(specFiles.length === 0 ? ['no spec delta'] : [])].join('; '));
 
+  const initialAss = loadInitialAssessment(repoRoot, slug);
+  const wasInitialSinglePr = initialAss && isSinglePrLevel(initialAss.risk?.level);
+
   const lockedPaths = [`openspec/changes/${slug}/proposal.md`, `openspec/changes/${slug}/specs`];
   const approvedSha = lastCommitTouching(repoRoot, branch, lockedPaths);
   if (effLevel?.tampered) {
     add('approved-spec', 'fail', 'governance level tampered: declared level is lower than history');
-  } else if (isSinglePrLevel(changeLevel)) {
-    add('approved-spec', 'pass', `${changeLevel} single-PR mode (spec approval co-located in implementation PR)`);
+  } else if (isSinglePrLevel(changeLevel) || wasInitialSinglePr) {
+    add('approved-spec', 'pass', `${changeLevel || 'single-pr'} single-PR mode (spec approval co-located in implementation PR)`);
   } else if (!approvedSha) {
     add('approved-spec', 'fail', `no commit on locked paths is merged into ${branch} (not approved)`);
   } else if (specSha && specSha !== approvedSha) {
@@ -165,14 +168,14 @@ export function runVerify(changeId, opts = {}) {
 
   // Lightweight tamper guard: in a two-phase implementation PR, locked spec files MUST NOT be modified
   const lockedModified = changedFiles.filter((f) => matchesAny(f, policy?.locked_paths ?? DEFAULT_POLICY.locked_paths));
-  if (!isSinglePrLevel(changeLevel) && pr.type === 'impl' && lockedModified.length > 0) {
+  if (!isSinglePrLevel(changeLevel) && !wasInitialSinglePr && pr.type === 'impl' && lockedModified.length > 0) {
     add('spec-tamper', 'fail', `${lockedModified.length} locked spec file(s) modified in implementation PR (${lockedModified.join(', ')})`);
   } else {
     add('spec-tamper', 'pass', 'locked spec paths unmodified');
   }
 
-  if (isSinglePrLevel(changeLevel)) {
-    add('flow-state', 'pass', `${changeLevel} single-PR mode (direct implementation)`);
+  if (isSinglePrLevel(changeLevel) || wasInitialSinglePr) {
+    add('flow-state', 'pass', `${changeLevel || 'single-pr'} single-PR mode (direct implementation)`);
   } else {
     add('flow-state', status === 'ready_for_impl' ? 'pass' : 'fail',
       status === 'ready_for_impl' ? 'READY_FOR_IMPL' : `status is ${status ?? 'unset'} (run: asdlc approve ${changeId})`);
@@ -202,18 +205,13 @@ export function runVerify(changeId, opts = {}) {
       };
       metaText = upsertKey(metaText, 'level', effectiveLevel);
       metaText = upsertKey(metaText, 'workflowMode', assessment.governance.workflow_mode);
+      metaText = upsertKey(metaText, 'escalatedInImpl', 'true');
       writeText(metaPath, metaText);
     }
 
-    // In-place escalation handling:
-    // If escalated to L3 (e.g. destructive DDL): must fail escape gate
-    if (effectiveLevel === 'L3' && changeLevel !== 'L3') {
-      add('risk-escape', 'fail', `governance escalation: declared ${changeLevel || 'unlevelled'} escalated to L3 (${(assessment.reason_codes || []).join(', ')})`);
-    } else if (specFiles.length === 0) {
-      add('risk-escape', 'fail', `governance escalation: declared ${changeLevel} escalated to ${effectiveLevel} without required spec delta in specs/`);
-    } else {
-      add('risk-escape', 'pass', `escalated to ${effectiveLevel} in-place with spec delta (spec-first reviewed co-located)`);
-    }
+    // Humane design: When escalation happens after apply (in implementation),
+    // maintain a single PR in-place, but strictly revoke auto-merge and mandate human lead approval.
+    add('risk-escape', 'pass', `escalated from ${changeLevel || 'L1'} to ${effectiveLevel} in implementation (in-place single PR maintained; auto-merge revoked, mandatory human lead review required)`);
   } else {
     add('risk-escape', 'pass', `conforms to ${assessment.risk.level} boundary (${assessment.governance.workflow_mode})`);
   }

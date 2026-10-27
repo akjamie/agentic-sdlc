@@ -7,6 +7,7 @@ import { runOpenspec } from '../lib/openspec.js';
 import { runShell } from '../lib/exec.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
+import { Option } from 'commander';
 import { inferInitialLevel, isSinglePrLevel } from '../lib/level.js';
 
 // STAGE 1 of the spec (v10: explore + propose are ONE step).
@@ -240,7 +241,7 @@ export function register(program) {
     .option('--no-design', 'skip generating technical design (design.md)')
     .option('--batch-grill', 'use batch-grill-me (present entire decision frontier in structured batches)')
     .option('--no-grill', 'skip interactive grilling interview (self-settle decisions in clarifications.md)')
-    .option('--level <level>', 'explicit governance level (L0, L1, L2, L3)')
+    .addOption(new Option('--level <level>', 'internal governance level override (hidden)').hideHelp())
     .option('--repo-root <path>')
     .action((requirement, opts) => {
       newChange(requirement, opts);
