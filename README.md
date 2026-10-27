@@ -3,317 +3,234 @@
 [![npm version](https://img.shields.io/npm/v/@akjamie/agentic-sdlc?color=6366f1&label=npm)](https://www.npmjs.com/package/@akjamie/agentic-sdlc)
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-10b981.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20.19.0-38bdf8.svg)](https://nodejs.org/)
-[![tests](https://img.shields.io/badge/tests-113%20passing-10b981.svg)](#development--verification)
+[![tests](https://img.shields.io/badge/tests-128%20passing-10b981.svg)](#development--verification)
+[![architecture](https://img.shields.io/badge/governance-L0--L3%20Adaptive%20Dual--Track-f59e0b.svg)](#adaptive-risk-tiered-governance-l0l3)
 
-> **Enterprise-grade Agentic SDLC governance.** Seven deterministic stages take a feature from natural-language intent to production — with every quality gate enforced by code, not by convention.
+> **The Intelligent Governance Engine for Autonomous AI Coding.**
+> Move fast on routine tasks. Lock down APIs, schemas, and security.
+> Never let an autonomous agent wander into production unverified.
 >
 > Built on [OpenSpec](https://openspec.dev) and [Graphify](https://github.com/safishamsi/graphify).
-> The spec is the authority. The gate is the law. Humans stay in control.
+> The spec is the contract. The gate is the law. Humans stay in control.
 
 ---
 
-## Contents
+## ⚡ The Dilemma: "Vibe Coding" vs. "Enterprise Bureaucracy"
 
-- [What problem this solves](#what-problem-this-solves)
-- [Enterprise Quality Gates & Non-Negotiable Invariants](#-enterprise-quality-gates--non-negotiable-invariants)
-- [Three-Plane Architecture](#three-plane-architecture)
-- [Bundled Out-of-the-Box Skills](#bundled-out-of-the-box-skills)
-- [Install & Setup](#install--setup)
-- [The Seven Stages](#the-seven-stages)
-- [What `asdlc verify` Checks](#what-asdlc-verify-checks)
-- [Governance Principles](#governance-principles)
-- [Documentation Hub](#documentation-hub)
-- [Development & Verification](#development--verification)
+Autonomous AI coding agents (Claude Code, Cursor, OpenCode, Codex) are transforming software delivery. But engineering leads face a frustrating dilemma:
 
----
+```
+              UNGOVERNED "VIBE CODING"             RIGID "ALWAYS TWO-PR" FRAMEWORKS
+               (Chaos & Silent Drift)                   (Suffocating Bureaucracy)
+            ┌───────────────────────────┐            ┌───────────────────────────┐
+            │ 💥 Hallucinated contracts │            │ 🐌 2 PRs for a 1-line doc │
+            │ 💥 Code shipped w/o tests │    VS      │ 🐌 45-min review for typo │
+            │ 💥 Agents rewrite specs   │            │ 🐌 Dev velocity tanks     │
+            │ 💥 Self-grading exams     │            │ 🐌 Agents circumvent tool │
+            └───────────────────────────┘            └───────────────────────────┘
+```
 
-## What Problem This Solves
+### The Solution: Adaptive Dual-Track SDLC (`asdlc`)
 
-Spec-driven development works — until you scale it past one team or turn AI agents loose on a production codebase.
-
-OpenSpec manages spec documents, but it **enforces nothing** at runtime. Nothing stops an autonomous agent from:
-
-- Writing code that contradicts the approved spec
-- Shipping without tests
-- Silently editing the spec after the fact to make failing tests pass
-- Grading its own implementation (agent acts as both player and referee)
-
-`asdlc` closes every one of those gaps by adding a **deterministic governance plane** on top of the spec engine:
-
-| What agents can't do | How `asdlc` enforces it |
-| :--- | :--- |
-| Write production code before spec approval | `asdlc apply` physically refuses via path-limited `git log` check |
-| Silently alter an approved spec | `spec-tamper` gate computes and compares path-limited SHA |
-| Ship code without tests | `test-presence` gate rejects diffs missing test changes |
-| Write ACs not mapped to test files | `(test: <path>)` annotation required per AC |
-| Self-certify their own implementation | CI runs independent `asdlc-impl-review` with fresh LLM context |
-| Declare success without recorded test evidence | `tdd-evidence` gate validates actual test output logs |
-
-### Five Core Principles
-
-- **Intent-Driven Start** — `asdlc new "i want to build..."` derives a canonical slug; no artificial ticket IDs.
-- **Conversational Grilling Before Specs** — high-signal **`grill-me`** interview (or **`batch-grill-me`** via `--batch-grill`) stress-tests the decision frontier *before* any spec is written, with strict anti-fatigue guardrails. Decisions are recorded in `clarifications.md`.
-- **The Spec is Immutable** — once merged to the protected branch, the spec is locked. If reality diverges, the Converge protocol halts work (`SPEC_GAP`) and requires human re-approval via a fresh spec delta.
-- **Enforced Task-Level TDD** — `asdlc apply` requires an approved spec commit; `asdlc verify` enforces `test-presence` and `tdd-evidence` on every diff.
-- **Player ≠ Referee** — the authoring agent can never certify its own work; CI uses a separate model with fresh context.
+`agentic-sdlc` bridges this gap with an **Intelligent, Neuro-Symbolic Governance Plane**:
+- 🚀 **Frictionless Agility for Routine Work (L0 / L1)**: Pure test additions, documentation updates, and bounded local refactors run in a streamlined **Single-PR** mode with automated validation and zero red tape.
+- 🛡️ **Ironclad Rigor for High-Impact Changes (L2 / L3)**: Cross-boundary APIs (Spring Boot, FastAPI, Go, NestJS), database schemas, security tokens, and constitutional rules enforce **Dual-PR Spec-First** contracts with human sign-off.
+- 🤝 **Humane In-Place Scope Escalation**: If scope unexpectedly expands during implementation, the system **never punishes the engineer** by ripping their Git branch apart. It maintains the single PR in-place, revokes auto-merge, and routes to a Tech Lead for human review.
 
 ---
 
-## 🛡️ Enterprise Quality Gates & Non-Negotiable Invariants
+## 🧭 Adaptive Risk-Tiered Governance (L0–L3)
 
-These are the hard invariants enterprise engineering leads require when deploying autonomous agents on production repositories.
-Every invariant is enforced by deterministic code — not by convention, documentation, or hope.
-
-| # | Quality Gate | Enforcement | Failure Mode |
-| :--: | :--- | :--- | :--- |
-| **1** | **No Apply Before Spec PR Merge** | `asdlc apply <ID>` verifies path-limited Git commit (`approvedSha`) on `main` touching `proposal.md` + `specs/**` | 🚫 **Hard Refusal** — zero production code on unapproved drafts |
-| **2** | **Cryptographic Anti-Tampering** (`spec-tamper`) | `asdlc verify` computes path-limited SHA of locked spec files in the impl diff against `approvedSha` | 🚫 **PR Rejection** — agents cannot move the goalposts to pass failing tests |
-| **3** | **Full Scenario-to-AC Traceability** (`R5-scenario-coverage`) | `asdlc lint` enforces `scens.length <= acs.length` — every scenario needs ≥1 AC | 🚫 **Pre-flight Blocker** — prevents single happy-path ACs for complex scenario sets |
-| **4** | **Deterministic AC Test Gate** (`asdlc test`) | Parses all `- [ ] ACn: ... (test: <path>)` mappings and executes real assertions via native runners | 🚫 **Dual Harness** — local TDD driver + independent CI gate; fake claims fail |
-| **5** | **Player ≠ Referee Isolation** | CI impl review runs with fresh LLM context; independent of author agent `tasks.md` declarations | 🚫 **Audit Integrity** — authoring agents cannot grade their own exam |
-| **6** | **Diff-Based Test Presence** (`test-presence`) | `asdlc verify` checks every `src/**` change is accompanied by `test/**` changes | 🚫 **Zero Untested Code** — shuts down AI "code dumps" with no test coverage |
-| **7** | **Immutable Converge Protocol** (`SPEC_GAP`) | If implementation exposes invalid spec assumptions, agent must halt and file a `SPEC_GAP` report | 🚫 **Anti-Drift** — silent spec mutations blocked; human re-approves fresh delta |
-| **8** | **Triple-Gated Trunk Merge** | Impl PR merge requires: ① CI AC Tests, ② AI Impl Review (Player ≠ Referee), ③ Human Tech Lead sign-off | 🚫 **Blast Radius Defense** — unreviewed agent code never reaches `main` |
-
----
-
-## Three-Plane Architecture
-
-The system is structured across three distinct planes, each with a clear responsibility boundary:
+Every change evaluated by `asdlc` is continuously assessed along its lifecycle across 5 orthogonal risk vectors (Intent, Architecture/API, Security/Data, AST Topology, and Test/Doc Semantics).
 
 ```mermaid
 flowchart TD
-    subgraph P3 ["PLANE 3 · Agentic IDE Surface (.agents/skills/ · Conversational & Autonomous)"]
-        direction TB
-        subgraph P3_STAGES ["Stage Workflow Skills (Ordered by SDLC Stage)"]
-            direction LR
-            SK_INIT["1 · asdlc-init<br/>Repo Scaffolding"] --> SK_NEW["2 · asdlc-new<br/>AST Explore + Grilling"]
-            SK_NEW --> SK_LINT["3 · asdlc-lint<br/>BDD & AC Quality"]
-            SK_LINT --> SK_APPLY["5 · asdlc-apply<br/>Task-Level TDD Engine"]
-            SK_APPLY --> SK_VERIFY["6 · asdlc-verify<br/>12-Gate Audit"]
-            SK_VERIFY --> SK_GATE["Stage 6.5 Impl Gate<br/>AI AC Test + AI Review + Human TL"]
-            SK_GATE --> SK_ARCHIVE["7 · asdlc-archive<br/>Living Spec Sync"]
-        end
-        subgraph P3_REVIEWS ["CI Reviewers & Orientation Skills"]
-            direction LR
-            SK_SPECREV["asdlc-spec-review<br/>Spec PR Evaluation"]
-            SK_IMPLREV["asdlc-impl-review<br/>Player ≠ Referee Impl Audit"]
-            SK_DOCTOR["asdlc-doctor<br/>Diagnostics & Auto-Fix"]
-            SK_STATUS["asdlc-status<br/>Change Dashboard"]
-        end
+    REQ["Natural Language Intent / Code Diff"] --> ASSESS{"Neuro-Symbolic Risk Engine<br/>(AI Classifier + Invariant Guard)"}
+
+    ASSESS -->|L0: Trivial / Test / Doc| T_L0["<b>Level L0 · Trivial</b><br/>Tests, Docs, Typo Fixes"]
+    ASSESS -->|L1: Bounded Local / Tooling| T_L1["<b>Level L1 · Routine</b><br/>Internal Helpers, CI, Local Logic"]
+    ASSESS -->|L2: Cross-Boundary API / Schema| T_L2["<b>Level L2 · Structural</b><br/>FastAPI, SpringBoot, DDL, gRPC"]
+    ASSESS -->|L3: Critical Security / Architecture| T_L3["<b>Level L3 · Critical</b><br/>DROP TABLE, Auth Engines, AGENTS.md"]
+
+    subgraph FAST_TRACK ["⚡ Fast-Track: Single PR Flow"]
+        T_L0 --> SP1["Direct Implementation<br/>(Spec Delta & Code Co-Located)"]
+        T_L1 --> SP1
+        SP1 --> V_AUTO["Local asdlc verify<br/>12 Quality Gates"]
+        V_AUTO --> PR_AUTO["Single PR to main<br/>(CI + AI Review Auto-Merge)"]
     end
 
-    subgraph P2 ["PLANE 2 · Governance CLI & Hard CI Gates (bin/asdlc.js · Deterministic Exit Codes)"]
-        direction TB
-        subgraph P2_STAGES ["7-Stage Lifecycle CLI Commands"]
-            direction LR
-            CMD_INIT["init"] --> CMD_NEW["new"]
-            CMD_NEW --> CMD_LINT["lint"]
-            CMD_LINT --> CMD_PR1["pr (spec)"]
-            CMD_PR1 --> CMD_APPROVE["approve"]
-            CMD_APPROVE --> CMD_APPLY["apply"]
-            CMD_APPLY --> CMD_TEST["test"]
-            CMD_TEST --> CMD_VERIFY["verify"]
-            CMD_VERIFY --> CMD_PR2["pr (impl)"]
-            CMD_PR2 --> CMD_ARCHIVE["archive"]
-        end
-        subgraph P2_GATES ["Cryptographic & Hard Verification Engines"]
-            direction LR
-            G_LOCK["approvedSha Gate<br/>Commit Lock on main"]
-            G_TAMPER["spec-tamper Gate<br/>Anti-Cheat Tree Audit"]
-            G_COV["R5 Scenario Coverage<br/>Scenario = AC Traceability"]
-            G_RUNNER["asdlc test Runner<br/>(test: path) Execution"]
-            G_PRESENCE["test-presence Gate<br/>Code Diff = Test Diff"]
-            G_TRIPLE["Triple-Review Gate<br/>AI AC Test + AI Review + Human TL"]
-        end
+    subgraph SPEC_FIRST ["🛡️ Spec-First Track: Dual-PR Flow"]
+        T_L2 --> DP1["Spec PR to main<br/>(asdlc pr spec)"]
+        T_L3 --> DP1
+        DP1 --> G_SPEC["CI Spec Review & Human TL Approval"]
+        G_SPEC --> S_LOCK["approvedSha Cryptographic Lock<br/>(asdlc approve)"]
+        S_LOCK --> DP2["Implementation Unlocked<br/>(asdlc apply)"]
+        DP2 --> DP3["Task-Level TDD Red-Green Loop<br/>(asdlc test)"]
+        DP3 --> PR_IMPL["Implementation PR to main<br/>(Human Tech Lead Final Gate)"]
     end
 
-    subgraph P1 ["PLANE 1 · Core Library (src/lib/ · Pure Functions, Zero Side-Effects, 100% Tested)"]
-        direction LR
-        subgraph P1_GOV ["Spec & Governance Engine"]
-            direction TB
-            M_LINT["speclint.js · R0–R8 Rules"]
-            M_POLICY["policy.js · .sdlc/policy.yaml"]
-            M_SCHEMA["schema.js · Version Pinning"]
-            M_AGENTS["agents.js · AGENTS.md Refresh"]
-        end
-        subgraph P1_GRAPH ["AST & Repository Context"]
-            direction TB
-            M_GRAPH["graphify.js · Knowledge Topology"]
-            M_GIT["git.js · Path-Limited Queries"]
-            M_FS["fs.js · Safe File Primitives"]
-            M_PATHS["paths.js · Canonical Paths"]
-        end
-        subgraph P1_EXEC ["TDD & Gate Verification"]
-            direction TB
-            M_TDD["tdd.js · Evidence Parser"]
-            M_TEST["commands/test.js · Test Runner"]
-            M_PRTYPE["prtype.js · PR Classifier"]
-            M_EXEC["exec.js · Process Isolation"]
-        end
-    end
+    FAST_TRACK -.->|"In-Place Escalation<br/>(Touches API/DDL in Impl)"| ESCALATE["Maintain Single PR in-place<br/>Revoke Auto-Merge & Enforce Human Lead Sign-Off"]
+    ESCALATE -.-> PR_IMPL
 
-    P3 ==>|"Invokes CLI commands with --json"| P2
-    P2 ==>|"Calls pure library functions"| P1
+    classDef l0Style fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#ffffff,rx:6px,ry:6px;
+    classDef l1Style fill:#0f766e,stroke:#14b8a6,stroke-width:2px,color:#ffffff,rx:6px,ry:6px;
+    classDef l2Style fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#ffffff,rx:6px,ry:6px;
+    classDef l3Style fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#ffffff,rx:6px,ry:6px;
+    classDef subFast fill:#022c22,stroke:#059669,stroke-width:1.5px,color:#a7f3d0;
+    classDef subSpec fill:#0f172a,stroke:#3b82f6,stroke-width:1.5px,color:#bfdbfe;
+    classDef escStyle fill:#451a03,stroke:#f59e0b,stroke-width:2px,color:#fef3c7,rx:6px,ry:6px;
 
-    classDef p3Style fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#ffffff,rx:8px,ry:8px;
-    classDef p2Style fill:#0f172a,stroke:#0ea5e9,stroke-width:2px,color:#ffffff,rx:8px,ry:8px;
-    classDef p1Style fill:#022c22,stroke:#10b981,stroke-width:2px,color:#ffffff,rx:8px,ry:8px;
-    classDef subCard fill:#020617,stroke:#334155,stroke-width:1.5px,color:#94a3b8;
-    classDef nodeStyle fill:#1e293b,stroke:#475569,stroke-width:1px,color:#f8fafc,rx:6px,ry:6px;
-    classDef cmdStyle fill:#0f172a,stroke:#38bdf8,stroke-width:1px,color:#38bdf8,font-weight:bold,rx:4px,ry:4px;
-    classDef gateCard fill:#1e293b,stroke:#f59e0b,stroke-width:1px,color:#fef3c7,rx:6px,ry:6px;
-
-    class P3 p3Style;
-    class P2 p2Style;
-    class P1 p1Style;
-    class P3_STAGES,P3_REVIEWS,P2_STAGES,P2_GATES,P1_GOV,P1_GRAPH,P1_EXEC subCard;
-    class SK_INIT,SK_NEW,SK_LINT,SK_APPLY,SK_VERIFY,SK_GATE,SK_ARCHIVE,SK_SPECREV,SK_IMPLREV,SK_DOCTOR,SK_STATUS,M_LINT,M_POLICY,M_SCHEMA,M_AGENTS,M_GRAPH,M_GIT,M_FS,M_PATHS,M_TDD,M_TEST,M_PRTYPE,M_EXEC nodeStyle;
-    class CMD_INIT,CMD_NEW,CMD_LINT,CMD_PR1,CMD_APPROVE,CMD_APPLY,CMD_TEST,CMD_VERIFY,CMD_PR2,CMD_ARCHIVE cmdStyle;
-    class G_LOCK,G_TAMPER,G_COV,G_RUNNER,G_PRESENCE,G_TRIPLE gateCard;
+    class T_L0 l0Style;
+    class T_L1 l1Style;
+    class T_L2 l2Style;
+    class T_L3 l3Style;
+    class FAST_TRACK subFast;
+    class SPEC_FIRST subSpec;
+    class ESCALATE escStyle;
 ```
 
-> **Rule**: Core reads and validates — it never prints and rarely writes. CLI is the thin shell (parse → call core → format → exit code). Skills are conversational coordinators — they call the CLI, interpret output, and guide multi-step flows.
+### Governance Tier Matrix
 
-For complete technical specifications of each plane, see [docs/architecture.md](docs/architecture.md).
-
----
-
-## Bundled Out-of-the-Box Skills
-
-`asdlc` ships all critical agent harnesses inside the package. They are installed automatically into `.agents/skills/` on `asdlc init` — no manual skill setup required.
-
-| **Stage & Skill** | **Purpose & Behavior** |
-| :--- | :--- |
-| **Stage 1 · Init**<br>[`asdlc-init`](assets/skills/asdlc-init/SKILL.md) | Bootstraps repository: OpenSpec, Graphify AST engine, governance schema, policies, git hooks, and agent skills. |
-| **Stage 2 · New**<br>[`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Grounds intent in Graphify AST queries, seeds `clarifications.md`, runs conversational `grill-me` (or `--batch-grill`), and scaffolds `design.md` guided by `api-design` and `frontend-design`. |
-| **API Design**<br>[`api-design`](assets/skills/api-design/SKILL.md) | Enforces enterprise RESTful standards: plural noun URLs, structured error envelopes (Stripe-style / RFC 7807), cursor pagination, `Idempotency-Key` headers, and rate-limiting resilience. |
-| **UI/UX Design**<br>[`frontend-design`](assets/skills/frontend-design/SKILL.md) | Enforces Anthropic official `frontend-design` & Vercel Web Interface Guidelines: anti-AI slop, bespoke 4–6 hex palettes, typography pairings, hero moments, and 5 mandatory states. |
-| **Stage 3 · Spec PR**<br>[`asdlc-pr`](assets/skills/asdlc-pr/SKILL.md) | Enforces deterministic BDD/AC linting (R0–R8) and opens Spec PR (CLI → REST API → 1-click Web URL) with auto-labels. |
-| **Stage 3.5 · Spec AI Review**<br>[`asdlc-spec-review`](assets/skills/asdlc-spec-review/SKILL.md) | CI-triggered independent 6-dimension spec evaluation; posts structured findings and traceability matrix as PR comments. |
-| **Stage 4 · Approve**<br>[`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md) | Explicit audit stamp after PR merge (`specSha` + `READY_FOR_IMPL`). Auto-recognized by `apply`. |
-| **Stage 5 · Apply**<br>[`asdlc-apply`](assets/skills/asdlc-apply/SKILL.md) | Path-isolated zero-diff guard; executes strict **Red -> Green -> Refactor -> Evidence -> Converge** TDD loop. |
-| **Stage 6 · Verify**<br>[`asdlc-verify`](assets/skills/asdlc-verify/SKILL.md) | 12-gate implementation verification: test presence, task evidence, AC test mapping, and independent AI verifier. |
-| **Stage 6.5 · Impl AI Review**<br>[`asdlc-impl-review`](assets/skills/asdlc-impl-review/SKILL.md) | CI-triggered independent implementation reviewer incorporating Anthropic code review principles: anti-thrashing convergence (3-round cap, incremental diffs), repo-level `REVIEW.md` contracts, introduced-vs-preexisting defect attribution, and risk tiering; posts findings as PR comments via `gh`. |
-| **Stage 7 · Archive**<br>[`asdlc-archive`](assets/skills/asdlc-archive/SKILL.md) | Deliberate closeout: syncs specs to master catalog, refreshes code AST graph, and updates system status. |
-| **Diagnostics**<br>[`asdlc-doctor`](assets/skills/asdlc-doctor/SKILL.md) | Evaluates 12 toolchain/governance invariants; provides automated 1-click remediation (`--fix`). |
-| **Orientation**<br>[`asdlc-status`](assets/skills/asdlc-status/SKILL.md) | Shows change stage progress, active artifacts, next command, or full portfolio dashboard. |
+| Tier | Typical Scope | Workflow Mode | Spec-First Block? | Implementation Review | Auto-Merge |
+| :---: | :--- | :---: | :---: | :---: | :---: |
+| **L0** | Test additions, fixtures, docs, typos, comments | **Single PR** | ❌ None | None (Pass) |  **Enabled** (once CI passes) |
+| **L1** | Internal utils, CI workflows, git hooks, local refactors | **Single PR** | ❌ None | AI Review |  **Enabled** (once AI passes) |
+| **L2** | Public APIs (FastAPI/Spring/Go), schemas, shared libs | **Dual PR** |  **Enforced** | AI + Human Lead | 🚫 **Denied** (Lead Approval required) |
+| **L3** | Destructive DDL (`DROP`), auth engines, `AGENTS.md` | **Dual PR** |  **Enforced** | AI + Human Lead | 🚫 **Denied** (Lead Approval required) |
 
 ---
 
-## Install & Setup
+## 🛡️ Non-Negotiable Engineering Invariants
+
+Enterprise teams rely on deterministic code, not agent compliance or prompt enthusiasm. Every invariant is backed by cryptographic proofs or exit-coded engines:
+
+| # | Enterprise Invariant | How `asdlc` Enforces It | Failure Mode |
+| :-: | :--- | :--- | :--- |
+| **1** | **No Apply Before Spec Approval (L2/L3)** | `asdlc apply` physically inspects path-limited Git history for `approvedSha` on `main`. | 🚫 **Hard Refusal** — Zero production code allowed without an approved spec. |
+| **2** | **Cryptographic Anti-Tamper (`spec-tamper`)** | Implementation diffs must NOT modify locked spec files once approved on `main`. | 🚫 **Instant Rejection** — Agents cannot alter requirements to make failing tests pass. |
+| **3** | **Anti-Gaming Hash Chain** | Every level transition is sealed in an append-only, SHA-256 hash-chained `risk-history.jsonl`. | 🚫 **Integrity Breach** — Manual downgrades (`L2 -> L1`) are detected and blocked. |
+| **4** | **AI Classifier Invariant Defense** | AI semantic classifier output is validated against hard mathematical expectations. | 🚫 **Evasion Shield** — Prompts claiming a `DROP TABLE` is "just a test" are vetoed to L3. |
+| **5** | **Zero Untested Code (`test-presence`)** | Any change touching production source code (`src/**`, `app/**`) requires test diffs. | 🚫 **Rejection** — Stops AI "code dumps" without corresponding test coverage. |
+| **6** | **Deterministic AC Assertions (`asdlc test`)** | Parses `- [ ] ACn: (test: <path>)` annotations and runs native test suites. | 🚫 **Fake Claim Gate** — Unimplemented acceptance criteria immediately fail CI. |
+| **7** | **Player ≠ Referee Isolation** | CI runs independent verification with a fresh LLM instance outside the author agent context. | 🚫 **Audit Integrity** — Authoring agents can never grade their own exam. |
+| **8** | **Humane In-Place Scope Escalation** | If an L1 change touches an API during implementation, single PR is preserved with mandatory human sign-off. |  **Safe Convergence** — No messy branch rebases; human stays in control. |
+
+---
+
+## 📦 Architecture: The Three Planes
+
+`agentic-sdlc` strictly decouples interface, governance rules, and core execution:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ PLANE 3 · Conversational Agent Surface (.agents/skills/)               │
+│ Bundled out-of-the-box skills for Claude Code, Cursor, OpenCode, etc.  │
+│ Coordinates multi-turn flows, interviews, TDD loops, and reviews.      │
+└──────────────────────────────────┬─────────────────────────────────────┘
+                                   │ Invokes commands with --json
+┌──────────────────────────────────▼─────────────────────────────────────┐
+│ PLANE 2 · Governance CLI & Hard CI Gates (bin/asdlc.js)                │
+│ Deterministic CLI exit codes (0 = pass, 1 = fail). No LLM fuzziness.   │
+│ init · new · lint · approve · apply · test · verify · pr · archive     │
+└──────────────────────────────────┬─────────────────────────────────────┘
+                                   │ Pure function calls
+┌──────────────────────────────────▼─────────────────────────────────────┐
+│ PLANE 1 · Core Library & Engines (src/lib/, src/assess/)               │
+│ Pure functions, 100% tested, zero side-effects.                       │
+│ ├─ assess/    Neuro-symbolic risk evaluation & hash-chain history     │
+│ ├─ speclint/  R0–R8 BDD/AC linting & scenario coverage traceability   │
+│ ├─ graphify/  Knowledge graph & code AST topology discovery           │
+│ └─ verify/    12 cryptographic & structural quality gates              │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🚀 Quickstart: 5-Minute Walkthrough
+
+### 1. Installation
 
 ```bash
-# Recommended: install from npm
+# Install globally via npm
 npm install -g @akjamie/agentic-sdlc
 
-# Or directly from GitHub (npm ≥12 requires --allow-git=all)
-npm install -g --allow-git=all git+https://github.com/akjamie/agentic-sdlc.git
+# Initialize your repository with OpenSpec, Graphify, and bundled skills
+asdlc init
 
-# Initialize a repository (installs OpenSpec, Graphify, policy, and bundled skills)
-asdlc init --ci jenkins
-
-# Verify toolchain health at any time
+# Verify environment & toolchain health
 asdlc doctor
 ```
 
-> **One-liner health check**: `asdlc doctor` evaluates 12 invariants across your toolchain and governance setup, with `--fix` for automated remediation.
+### 2. Scenario A: Agile Routine Change (Level L1 · Single-PR)
 
----
+```bash
+# 1. Start a routine change (automatically inferred as L1)
+asdlc new "add memory cache helper with TTL eviction"
 
-## The Seven Stages
+# 2. Directly implement using the task-level TDD loop (no Spec PR needed!)
+asdlc apply memory-cache-helper
 
-The lifecycle is divided into three phases. Human approval gates are explicit; the CI automation pipeline is non-bypassable.
+# 3. Verify locally against 12 quality gates
+asdlc verify memory-cache-helper
 
-```mermaid
-flowchart TD
-    subgraph PHASE1 ["Phase A · Specification & Alignment (Intent to Contract)"]
-        direction LR
-        S1["1 · init<br/><b>Toolchain Setup</b><br/>OpenSpec + Graphify"] --> S2["2 · new<br/><b>Scaffold + Batch-Grill-Me</b><br/>AST explore.md + clarifications.md"]
-        S2 --> S3["3 · lint<br/><b>BDD/AC Gate</b><br/>R0–R8 + Scenario Coverage"]
-        S3 --> PR1{{"<b>Spec PR (Stage 3.5)</b><br/>CI Spec AI Review"}}
-        PR1 -->|"Human TL Approves & Merges"| S4["4 · approve<br/><b>Cryptographic Lock</b><br/>approvedSha & ready_for_impl"]
-    end
-
-    subgraph PHASE2 ["Phase B · Implementation & Hard Gate TDD (Contract to Verified Code)"]
-        direction LR
-        S4 -.->|"Guarded Unlock"| S5["5 · apply<br/><b>Apply Guard Check</b><br/>Refuses unapproved specs"]
-        S5 --> S5_TDD["<b>TDD Red-Green Loop</b><br/>Red -> Green -> Refactor"]
-        S5_TDD --> S5_TEST["5.5 · test<br/><b>Acceptance Tests</b><br/>Runs mapped AC assertions"]
-        S5_TEST --> S6["6 · verify<br/><b>12 Local Gates</b><br/>spec-tamper + test-presence"]
-        S6 --> PR2{{"<b>Impl PR (Stage 6.5)</b><br/>asdlc pr (impl)"}}
-    end
-
-    subgraph PHASE_GATE ["Stage 6.5 Quality Gate · Triple-Verification Peer Review"]
-        direction LR
-        G_AC["<b>1 · CI Acceptance Test</b><br/>asdlc test --json"] --> G_AI["<b>2 · AI Impl Review</b><br/>Player ≠ Referee Audit"]
-        G_AI --> G_HUMAN{{"<b>3 · Human Final Review</b><br/>Tech Lead Sign-off"}}
-    end
-
-    subgraph PHASE3 ["Phase C · Closeout & Living Catalog (Trunk Archive)"]
-        direction LR
-        S7["7 · archive<br/><b>Living Spec Sync</b><br/>openspec/specs/ + AST Refresh"]
-    end
-
-    PR2 ==> G_AC
-    G_HUMAN -.->|"Approved & Merged to main"| S7
-
-    classDef stageBox fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#f8fafc,rx:6px,ry:6px;
-    classDef prBox fill:#312e81,stroke:#a855f7,stroke-width:2px,color:#ffffff,rx:10px,ry:10px;
-    classDef lockBox fill:#451a03,stroke:#f59e0b,stroke-width:2px,color:#ffffff,rx:6px,ry:6px;
-    classDef closeBox fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#ffffff,rx:6px,ry:6px;
-    classDef gateBox fill:#1e293b,stroke:#f59e0b,stroke-width:1.5px,color:#fef3c7,rx:6px,ry:6px;
-    classDef humanBox fill:#4c1d95,stroke:#c084fc,stroke-width:2px,color:#ffffff,rx:10px,ry:10px;
-    classDef subStyle fill:#020617,stroke:#334155,stroke-width:1.5px,color:#94a3b8;
-
-    class S1,S2,S3,S5,S5_TDD,S5_TEST,S6 stageBox;
-    class PR1,PR2 prBox;
-    class G_AC,G_AI gateBox;
-    class G_HUMAN humanBox;
-    class S4 lockBox;
-    class S7 closeBox;
-    class PHASE1,PHASE2,PHASE_GATE,PHASE3 subStyle;
+# 4. Open Single PR (co-locates spec delta and code)
+asdlc pr memory-cache-helper main
+# → Auto-merge eligible once CI & AI checks pass!
 ```
 
-### Stage Reference
+### 3. Scenario B: High-Impact API Change (Level L2 · Dual-PR Spec-First)
 
-| Stage & Command | What It Does |
-| :--- | :--- |
-| **1 · Init**<br>`asdlc init [--ci jenkins]` | Bootstraps OpenSpec + Graphify, governance schema, policy, and 8+ bundled agent skills. |
-| **2 · New**<br>`asdlc new "<requirement>" [--batch-grill] [--no-grill]` | Derives slug, queries code AST graph, seeds `design.md` for UI/API systems, and interviews author (conversational `grill-me` or `--batch-grill`). |
-| **3 · Spec PR**<br>`asdlc pr <ID> <branch>` | Runs `asdlc lint` (R0–R8 + `R5-scenario-coverage`), pushes spec branch, attaches `asdlc:spec-review` label, triggers CI Spec AI Review. |
-| **4 · Approve**<br>`asdlc approve <ID>` | Spec PR merge to `main` **is** the approval: records path-limited `specSha` and sets `READY_FOR_IMPL`. CI mode auto-detects merged PRs. |
-| **5 · Apply**<br>`asdlc apply <ID>` | **Hard guard**: verifies `approvedSha` on `main`, **refuses** unapproved specs, then launches the task-level TDD Red-Green loop. |
-| **5.5 · Acceptance Tests**<br>`asdlc test <ID> [--json]` | Parses `- [ ] ACn: ... (test: <path>)` mappings and runs real assertions. Local TDD driver + deterministic CI gate. |
-| **6 · Verify**<br>`asdlc verify <ID>` | 12-gate local pre-flight: `spec-tamper`, `test-presence`, `tdd-evidence`, AC mappings, task completion, schema, and more. |
-| **6.5 · Impl PR**<br>`asdlc pr <ID> <branch>` | Runs `asdlc verify`, pushes impl branch, attaches `asdlc:impl-review`, triggers ① CI `asdlc test --json` + ② CI AI Impl Review (Player ≠ Referee). |
-| **7 · Archive**<br>`asdlc archive <ID>` | After Tech Lead merges Impl PR to `main`: syncs specs to `openspec/specs/`, refreshes AST graph, updates `AGENTS.md` system status. |
+```bash
+# 1. Start an API change (automatically detected as L2 Spec-First)
+asdlc new "create FastAPI user authentication router"
 
-### Dual-PR Governance & Label Dispatch
+# 2. Agent runs conversational grill-me to settle design in clarifications.md
+#    Drafts proposal.md, design.md, and specs/
 
-`asdlc pr` auto-detects Spec vs. Implementation PR from lifecycle state — zero extra flags needed.
+# 3. Open Spec PR (triggers CI AI Spec Review)
+asdlc pr user-auth main
 
-| PR Type | Pre-flight Check | Labels Applied | CI Pipeline | Human Gate |
-| :--- | :--- | :--- | :--- | :--- |
-| **Spec PR** (Stage 3.5) | `asdlc lint` — 0 blockers, R5 coverage | `asdlc:spec-review` · `spec` | Spec AI Review (6 dimensions) | TL / Domain Lead approves & merges to `main` |
-| **Impl PR** (Stage 6.5) | `asdlc verify` — 12 gates | `asdlc:impl-review` · `impl` | ① `asdlc test --json` (AC gate) → ② `asdlc-impl-review` (Player ≠ Referee) | Tech Lead verifies AI review + AC results, then approves & merges |
+# 4. Human Tech Lead reviews & merges Spec PR to main.
+#    asdlc approve locks the specSha!
 
-### Utility Commands
+# 5. Implementation is now unlocked
+asdlc apply user-auth
 
-| Command | Purpose |
-| :--- | :--- |
-| `asdlc status <ID>` | Instant orientation: current stage, active artifacts, exact next command. |
-| `asdlc doctor [--fix]` | 12-invariant toolchain health check with automated remediation. |
-| `asdlc update` | Refreshes `.agents/skills`, rebuilds AST graph at `HEAD`, updates `AGENTS.md` hubs and git hooks. |
-| `asdlc upgrade [--global]` | Upgrades `asdlc` CLI, OpenSpec engine, Graphify, and managed schema. `--global` updates user-level skills. |
-| `asdlc skills list` | Lists all bundled skills available in the package. |
-| `asdlc skills install --global` | Injects skills into global agent dirs (`~/.agents`, `~/.opencode`, etc.) for CI VMs. |
+# 6. Execute TDD loop and verify code + test presence
+asdlc test user-auth
+asdlc verify user-auth
+
+# 7. Open Implementation PR (attaches asdlc:impl-review)
+asdlc pr user-auth main
+# → Mandatory Human Tech Lead approval required before trunk merge!
+```
 
 ---
 
-## What `asdlc verify` Checks
+## 🧰 Bundled Out-of-the-Box Skills
 
-`asdlc verify` runs identically in developer terminals and CI (Jenkins / GitHub Actions). It is deterministic and exit-coded — no drift between local and remote.
+`asdlc` includes production-grade agent skills installed automatically into `.agents/skills/`. Your AI assistant (Claude Code, Cursor, OpenCode, Antigravity IDE) immediately gains enterprise SDLC capabilities:
+
+| Skill | Role in Agentic SDLC |
+| :--- | :--- |
+| [`asdlc-init`](assets/skills/asdlc-init/SKILL.md) | One-command bootstrapping of OpenSpec, Graphify AST, policies, and git hooks. |
+| [`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Scaffolds change, queries AST hubs, runs conversational anti-fatigue `grill-me`. |
+| [`asdlc-lint`](assets/skills/asdlc-lint/SKILL.md) | Enforces deterministic BDD GIVEN/WHEN/THEN and R5 scenario-to-AC coverage. |
+| [`asdlc-pr`](assets/skills/asdlc-pr/SKILL.md) | Smart PR dispatcher: automatically handles Spec PR vs. Implementation PR. |
+| [`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md) | Stamps cryptographic `specSha` lock upon Spec PR merge. |
+| [`asdlc-apply`](assets/skills/asdlc-apply/SKILL.md) | Strict task-level TDD engine (`Red -> Green -> Refactor -> Evidence -> Converge`). |
+| [`asdlc-verify`](assets/skills/asdlc-verify/SKILL.md) | Pre-flight audit across 12 gates (test presence, evidence, tamper guard, schema). |
+| [`asdlc-spec-review`](assets/skills/asdlc-spec-review/SKILL.md) | CI-triggered 6-dimensional spec review before human lead approval. |
+| [`asdlc-impl-review`](assets/skills/asdlc-impl-review/SKILL.md) | CI-triggered Player ≠ Referee implementation reviewer with Anthropic convergence rules. |
+| [`asdlc-archive`](assets/skills/asdlc-archive/SKILL.md) | Syncs specs to living catalog, refreshes AST graph, and updates system status. |
+| [`asdlc-doctor`](assets/skills/asdlc-doctor/SKILL.md) | 12-invariant diagnostic engine with 1-click automated remediation (`--fix`). |
+| [`asdlc-status`](assets/skills/asdlc-status/SKILL.md) | Real-time change lifecycle dashboard and next actionable command guidance. |
+
+---
+
+## 🔍 What `asdlc verify` Checks (12 Local & CI Gates)
+
+Every implementation diff must pass the 12 deterministic gates in `asdlc verify`:
 
 ```mermaid
 flowchart TD
@@ -322,7 +239,7 @@ flowchart TD
     subgraph TIER1 ["Tier 1 · Cryptographic & Contract Integrity"]
         G_APPROVED["<b>approved-spec</b><br/>Matches commit on main"]
         G_TAMPER["<b>spec-tamper</b><br/>Zero spec modifications in Impl PR"]
-        G_STATE["<b>flow-state</b><br/>Status is READY_FOR_IMPL"]
+        G_LEVEL["<b>level-integrity</b><br/>Hash-chain tamper check"]
         G_ARTIFACTS["<b>artifacts</b><br/>proposal, tasks, spec delta present"]
     end
 
@@ -333,101 +250,81 @@ flowchart TD
         G_TASKS["<b>tasks-complete</b><br/>All tasks checked off in tasks.md"]
     end
 
-    subgraph TIER3 ["Tier 3 · Engine & Environment Invariants"]
-        G_PR["<b>pr-type</b><br/>Path classification"]
-        G_OPENSPEC["<b>openspec validate</b><br/>Schema conformance --all --strict"]
+    subgraph TIER3 ["Tier 3 · Scope & Governance Invariants"]
+        G_ESCAPE["<b>risk-escape</b><br/>Detects unannounced API/DDL escalations"]
+        G_HUMAN["<b>human-gate</b><br/>Enforces Tech Lead sign-off for L2/L3"]
+        G_PR["<b>pr-type</b><br/>Path classification & single-PR validation"]
         G_SCHEMA["<b>schema-managed</b><br/>Central install + pinned version"]
-        G_EXTERNAL["<b>external tests</b><br/>Unit, integration, and security tests"]
-    end
-
-    subgraph TIER4 ["Tier 4 · Independent AI Review (CI Referee)"]
-        G_AI["<b>Player ≠ Referee AI Verification</b><br/>Independent model, fresh context, spec conformance audit"]
     end
 
     V --> TIER1
     V --> TIER2
     V --> TIER3
-    V --> TIER4
 
     classDef rootStyle fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#ffffff,rx:8px,ry:8px;
     classDef tierStyle fill:#020617,stroke:#334155,stroke-width:1.5px,color:#94a3b8;
     classDef gateStyle fill:#0f172a,stroke:#0284c7,stroke-width:1px,color:#f1f5f9,rx:5px,ry:5px;
-    classDef aiStyle fill:#3b0764,stroke:#c084fc,stroke-width:1.5px,color:#fdf4ff,rx:6px,ry:6px;
 
     class V rootStyle;
-    class TIER1,TIER2,TIER3,TIER4 tierStyle;
-    class G_APPROVED,G_TAMPER,G_STATE,G_ARTIFACTS,G_PRESENCE,G_TDD,G_BDD,G_TASKS,G_PR,G_OPENSPEC,G_SCHEMA,G_EXTERNAL gateStyle;
-    class G_AI aiStyle;
+    class TIER1,TIER2,TIER3 tierStyle;
+    class G_APPROVED,G_TAMPER,G_LEVEL,G_ARTIFACTS,G_PRESENCE,G_TDD,G_BDD,G_TASKS,G_ESCAPE,G_HUMAN,G_PR,G_SCHEMA gateStyle;
 ```
 
 ---
 
-## Governance Principles
-
-These are the design philosophy decisions behind the hard invariants — the *why* behind each gate:
-
-1. **Approval is Git, not process** — A merged Spec PR on the protected branch (`main`) *is* the human approval. `asdlc apply` proves it via path-limited `git log` and physically halts if the spec is unapproved. There is no approval bypass.
-
-2. **Cryptographic anti-tampering** — Once merged to the protected branch, the spec is locked. An Implementation PR that modifies any locked spec path is immediately rejected by `spec-tamper`, blocking the oldest agent trick in the book.
-
-3. **Deterministic acceptance testing** — Every requirement must carry test-mapped Acceptance Criteria (`ACn: ... (test: <path>)`). `asdlc test` runs real code assertions — both a local TDD driver and an independent CI gate that can't be faked.
-
-4. **Player ≠ Referee isolation** — The authoring agent cannot act as its own quality gate. CI independently runs the test runner and invokes a separate AI review model with fresh context. Authoring agents cannot grade their own exams.
-
-5. **Full scenario-to-AC coverage** — The spec linter (`R5-scenario-coverage`) enforces that every declared scenario has at least one corresponding Acceptance Criterion. You can't describe complex failure modes and then only test the happy path.
-
-6. **Enforced TDD via test presence** — Implementation diffs that touch production code (`src/**`) without corresponding test modifications (`test/**`) are rejected at the `test-presence` gate. No code without tests.
-
-7. **Specs grounded in code AST** — Graphify AST knowledge graph queries ground specifications in real code structure, architectural hubs, and module topology *before* drafting. Specs reflect the codebase, not aspirations.
-
-8. **One front door, fail-closed** — Everything routes through `asdlc` wrappers. There are no raw escape hatches. Any missing approval or broken invariant fails closed — never silently passes.
-
----
-
-## Documentation Hub
-
-| Document | Purpose |
-|---|---|
-| [docs/usage.md](docs/usage.md) | Practical command-line and developer walkthrough. |
-| [docs/architecture.md](docs/architecture.md) | Complete 3-Plane Architecture & IDE Skill design specification. |
-| [docs/solution-review.md](docs/solution-review.md) | Solution review, gap analysis, and architectural evaluation. |
-| [docs/glossary.md](docs/glossary.md) | Formally locked domain model and SDLC vocabulary. |
-| [docs/blueprint.html](docs/blueprint.html) | Enterprise Agentic SDLC Blueprint (English). |
-| [docs/blueprint.zh.html](docs/blueprint.zh.html) | Enterprise Agentic SDLC Blueprint (Chinese). |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guide, development workflow, and PR quality gates. |
-
----
-
-## Development & Verification
+## 🛠️ CLI Reference
 
 ```bash
-npm install
-npm test        # 113 unit and integration tests — 100% pass rate
+asdlc init [--ci jenkins|github]   # Scaffold repository with OpenSpec, Graphify, and skills
+asdlc new "<intent>"               # Scaffold change with AST explore + grill-me interview
+asdlc lint <ID>                    # Validate BDD scenarios, AC rules, and coverage
+asdlc pr <ID> <target-branch>      # Smart PR creator (auto-handles Spec PR vs Impl PR)
+asdlc approve <ID>                 # Record approvedSha and transition to ready_for_impl
+asdlc apply <ID>                   # Guarded implementation launcher (checks approvedSha)
+asdlc test <ID> [--json]           # Execute real test runners mapped to AC annotations
+asdlc verify <ID>                  # Audit diff against all 12 quality gates
+asdlc archive <ID>                 # Sync delta to living specs and refresh code graph
+asdlc doctor [--fix]               # 12-point toolchain & governance health check
+asdlc status [<ID>]                # Change progress orientation or portfolio dashboard
+asdlc upgrade [--global]           # Seamless upgrade of CLI, engine, and schemas
 ```
 
-The test suite covers the core governance library (`src/lib/`), all CLI commands, acceptance test execution, spec linting rules (R0–R8 + R5 scenario coverage), and verify gate logic (including `spec-tamper`, `test-presence`, `risk-escape`, and `tdd-evidence`).
+---
+
+## 🧪 Development & Verification
+
+`agentic-sdlc` is built to enterprise testing standards. Every feature is backed by rigorous unit, integration, and simulation tests:
+
+```bash
+git clone https://github.com/akjamie/agentic-sdlc.git
+cd agentic-sdlc
+npm install
+
+# Run complete test suite (128 tests passing, 100% pass rate)
+npm test
+
+# Run end-to-end multi-language simulation tests
+node --test test/simulation.test.js
+```
 
 ---
 
-## Contributing
+## 🤝 Community & Contributing
 
-Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, development workflow, and pull request process.
+We welcome contributions from developers, architects, and researchers advancing the state of Agentic Software Engineering!
 
----
-
-## License
-
-Licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE) for copyright and attribution details.
+- **Contributing Guide**: Check out [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, development conventions, and PR expectations.
+- **Architectural Specs**: Read [docs/architecture.md](docs/architecture.md) for deep dives on the 3-plane model.
+- **Enterprise Blueprint**: Browse [docs/blueprint.html](docs/blueprint.html) (or [Chinese version](docs/blueprint.zh.html)) for enterprise deployment patterns.
 
 ---
 
-## Citation & Attribution
+## 📄 License & Attribution
 
-If you use `agentic-sdlc` or its governance architecture in your enterprise projects, research, or articles, please cite and attribute:
+Distributed under the **Apache-2.0 License**. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for details.
 
 ```markdown
 Project: agentic-sdlc (Enterprise Agentic SDLC Governance)
-Author: akjamie
+Author: Jamie Zhang (@akjamie)
 Repository: https://github.com/akjamie/agentic-sdlc
-License: Apache-2.0
 ```
