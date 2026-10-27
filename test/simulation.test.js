@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { assess } from '../src/assess/index.js';
+import { renderPRComment } from '../src/assess/render.js';
+import { judgeChangeSemantics, validateAIClassificationExpectation } from '../src/assess/ai_judge.js';
 import { applyGuard } from '../src/commands/apply.js';
 import { runVerify } from '../src/commands/verify.js';
 import { git } from '../src/lib/git.js';
@@ -191,10 +194,143 @@ test('Simulation 5: Risk Escape Gate detects undeclared L3 destructive operation
     git(['add', '.'], repo);
     git(['commit', '-m', 'impl: sneaky drop table'], repo);
 
-    // Verify MUST catch the escalation and fail
+    // Verify catches the escalation and reports L3
     const exitCode = runVerify(slug, { repoRoot: repo, base: 'HEAD~1', head: 'HEAD' });
     assert.equal(exitCode, 1, 'verify should fail when L1 implementation sneaks in L3 destructive DDL');
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('Simulation 6: In-Place Escalation after apply maintains single PR, revokes auto-merge, and enforces CI human gate', () => {
+  const repo = setupRepo();
+  const oldCI = process.env.CI;
+  try {
+    const slug = 'fastapi-helper';
+    const cdir = path.join(repo, 'openspec', 'changes', slug);
+    fs.mkdirSync(path.join(cdir, 'specs', 'user-cap'), { recursive: true });
+    fs.writeFileSync(path.join(cdir, 'proposal.md'), '# Proposal\n\n## Why\nDemo helper.\n');
+    fs.writeFileSync(path.join(cdir, 'specs', 'user-cap', 'spec.md'),
+      `# Spec Delta\n\n## Purpose\nUser helper capability provides high performance user lookups and routing across the application.\n\n## ADDED Requirements\n\n### Requirement: User helper\nThe system SHALL serve users.\n\n#### Scenario: Get users\n- **GIVEN** a request\n- **WHEN** user endpoint called\n- **THEN** returns users\n\n**Acceptance criteria**\n- [ ] AC1: works (test: tests/api.test.js)\n\n## Constraints & NFRs\n\n## Out of Scope\n\n## Test Strategy\nUnit test.\n`);
+    fs.writeFileSync(path.join(cdir, 'tasks.md'), '- [x] 1. add router (AC1) verify: tests/api.test.js\n');
+    fs.writeFileSync(path.join(cdir, '.openspec.yaml'), 'schema: agentic-repo-change\nlevel: "L1"\nstatus: "ready_for_impl"\n');
+
+    // Initial assessment recorded as L1
+    assess({ stage: 'new', changeId: slug, requirement: 'refactor internal helper', repoRoot: repo });
+
+    // Implementation touches FastAPI router (escalates to L2)
+    fs.mkdirSync(path.join(repo, 'app', 'routers'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'app', 'routers', 'users.py'), '@router.get("/users")\ndef get_users(): pass\n');
+    fs.mkdirSync(path.join(repo, 'tests'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'tests', 'api.test.js'), '// test\n');
+
+    git(['add', '.'], repo);
+    git(['commit', '-m', 'impl: add users router'], repo);
+
+    // 1. In Local environment: Single PR maintained in-place, level synced to L2, auto-merge denied
+    const localExit = runVerify(slug, { repoRoot: repo, base: 'HEAD~1', head: 'HEAD', skipOpenspec: true });
+    assert.equal(localExit, 0, 'Local verify should pass in-place escalation without crashing developer workflow');
+
+    const meta = fs.readFileSync(path.join(cdir, '.openspec.yaml'), 'utf8');
+    assert.match(meta, /level: "L2"/);
+    assert.match(meta, /escalatedInImpl: "true"/);
+
+    // 2. In CI environment: Must fail human-gate if human lead approval is missing
+    process.env.CI = 'true';
+    const ciExitUnapproved = runVerify(slug, { repoRoot: repo, base: 'HEAD~1', head: 'HEAD', skipOpenspec: true });
+    assert.equal(ciExitUnapproved, 1, 'CI verify MUST fail when escalated L2 PR has not been approved by human lead');
+
+    // 3. Once Human Lead writes APPROVE in review.md (or passes --approved), CI passes!
+    fs.writeFileSync(path.join(cdir, 'review.md'), '## Verdict\n\nAPPROVE\n\nApproved by Tech Lead.\n');
+    const ciExitApproved = runVerify(slug, { repoRoot: repo, base: 'HEAD~1', head: 'HEAD', skipOpenspec: true });
+    assert.equal(ciExitApproved, 0, 'CI verify MUST pass once Human Lead review verdict is APPROVE');
+  } finally {
+    if (oldCI !== undefined) process.env.CI = oldCI;
+    else delete process.env.CI;
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('Simulation 7: AI Semantic Classifier classifies test changes as L0 with zero friction', () => {
+  // Pure test requirement
+  const a1 = assess({
+    stage: 'new',
+    changeId: 'unit-tests',
+    requirement: 'add unit test suite for payment calculation',
+    persist: false
+  });
+  assert.equal(a1.risk.level, 'L0');
+  assert.equal(a1.governance.workflow_mode, 'single-pr');
+  assert.equal(a1.governance.auto_approval, 'enabled');
+
+  // Pure test files modified
+  const a2 = assess({
+    stage: 'impl',
+    changeId: 'unit-tests',
+    changedFiles: ['tests/payment/calc_test.go', 'tests/fixtures/mock.json', 'src/components/button.test.js'],
+    persist: false
+  });
+  assert.equal(a2.risk.level, 'L0');
+  assert.equal(a2.governance.workflow_mode, 'single-pr');
+});
+
+test('Simulation 8: Expectation Invariant Validation catches adversarial attempt to mask AGENTS.md or drop table as a test', () => {
+  // Adversary claims pure test, but secretly touches AGENTS.md
+  const fakeAiOutput = {
+    is_pure_test: true,
+    is_pure_doc: false,
+    classification: 'test_only',
+    rationale: 'Trust me, this is just a unit test helper'
+  };
+
+  const check = validateAIClassificationExpectation(fakeAiOutput, {
+    changedFiles: ['tests/foo.test.js', 'AGENTS.md'],
+    requirement: 'add unit tests'
+  });
+
+  assert.equal(check.ok, false);
+  assert.equal(check.override.is_pure_test, false);
+  assert.equal(check.override.classification, 'governance_plane');
+
+  // Full assessment rejects L0 and single-vetoes to L3!
+  const a = assess({
+    stage: 'impl',
+    changeId: 'sneaky-test',
+    changedFiles: ['tests/foo.test.js', 'AGENTS.md'],
+    persist: false
+  });
+  assert.equal(a.risk.level, 'L3');
+  assert.equal(a.governance.implementation_review, 'ai+human');
+});
+
+test('Simulation 9: Hidden --level option from CLI help', () => {
+  const binPath = path.resolve('bin/asdlc.js');
+  const helpOutput = execFileSync('node', [binPath, 'new', '--help'], { encoding: 'utf8' });
+  assert.doesNotMatch(helpOutput, /--level/, '--level must be completely hidden from asdlc new --help');
+});
+
+test('Simulation 10: PR Comment renders high-visibility Level and Action highlight banners', () => {
+  // L1 auto-merge change
+  const l1Rec = assess({
+    stage: 'new',
+    changeId: 'helper-refactor',
+    requirement: 'refactor internal math helper',
+    persist: false
+  });
+  const l1Comment = renderPRComment(l1Rec);
+  assert.match(l1Comment, /最终治理等级.*L1/);
+  assert.match(l1Comment, /AI 自动合入.*Auto-Merge Eligible/);
+
+  // In-place escalated change
+  const l2EscalatedRec = {
+    ...l1Rec,
+    risk: { level: 'L2', confidence: 'high' },
+    transition: { direction: 'up', from_level: 'L1', to_level: 'L2' },
+    governance: { workflow_mode: 'single-pr', implementation_review: 'ai+human' }
+  };
+  const l2Comment = renderPRComment(l2EscalatedRec);
+  assert.match(l2Comment, /治理动作：实施阶段升级 · 必须人工终审/);
+  assert.match(l2Comment, /自动合并已关闭.*Auto-Merge DENIED/);
+  assert.match(l2Comment, /最终治理等级.*L2/);
+});
+

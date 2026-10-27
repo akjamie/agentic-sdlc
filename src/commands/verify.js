@@ -139,7 +139,11 @@ export function runVerify(changeId, opts = {}) {
   const changedFiles = (git(['diff', '--name-only', `${base}...${head}`], repoRoot, { allowFail: true }) ?? '')
     .split(/\r?\n/).filter(Boolean);
   const changeOnMain = changeOnRef(repoRoot, branch, slug);
-  const pr = classifyPR({ changedFiles, changeOnMain, policy, emergency: opts.emergency, level: changeLevel, repoRoot });
+  const initialAss = loadInitialAssessment(repoRoot, slug);
+  const wasInitialSinglePr = initialAss && isSinglePrLevel(initialAss.risk?.level);
+  const isSinglePr = Boolean(wasInitialSinglePr || isSinglePrLevel(changeLevel));
+
+  const pr = classifyPR({ changedFiles, changeOnMain, policy, emergency: opts.emergency, level: changeLevel, repoRoot, singlePr: isSinglePr });
   add('pr-type', pr.type === 'invalid' ? 'fail' : 'pass', `type=${pr.type} (${pr.reason})`);
 
   const required = ['proposal.md', 'tasks.md'];
@@ -148,9 +152,6 @@ export function runVerify(changeId, opts = {}) {
     ? walkFiles(path.join(cdir, 'specs')).filter((f) => f.endsWith('spec.md')) : [];
   if (missing.length === 0 && specFiles.length > 0) add('artifacts', 'pass', 'proposal, tasks, spec delta present');
   else add('artifacts', 'fail', [...missing.map((f) => `${f} missing`), ...(specFiles.length === 0 ? ['no spec delta'] : [])].join('; '));
-
-  const initialAss = loadInitialAssessment(repoRoot, slug);
-  const wasInitialSinglePr = initialAss && isSinglePrLevel(initialAss.risk?.level);
 
   const lockedPaths = [`openspec/changes/${slug}/proposal.md`, `openspec/changes/${slug}/specs`];
   const approvedSha = lastCommitTouching(repoRoot, branch, lockedPaths);

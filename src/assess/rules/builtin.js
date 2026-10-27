@@ -180,6 +180,9 @@ export const TEST_AND_DOC_PATTERNS = [
 
 export function isTestOrDocFile(filePath = '') {
   const norm = String(filePath).replace(/\\/g, '/');
+  if (/(^|\/)AGENTS\.md$/i.test(norm) || /(^|\/)openspec\/config\.yaml$/i.test(norm)) {
+    return false;
+  }
   return TEST_AND_DOC_PATTERNS.some((p) => p.test(norm));
 }
 

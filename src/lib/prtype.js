@@ -12,7 +12,7 @@ export function changeIdOf(pathname) {
 
 // -> { type, reason } where type is one of:
 //   spec | impl | archive | fast | emergency | normal | invalid
-export function classifyPR({ changedFiles = [], changeOnMain = false, policy, emergency = false, level, repoRoot } = {}) {
+export function classifyPR({ changedFiles = [], changeOnMain = false, policy, emergency = false, level, repoRoot, singlePr = false } = {}) {
   const files = changedFiles.filter(Boolean);
   if (emergency) return { type: 'emergency', reason: 'marked emergency' };
 
@@ -34,11 +34,11 @@ export function classifyPR({ changedFiles = [], changeOnMain = false, policy, em
   const effectiveLevel = level ?? (repoRoot && changeId ? readChangeLevel(repoRoot, changeId) : null);
 
   if (changeFiles.length > 0 && !changeOnMain) {
-    if (isSinglePrLevel(effectiveLevel)) {
-      // For L0 / L1, source code and spec delta are permitted in the same Single PR
+    if (singlePr || isSinglePrLevel(effectiveLevel)) {
+      // For L0 / L1 or in-place escalated changes, source code and spec delta are permitted in the same Single PR
       return outside.length === 0
-        ? { type: 'spec', reason: `new change dir, no source (${effectiveLevel})` }
-        : { type: 'impl', reason: `single PR flow for ${effectiveLevel} change (specs and source co-located)` };
+        ? { type: 'spec', reason: `new change dir, no source (${effectiveLevel ?? 'single-pr'})` }
+        : { type: 'impl', reason: `single PR flow for ${effectiveLevel ?? 'escalated'} change (specs and source co-located)` };
     }
 
     // For L2 / L3 (or unlevelled changes): First spec PR must contain the change dir ONLY - no source alongside.

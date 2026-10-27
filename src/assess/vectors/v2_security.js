@@ -17,8 +17,8 @@ export function evaluateV2Security({ requirement = '', changedFiles = [], repoRo
 
   for (const rule of securityRules) {
     const hits = changedFiles.filter((f) => {
-      // Exclude test and documentation files from security/destructive hard rules
-      if (isTestOrDocFile(f)) return false;
+      // Exclude test and documentation files from security/destructive hard rules (never exclude governance plane)
+      if (rule.id !== 'HARD_GOV_PLANE' && isTestOrDocFile(f)) return false;
       const norm = f.replace(/\\/g, '/');
       if (rule.patterns.some((p) => p.test(norm))) return true;
       // Content-level or name-level DDL check for SQL files
