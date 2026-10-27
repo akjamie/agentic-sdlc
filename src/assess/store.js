@@ -37,6 +37,31 @@ export function loadLatestAssessment(repoRoot, changeId) {
 }
 
 /**
+ * Loads the initial baseline assessment record for a change (seq: 1).
+ */
+export function loadInitialAssessment(repoRoot, changeId) {
+  const history = loadRiskHistory(repoRoot, changeId);
+  return history.length > 0 ? history[0] : null;
+}
+
+/**
+ * Loads the maximum risk level recorded in history.
+ */
+export function loadMaxHistoryLevel(repoRoot, changeId) {
+  const history = loadRiskHistory(repoRoot, changeId);
+  if (history.length === 0) return null;
+  const rank = { L0: 0, L1: 1, L2: 2, L3: 3 };
+  let maxLvl = history[0].risk?.level || 'L1';
+  for (const h of history) {
+    const lvl = h.risk?.level;
+    if (lvl && (rank[lvl] ?? 1) > (rank[maxLvl] ?? 1)) {
+      maxLvl = lvl;
+    }
+  }
+  return maxLvl;
+}
+
+/**
  * Appends an assessment record to risk-history.jsonl and overwrites risk-assessment.yaml snapshot.
  */
 export function appendAssessmentRecord(repoRoot, changeId, recordData) {
@@ -44,6 +69,20 @@ export function appendAssessmentRecord(repoRoot, changeId, recordData) {
   ensureDir(cdir);
 
   const history = loadRiskHistory(repoRoot, changeId);
+
+  // Deduplicate consecutive identical stage evaluations to prevent log bloat
+  if (history.length > 0) {
+    const prev = history[history.length - 1];
+    if (
+      prev.stage === recordData.stage &&
+      prev.risk?.level === recordData.risk?.level &&
+      prev.verdict === recordData.verdict &&
+      JSON.stringify(prev.reason_codes || []) === JSON.stringify(recordData.reason_codes || [])
+    ) {
+      return prev;
+    }
+  }
+
   const seq = history.length + 1;
   const prev_hash = history.length > 0 ? history[history.length - 1].hash : null;
 

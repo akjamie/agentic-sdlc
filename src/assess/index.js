@@ -1,13 +1,16 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { changeDir } from '../lib/paths.js';
 import { HARNESS_RULES_VERSION, ENGINE_VERSION } from './rules/builtin.js';
 import { evaluateV1Intent } from './vectors/v1_intent.js';
 import { evaluateV2Security } from './vectors/v2_security.js';
 import { evaluateV3Topology } from './vectors/v3_topology.js';
 import { decideAssessment } from './decide.js';
 import { deriveGovernance } from './governance.js';
-import { appendAssessmentRecord, loadLatestAssessment } from './store.js';
+import { appendAssessmentRecord, loadLatestAssessment, loadInitialAssessment } from './store.js';
 import { renderCheckSummary, renderPRComment, renderLabels } from './render.js';
 
-export { loadRiskHistory, loadLatestAssessment } from './store.js';
+export { loadRiskHistory, loadLatestAssessment, loadInitialAssessment, loadMaxHistoryLevel } from './store.js';
 export { renderCheckSummary, renderPRComment, renderLabels } from './render.js';
 export { HARNESS_RULES_VERSION, ENGINE_VERSION, DEFAULT_GOVERNANCE } from './rules/builtin.js';
 
@@ -31,11 +34,25 @@ export function assess({
 } = {}) {
   try {
     const prev = previous || (repoRoot && changeId ? loadLatestAssessment(repoRoot, changeId) : null);
+    const baseRec = baseline || (repoRoot && changeId ? loadInitialAssessment(repoRoot, changeId) : null);
+
+    // If requirement is empty or for spec stage, load proposal.md and design.md from change dir
+    let effectiveReq = requirement || '';
+    if (repoRoot && changeId) {
+      try {
+        const cdir = changeDir(repoRoot, changeId);
+        const propPath = path.join(cdir, 'proposal.md');
+        if (fs.existsSync(propPath)) {
+          const propText = fs.readFileSync(propPath, 'utf8');
+          effectiveReq = `${effectiveReq}\n${propText}`.trim();
+        }
+      } catch { /* ignore read failure */ }
+    }
 
     // 1. Evaluate Three Risk Vectors
-    const v1 = evaluateV1Intent({ requirement, changedFiles, changeType });
-    const v2 = evaluateV2Security({ requirement, changedFiles });
-    const v3 = evaluateV3Topology({ requirement, changedFiles, repoRoot });
+    const v1 = evaluateV1Intent({ requirement: effectiveReq, changedFiles, changeType });
+    const v2 = evaluateV2Security({ requirement: effectiveReq, changedFiles, repoRoot });
+    const v3 = evaluateV3Topology({ requirement: effectiveReq, changedFiles, repoRoot });
 
     // Inferred or provided Change Type
     const effectiveType = changeType || v1.inferredType || 'change';
@@ -48,7 +65,7 @@ export function assess({
       v3,
       changedFiles,
       previous: prev,
-      baseline
+      baseline: baseRec
     });
 
     // 3. Derive Governance Output Matrix

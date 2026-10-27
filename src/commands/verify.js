@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { exists, readText, walkFiles } from '../lib/fs.js';
+import { exists, readText, writeText, walkFiles } from '../lib/fs.js';
 import { readYaml } from '../lib/yaml.js';
 import { openspecDir, changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug, readLintConfig } from '../lib/cliutil.js';
@@ -10,7 +10,7 @@ import { lintSpecText, countBlockers } from '../lib/speclint.js';
 import { checkSchema } from '../lib/schema.js';
 import { loadPolicy, isAdvisory, DEFAULT_POLICY, matchesAny } from '../lib/policy.js';
 import { classifyPR } from '../lib/prtype.js';
-import { isSinglePrLevel, requiresHumanReview, readChangeLevel } from '../lib/level.js';
+import { isSinglePrLevel, requiresHumanReview, readChangeLevel, readEffectiveLevel } from '../lib/level.js';
 import { assess, renderCheckSummary } from '../assess/index.js';
 import { checkTestPresence, checkTaskEvidence } from '../lib/tdd.js';
 import { log, dim } from '../lib/log.js';
@@ -127,7 +127,14 @@ export function runVerify(changeId, opts = {}) {
     return finish(results, policy);
   }
   add('change', 'pass', slug);
-  const { specSha, status, level: changeLevel } = meta(repoRoot, changeId);
+  const effLevel = readEffectiveLevel(repoRoot, changeId);
+  if (effLevel?.tampered) {
+    add('level-integrity', 'fail', `tampered: declared ${effLevel.declaredLevel} < recorded history ${effLevel.maxHistoryLevel}`);
+  } else {
+    add('level-integrity', 'pass', `conforms to recorded history (${effLevel?.effectiveLevel || 'L1'})`);
+  }
+  const { specSha, status } = meta(repoRoot, changeId);
+  const changeLevel = effLevel?.effectiveLevel || meta(repoRoot, changeId).level || null;
 
   const changedFiles = (git(['diff', '--name-only', `${base}...${head}`], repoRoot, { allowFail: true }) ?? '')
     .split(/\r?\n/).filter(Boolean);
@@ -144,7 +151,9 @@ export function runVerify(changeId, opts = {}) {
 
   const lockedPaths = [`openspec/changes/${slug}/proposal.md`, `openspec/changes/${slug}/specs`];
   const approvedSha = lastCommitTouching(repoRoot, branch, lockedPaths);
-  if (isSinglePrLevel(changeLevel)) {
+  if (effLevel?.tampered) {
+    add('approved-spec', 'fail', 'governance level tampered: declared level is lower than history');
+  } else if (isSinglePrLevel(changeLevel)) {
     add('approved-spec', 'pass', `${changeLevel} single-PR mode (spec approval co-located in implementation PR)`);
   } else if (!approvedSha) {
     add('approved-spec', 'fail', `no commit on locked paths is merged into ${branch} (not approved)`);
@@ -179,16 +188,51 @@ export function runVerify(changeId, opts = {}) {
     persist: Boolean(repoRoot && changeId && exists(cdir))
   });
 
-  if (assessment.verdict === 'escalated') {
-    add('risk-escape', 'fail', `governance escalation: declared ${changeLevel || 'unlevelled'} escalated to ${assessment.risk.level} (${(assessment.reason_codes || []).join(', ')})`);
+  const effectiveLevel = assessment.risk.level;
+  const isEscalated = assessment.verdict === 'escalated' || (effLevel?.declaredLevel && effLevel.declaredLevel !== effectiveLevel && effectiveLevel !== 'L1');
+
+  if (isEscalated) {
+    // Synchronize .openspec.yaml on in-place escalation
+    const metaPath = path.join(cdir, '.openspec.yaml');
+    if (exists(metaPath)) {
+      let metaText = readText(metaPath);
+      const upsertKey = (text, key, val) => {
+        const re = new RegExp(`^\\s*${key}:\\s*.*$`, 'm');
+        return re.test(text) ? text.replace(re, `${key}: "${val}"`) : `${text.trimEnd()}\n${key}: "${val}"\n`;
+      };
+      metaText = upsertKey(metaText, 'level', effectiveLevel);
+      metaText = upsertKey(metaText, 'workflowMode', assessment.governance.workflow_mode);
+      writeText(metaPath, metaText);
+    }
+
+    // In-place escalation handling:
+    // If escalated to L3 (e.g. destructive DDL): must fail escape gate
+    if (effectiveLevel === 'L3' && changeLevel !== 'L3') {
+      add('risk-escape', 'fail', `governance escalation: declared ${changeLevel || 'unlevelled'} escalated to L3 (${(assessment.reason_codes || []).join(', ')})`);
+    } else if (specFiles.length === 0) {
+      add('risk-escape', 'fail', `governance escalation: declared ${changeLevel} escalated to ${effectiveLevel} without required spec delta in specs/`);
+    } else {
+      add('risk-escape', 'pass', `escalated to ${effectiveLevel} in-place with spec delta (spec-first reviewed co-located)`);
+    }
   } else {
     add('risk-escape', 'pass', `conforms to ${assessment.risk.level} boundary (${assessment.governance.workflow_mode})`);
   }
 
-  const effectiveLevel = assessment.risk.level;
   const isHumanReview = assessment.governance.implementation_review === 'ai+human';
+  const isCI = Boolean(process.env.CI || process.env.GITHUB_ACTIONS || process.env.GITLAB_CI || process.env.JENKINS_URL);
+
   if (isHumanReview) {
-    add('human-gate', 'pass', `${effectiveLevel}: mandatory human lead approval required before merge (auto-merge DENIED)`);
+    if (isCI) {
+      const reviewPath = path.join(cdir, 'review.md');
+      const isApprovedInReview = exists(reviewPath) && /##\s*Verdict\s*\n+\s*APPROVE/i.test(readText(reviewPath));
+      if (isApprovedInReview || opts.approved) {
+        add('human-gate', 'pass', `${effectiveLevel}: human lead approval verified on PR`);
+      } else {
+        add('human-gate', 'fail', `${effectiveLevel}: mandatory human lead approval required before merge (PR not approved by lead)`);
+      }
+    } else {
+      add('human-gate', 'pass', `${effectiveLevel}: mandatory human lead approval required before merge (auto-merge DENIED)`);
+    }
   } else {
     add('human-gate', 'pass', `${effectiveLevel}: auto-merge permitted once AI review passes (no human review required)`);
   }

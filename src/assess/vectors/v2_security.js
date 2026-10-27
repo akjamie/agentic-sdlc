@@ -1,6 +1,6 @@
-import { HARD_RULES } from '../rules/builtin.js';
+import { HARD_RULES, isTestOrDocFile } from '../rules/builtin.js';
 
-export function evaluateV2Security({ requirement = '', changedFiles = [] } = {}) {
+export function evaluateV2Security({ requirement = '', changedFiles = [], repoRoot = null } = {}) {
   const req = String(requirement || '').toLowerCase();
   const evidence = [];
   const unresolved = [];
@@ -15,7 +15,18 @@ export function evaluateV2Security({ requirement = '', changedFiles = [] } = {})
   );
 
   for (const rule of securityRules) {
-    const hits = changedFiles.filter((f) => rule.patterns.some((p) => p.test(f.replace(/\\/g, '/'))));
+    const hits = changedFiles.filter((f) => {
+      // Exclude test and documentation files from security/destructive hard rules
+      if (isTestOrDocFile(f)) return false;
+      const norm = f.replace(/\\/g, '/');
+      if (rule.patterns.some((p) => p.test(norm))) return true;
+      // Content-level or name-level DDL check for SQL files
+      if (rule.id === 'HARD_DESTRUCTIVE_DDL' && /\.(sql)$/i.test(norm)) {
+        if (/drop|truncate|purge|destructive/i.test(norm)) return true;
+      }
+      return false;
+    });
+
     if (hits.length > 0) {
       level = 'L3';
       no_signal = false;
@@ -32,28 +43,70 @@ export function evaluateV2Security({ requirement = '', changedFiles = [] } = {})
   }
 
   // 2. Check Requirement Semantics for Security/Financial/Regulatory
-  const secKeywords = [
-    'auth', 'authentication', 'password', 'oauth', 'jwt', 'session', 'mfa', 'rbac', 'kms', 'secret',
-    'token', 'permission', 'crypto', 'credential', 'private key', 'payment', 'payout', 'refund', 'billing',
-    'ledger', 'wallet', 'clearing', 'pii', 'gdpr', 'tax id', 'ssn'
+  const highRiskCompounds = [
+    'access token', 'refresh token', 'bearer token', 'session token', 'auth token', 'security token',
+    'jwt', 'oauth', 'private key', 'secret key', 'password hash', 'password encryption',
+    'mfa', 'rbac', 'kms', 'pii', 'gdpr', 'tax id', 'ssn', 'payment refund', 'payment ledger',
+    'refund ledger', 'clearing settlement', 'credit card'
   ];
 
-  for (const kw of secKeywords) {
-    const re = new RegExp(`\\b${kw.replace(/-/g, '[-\\s]')}\\b`, 'i');
+  const genericSecWords = [
+    'auth', 'authentication', 'password', 'credential', 'crypto',
+    'payment', 'payout', 'refund', 'billing', 'ledger', 'wallet', 'clearing'
+  ];
+
+  let compoundHit = null;
+  for (const compound of highRiskCompounds) {
+    const re = new RegExp(`\\b${compound.replace(/-/g, '[-\\s]')}\\b`, 'i');
     if (re.test(req)) {
+      compoundHit = compound;
+      break;
+    }
+  }
+
+  const matchedGenerics = [];
+  for (const word of genericSecWords) {
+    const re = new RegExp(`\\b${word}\\b`, 'i');
+    if (re.test(req)) {
+      matchedGenerics.push(word);
+    }
+  }
+
+  const isDocIntent = /\b(typo|readme|docs?|documentation|comments?|whitespace)\b/i.test(req) &&
+    !/\b(implement|create|delete|drop|truncate|purge|migrate|deploy|release|leak|vulnerability)\b/i.test(req);
+
+  if (!isDocIntent) {
+    if (compoundHit) {
       no_signal = false;
-      // Soft signal for requirement alone: elevates to L3 + mandatory human review if high confidence
-      if (level !== 'L3') {
-        level = 'L3';
-        mandatory_human_review = true;
-      }
+      level = 'L3';
+      mandatory_human_review = true;
       evidence.push({
-        id: 'V2_SECURITY_KEYWORD',
+        id: 'V2_SECURITY_COMPOUND_KEYWORD',
+        kind: 'task_statement',
+        signal: 'hard',
+        summary: `Task requirement touches critical security/regulatory compound phrase: '${compoundHit}'`
+      });
+    } else if (matchedGenerics.length >= 2) {
+      no_signal = false;
+      level = 'L3';
+      mandatory_human_review = true;
+      evidence.push({
+        id: 'V2_SECURITY_MULTI_KEYWORD',
         kind: 'task_statement',
         signal: 'soft',
-        summary: `Task requirement touches critical security/regulatory domain: '${kw}'`
+        summary: `Task requirement touches multiple security/financial domains: '${matchedGenerics.join(', ')}'`
       });
-      break;
+    } else if (matchedGenerics.length === 1) {
+      no_signal = false;
+      if (level === 'L1') {
+        level = 'L2'; // Capped at L2 for single soft generic keyword
+      }
+      evidence.push({
+        id: 'V2_SECURITY_SINGLE_KEYWORD',
+        kind: 'task_statement',
+        signal: 'soft',
+        summary: `Task requirement touches security/financial domain keyword: '${matchedGenerics[0]}'`
+      });
     }
   }
 

@@ -77,7 +77,8 @@ export const HARD_RULES = [
     signal: 'hard',
     mandatory_human_review: true,
     patterns: [
-      /(^|\/)migrations\/.*(drop|truncate|purge|destructive)/i
+      /(^|\/)(db\/)?migrations?\/.*(drop|truncate|purge|destructive)/i,
+      /(^|\/)db\/migration\/.*(drop|truncate|purge|destructive)/i
     ],
     summary: 'Executes destructive, irreversible schema or data deletion operations'
   },
@@ -88,25 +89,24 @@ export const HARD_RULES = [
     signal: 'hard',
     mandatory_human_review: false,
     patterns: [
-      // Schema & IDL definitions
-      /(^|\/)(api|protos?|schemas?)\//i,
+      // Schema & IDL definitions (excluding docs and tooling schemas)
+      /(^|\/)(protos?)\//i,
       /(^|\/)(openapi|swagger)\.[a-z0-9]+$/i,
-      /\.(proto|graphql|gql|thrift)$/i,
+      /\.(proto|graphql|gql|thrift|prisma)$/i,
       // Spring Boot (Java / Kotlin)
-      /(^|\/).*Controller\.(java|kt)$/i,
-      /(^|\/).*Resource\.(java|kt)$/i,
-      /(^|\/).*Endpoint\.(java|kt)$/i,
+      /(^|\/).*(Controller|Resource|Endpoint|Api)\.(java|kt)$/i,
       /(^|\/)(controllers?|endpoints?|resources?)\/.*\.(java|kt)$/i,
       // FastAPI / Python web frameworks
       /(^|\/)(routers?|endpoints?)\/.*\.py$/i,
       /(^|\/).*(router|controller|endpoint).*\.py$/i,
+      /(^|\/)(app|api)\/(main|app)\.py$/i,
       // Node.js / NestJS / Express / Next.js
       /(^|\/).*\.controller\.(ts|js)$/i,
-      /(^|\/)(pages|app|server)\/api\/.*\.(ts|js|tsx|jsx)$/i,
-      /(^|\/)routes?\/.*\.(ts|js)$/i,
-      // Go web handlers
-      /(^|\/).*(handler|router|controller).*\.go$/i,
-      /(^|\/)(handlers?|routers?|controllers?)\/.*\.go$/i
+      /(^|\/)(pages|app|server|src)\/api\/.*\.(ts|js|tsx|jsx)$/i,
+      /(^|\/)(routes?\/|.*routes?\.)(ts|js)$/i,
+      // Go web handlers (excluding utilities and non-API handlers)
+      /(^|\/)(handlers?|routers?|controllers?|api)\/(?!.*error_handler).*\.go$/i,
+      /^(?!.*[/\\](utils?|helpers?)[/\\]).*(?<!error)_(handler|router|controller)\.go$/i
     ],
     summary: 'Modifies public API contracts, controllers, routers, or schemas (Spring Boot, FastAPI, NestJS, Go, Proto, OpenAPI)'
   },
@@ -125,15 +125,16 @@ export const HARD_RULES = [
     ],
     summary: 'Modifies CI/CD pipeline workflows, Git hooks, or developer tooling'
   },
-  // 6. Database Migrations & Data Models (L2)
+  // 7. Database Migrations & Data Models (L2)
   {
     id: 'HARD_DB_MIGRATION',
     level: 'L2',
     signal: 'hard',
     mandatory_human_review: false,
     patterns: [
-      /(^|\/)migrations?\//i,
-      /(^|\/)db\/(schema|models?)\//i
+      /(^|\/)(db\/)?migrations?\//i,
+      /(^|\/)db\/(schema|models?)\//i,
+      /(^|\/)prisma\/schema\.prisma$/i
     ],
     summary: 'Modifies database migrations, tables, or persistence schemas'
   },
@@ -166,21 +167,19 @@ export const L0_DETERMINISTIC_PATTERNS = [
   /^NOTICE$/i
 ];
 
-/**
- * Soft Signal Dictionaries (Heuristics / Intent):
- * Capped at L2 unless specific High-Confidence security evidence.
- */
-export const SOFT_KEYWORDS = {
-  L3_CRITICAL: [
-    'payment', 'refund', 'billing', 'ledger', 'wallet', 'clearing',
-    'auth', 'oauth', 'jwt', 'session', 'mfa', 'rbac', 'kms', 'secret',
-    'pii', 'gdpr', 'tax-id', 'ssn', 'drop table', 'truncate table', 'purge data'
-  ],
-  L2_BOUNDARY: [
-    'api', 'openapi', 'grpc', 'protobuf', 'graphql', 'webhook',
-    'database', 'migration', 'schema', 'table', 'docker', 'k8s'
-  ],
-  L0_TRIVIAL: [
-    'typo', 'readme', 'documentation', 'doc', 'docs', 'formatting', 'whitespace'
-  ]
-};
+export const TEST_AND_DOC_PATTERNS = [
+  /(^|\/)(tests?|__tests__|testing)\//i,
+  /\.(test|spec)\.[a-z0-9]+$/i,
+  /_test\.go$/i,
+  /test_[^/]+\.py$/i,
+  /[^/]+_test\.py$/i,
+  /(^|\/)docs?\//i,
+  /\.(md|txt)$/i,
+  /(^|\/)assets\//i
+];
+
+export function isTestOrDocFile(filePath = '') {
+  const norm = String(filePath).replace(/\\/g, '/');
+  return TEST_AND_DOC_PATTERNS.some((p) => p.test(norm));
+}
+

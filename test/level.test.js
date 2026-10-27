@@ -47,13 +47,20 @@ test('inferInitialLevel: defaults to L1 for bounded changes', () => {
   assert.match(r.reason, /bounded/);
 });
 
-test('inferInitialLevel: honors explicitLevel override', () => {
+test('inferInitialLevel: honors explicitLevel upgrade and rejects illegal downgrade', () => {
+  // Explicit upgrade L1 -> L2
   const r = inferInitialLevel({
-    requirement: 'fix auth password leak',
-    explicitLevel: 'L1'
+    requirement: 'calculate shipping discount based on quantity',
+    explicitLevel: 'L2'
   });
-  assert.equal(r.level, LEVELS.L1);
+  assert.equal(r.level, LEVELS.L2);
   assert.match(r.reason, /explicitly specified/);
+
+  // Illegal downgrade L3 -> L1 must throw ILLEGAL_DOWNGRADE
+  assert.throws(
+    () => inferInitialLevel({ requirement: 'fix auth password leak', explicitLevel: 'L1' }),
+    (err) => err.code === 'ILLEGAL_DOWNGRADE'
+  );
 });
 
 test('isSinglePrLevel: returns true for L0 and L1, false for L2 and L3', () => {

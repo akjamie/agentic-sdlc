@@ -3,10 +3,9 @@ import { exists, readText, writeText } from '../lib/fs.js';
 import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
 import { lastCommitTouching, git } from '../lib/git.js';
-import { readYaml } from '../lib/yaml.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
-import { isSinglePrLevel } from '../lib/level.js';
+import { isSinglePrLevel, readEffectiveLevel } from '../lib/level.js';
 
 // Guard before implementing: the spec must be APPROVED on the target branch
 // (i.e. the Spec PR has been merged into targetBranch, locking proposal.md & specs/**).
@@ -42,7 +41,16 @@ export function applyGuard(changeId, opts = {}) {
 
   const locked = [`openspec/changes/${slug}/proposal.md`, `openspec/changes/${slug}/specs`];
 
-  const isSinglePr = isSinglePrLevel(meta.level);
+  const levelInfo = readEffectiveLevel(repoRoot, slug);
+  if (levelInfo?.tampered) {
+    fail(`cannot apply '${slug}': declared level in .openspec.yaml (${levelInfo.declaredLevel}) is lower than recorded history (${levelInfo.maxHistoryLevel}). Manual level downgrading is strictly forbidden.`, {
+      code: 'LEVEL_TAMPERED',
+      hint: 'Revert unauthorized level edits in .openspec.yaml or raise a system rule fix.'
+    });
+  }
+
+  const effectiveLevel = levelInfo?.effectiveLevel || meta.level || null;
+  const isSinglePr = isSinglePrLevel(effectiveLevel);
   let approvedSha = null;
 
   if (isSinglePr) {
@@ -57,7 +65,7 @@ export function applyGuard(changeId, opts = {}) {
       metaText = upsertKey(metaText, 'status', 'ready_for_impl');
       writeText(metaPath, metaText);
     }
-    log.ok(`${slug}: governance level is ${meta.level} (Single PR mode: direct local implementation permitted)`);
+    log.ok(`${slug}: governance level is ${effectiveLevel} (Single PR mode: direct local implementation permitted)`);
   } else {
     // L2 / L3 Two-phase Spec-first flow
     // 2. Multi-tenant path-isolated approval detection

@@ -24,7 +24,7 @@ export function evaluateV1Intent({ requirement = '', specDelta = '', changedFile
   }
 
   // 1. Destructive Operations & Irreversibility
-  if (/\b(drop|truncate|purge|hard delete|clean db)\b/i.test(req)) {
+  if (/\b(drop\s+(table|column|database|index|schema)|truncate\s+(table|database)|purge\s+(data|table|database)|hard\s+delete|clean\s+database)\b/i.test(req)) {
     level = 'L3';
     mandatory_human_review = true;
     evidence.push({
@@ -36,9 +36,10 @@ export function evaluateV1Intent({ requirement = '', specDelta = '', changedFile
   }
 
   // 2. Pure Documentation Demotion Check
-  if (inferredType === 'chore' && /\b(typo|readme|doc|documentation|comment|whitespace)\b/i.test(req)) {
-    if (!/\b(implement|fix bug|create|delete|execute|migrate)\b/i.test(req)) {
+  if (/\b(typo|readme|docs?|documentation|comments?|whitespace)\b/i.test(req)) {
+    if (!/\b(implement|create|delete|drop|truncate|purge|migrate|execute|leak|vulnerability)\b/i.test(req)) {
       level = 'L0';
+      inferredType = 'chore';
       evidence.push({
         id: 'V1_DOC_INTENT',
         kind: 'task_statement',

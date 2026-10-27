@@ -42,7 +42,7 @@ ${reviewQuestions}
 - **实施评审要求**：\`${record.governance.implementation_review}\`
 - **评估阶段**：\`${record.stage}\` (序号: #${record.seq})
 - **规则版本**：\`${record.source.harness_rules_version}\`
-- **记录指纹**：\`${record.hash.slice(0, 12)}\`
+- **记录指纹**：\`${(record.hash || '').slice(0, 12) || 'unpersisted'}\`
 `;
 }
 

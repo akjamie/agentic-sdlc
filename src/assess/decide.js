@@ -15,18 +15,22 @@ export function decideAssessment({
 } = {}) {
   // 1. Exception / Crash Fallback to Global Default (§5.5)
   if (error) {
+    const prevLvl = previous?.risk?.level || baseline?.risk?.level || null;
+    const fallbackLevel = prevLvl && (LEVEL_RANK[prevLvl] ?? 1) > (LEVEL_RANK[DEFAULT_GOVERNANCE.level] ?? 1)
+      ? prevLvl
+      : DEFAULT_GOVERNANCE.level;
     return {
-      level: DEFAULT_GOVERNANCE.level,
+      level: fallbackLevel,
       confidence: 'low',
       status: 'defaulted',
       verdict: 'defaulted',
       defaulted_cause: typeof error === 'string' ? error : error.message || 'Assessment error',
-      governance: { ...DEFAULT_GOVERNANCE },
+      governance: { ...DEFAULT_GOVERNANCE, level: fallbackLevel },
       reason_codes: ['DEFAULTED'],
       transition: {
-        from_level: previous?.risk?.level || null,
-        to_level: DEFAULT_GOVERNANCE.level,
-        direction: previous ? (LEVEL_RANK[DEFAULT_GOVERNANCE.level] > LEVEL_RANK[previous.risk.level] ? 'up' : 'same') : 'initial',
+        from_level: prevLvl,
+        to_level: fallbackLevel,
+        direction: prevLvl ? ((LEVEL_RANK[fallbackLevel] ?? 1) > (LEVEL_RANK[prevLvl] ?? 1) ? 'up' : 'same') : 'initial',
         triggers: ['Assessment crashed or failed, fallen back to safe global defaults']
       }
     };
@@ -80,11 +84,17 @@ export function decideAssessment({
   let triggers = [];
   const reason_codes = [];
 
-  const prevLevel = previous?.risk?.level || baseline?.risk?.level || null;
+  const prevLevel = previous?.risk?.level || null;
+  const baselineLevel = baseline?.risk?.level || previous?.risk?.level || null;
 
-  if (prevLevel) {
-    const prevRank = LEVEL_RANK[prevLevel] ?? 1;
+  if (prevLevel || baselineLevel) {
+    const prevRank = prevLevel ? (LEVEL_RANK[prevLevel] ?? 1) : 1;
+    const baseRank = baselineLevel ? (LEVEL_RANK[baselineLevel] ?? 1) : 1;
     const curRank = LEVEL_RANK[finalLevel] ?? 1;
+
+    // Highest reached rank in history
+    const highestRank = Math.max(curRank, prevRank, baseRank);
+    finalLevel = Object.keys(LEVEL_RANK).find((k) => LEVEL_RANK[k] === highestRank) || finalLevel;
 
     if (curRank > prevRank) {
       direction = 'up';
@@ -94,9 +104,14 @@ export function decideAssessment({
       } else {
         reason_codes.push('SOFT_SIGNAL_ESCALATION');
       }
+    } else if (highestRank > baseRank) {
+      direction = 'same';
+      triggers.push(`Level remains escalated at ${finalLevel} above baseline ${baselineLevel}`);
+      if (stage === 'impl') {
+        reason_codes.push('ESCALATED_IN_IMPL');
+      }
     } else {
       direction = 'same';
-      finalLevel = prevLevel; // Never demote automatically
     }
   }
 
@@ -117,7 +132,10 @@ export function decideAssessment({
   let verdict = 'ok';
   let status = stage === 'new' ? 'provisional' : 'ready';
 
-  if (direction === 'up') {
+  const baseRank = baselineLevel ? (LEVEL_RANK[baselineLevel] ?? 1) : null;
+  const finalRank = LEVEL_RANK[finalLevel] ?? 1;
+
+  if (direction === 'up' || (baseRank !== null && finalRank > baseRank)) {
     verdict = 'escalated';
   }
 
