@@ -228,7 +228,7 @@ test('Simulation 6: In-Place Escalation after apply maintains single PR, revokes
     git(['commit', '-m', 'impl: add users router'], repo);
 
     // 1. In Local environment: Single PR maintained in-place, level synced to L2, auto-merge denied
-    const localExit = runVerify(slug, { repoRoot: repo, base: 'HEAD~1', head: 'HEAD', skipOpenspec: true });
+    const localExit = runVerify(slug, { repoRoot: repo, base: 'HEAD~1', head: 'HEAD', skipOpenspec: true, ci: false });
     assert.equal(localExit, 0, 'Local verify should pass in-place escalation without crashing developer workflow');
 
     const meta = fs.readFileSync(path.join(cdir, '.openspec.yaml'), 'utf8');
@@ -236,13 +236,12 @@ test('Simulation 6: In-Place Escalation after apply maintains single PR, revokes
     assert.match(meta, /escalatedInImpl: "true"/);
 
     // 2. In CI environment: Must fail human-gate if human lead approval is missing
-    process.env.CI = 'true';
-    const ciExitUnapproved = runVerify(slug, { repoRoot: repo, base: 'HEAD~1', head: 'HEAD', skipOpenspec: true });
+    const ciExitUnapproved = runVerify(slug, { repoRoot: repo, base: 'HEAD~1', head: 'HEAD', skipOpenspec: true, ci: true });
     assert.equal(ciExitUnapproved, 1, 'CI verify MUST fail when escalated L2 PR has not been approved by human lead');
 
     // 3. Once Human Lead writes APPROVE in review.md (or passes --approved), CI passes!
     fs.writeFileSync(path.join(cdir, 'review.md'), '## Verdict\n\nAPPROVE\n\nApproved by Tech Lead.\n');
-    const ciExitApproved = runVerify(slug, { repoRoot: repo, base: 'HEAD~1', head: 'HEAD', skipOpenspec: true });
+    const ciExitApproved = runVerify(slug, { repoRoot: repo, base: 'HEAD~1', head: 'HEAD', skipOpenspec: true, ci: true });
     assert.equal(ciExitApproved, 0, 'CI verify MUST pass once Human Lead review verdict is APPROVE');
   } finally {
     if (oldCI !== undefined) process.env.CI = oldCI;

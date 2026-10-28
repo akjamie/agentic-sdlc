@@ -129,6 +129,7 @@ export async function createPR(changeId, targetBranch, opts = {}) {
       repoRoot,
       base: targetBranch,
       protectedBranch: targetBranch,
+      openingPr: true,
       ...opts,
     });
     if (verifyExit !== 0) {

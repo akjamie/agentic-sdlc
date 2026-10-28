@@ -218,7 +218,9 @@ export function runVerify(changeId, opts = {}) {
   }
 
   const isHumanReview = assessment.governance.implementation_review === 'ai+human';
-  const isCI = Boolean(process.env.CI || process.env.GITHUB_ACTIONS || process.env.GITLAB_CI || process.env.JENKINS_URL);
+  const isCI = opts.ci !== undefined
+    ? Boolean(opts.ci)
+    : (opts.openingPr ? false : Boolean(process.env.CI || process.env.GITHUB_ACTIONS || process.env.GITLAB_CI || process.env.JENKINS_URL));
 
   if (isHumanReview) {
     if (isCI) {
