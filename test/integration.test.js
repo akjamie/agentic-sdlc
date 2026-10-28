@@ -8,6 +8,9 @@ import { runLint } from '../src/commands/lint.js';
 import { applyGuard } from '../src/commands/apply.js';
 import { mergeChange } from '../src/commands/approve.js';
 import { runVerify } from '../src/commands/verify.js';
+import { installSchema } from '../src/lib/schema.js';
+
+installSchema();
 
 function tmpRepo() {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'asdlc-int-'));

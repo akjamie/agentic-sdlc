@@ -9,7 +9,10 @@ import { renderPRComment } from '../src/assess/render.js';
 import { judgeChangeSemantics, validateAIClassificationExpectation } from '../src/assess/ai_judge.js';
 import { applyGuard } from '../src/commands/apply.js';
 import { runVerify } from '../src/commands/verify.js';
+import { installSchema } from '../src/lib/schema.js';
 import { git } from '../src/lib/git.js';
+
+installSchema();
 
 function setupRepo() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'asdlc-simulation-'));
