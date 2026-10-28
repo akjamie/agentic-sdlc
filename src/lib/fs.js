@@ -61,7 +61,13 @@ export function copyTree(src, dest) {
 }
 
 export function removeDir(p) {
-  if (exists(p)) fs.rmSync(p, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  if (exists(p)) {
+    try {
+      fs.rmSync(p, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err;
+    }
+  }
 }
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.next', 'coverage', 'vendor', 'target']);
