@@ -245,7 +245,7 @@
 </table>
 <p><strong>不选的方式:</strong> 不用 <code>npm install git+&lt;url&gt;</code>(每次安装都要拉全部 git 历史,版本不可控、无法做 §16 的 lock 机制);不用 <code>npm link</code>(只适合开发机调试,不是分发给全体开发者的方式)。</p>
 <pre><code class="language-bash"># 本地 tarball 方式的开发者体验
-npm install -g https://internal-artifactory/asdlc/asdlc-1.2.0.tgz
+npm install -g https://internal-artifactory/asdlc/asdlc-1.3.0.tgz
 asdlc --version
 </code></pre>
 <p>版本号与 §16 的 <code>asdlc.lock</code> 绑定,见该节。</p>
@@ -860,7 +860,7 @@ rollout_mode:    { path_check: block, ai_review: advisory }
 <p>三个组件独立演进、版本节奏完全不同(asdlc 是你们自己的内部发布节奏;OpenSpec 和 Graphify 是外部开源项目,各自按自己的节奏发版),<strong>不能假设它们互相兼容,必须显式管理。</strong></p>
 <h3>16.1 核心机制:asdlc.lock,只有平台团队能改</h3>
 <pre><code class="language-yaml"># asdlc.lock(和 .sdlc/policy.yaml 一样,平台团队保护,团队不能改)
-asdlc: 1.2.0
+asdlc: 1.3.0
 openspec: 1.3.1
 graphify:
   impl: node        # python | go | node,见 §15.3

@@ -1,5 +1,5 @@
 export const HARNESS_RULES_VERSION = '2026.10.0';
-export const ENGINE_VERSION = '1.2.0';
+export const ENGINE_VERSION = '1.3.0';
 
 export const RISK_LEVELS = {
   L0: 'L0',
