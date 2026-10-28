@@ -85,15 +85,26 @@ export function readEffectiveLevel(repoRoot, changeId) {
     declaredLevel = m ? m[1].toUpperCase() : null;
   }
 
-  const maxHistory = loadMaxHistoryLevel(repoRoot, changeId);
-  if (!declaredLevel && !maxHistory) {
+  let maxHistory = null;
+  let chainCorrupt = false;
+  try {
+    maxHistory = loadMaxHistoryLevel(repoRoot, changeId);
+  } catch (err) {
+    if (err.code === 'TAMPER_DETECTED' || err.message?.includes('tamper')) {
+      chainCorrupt = true;
+    } else {
+      throw err;
+    }
+  }
+
+  if (!declaredLevel && !maxHistory && !chainCorrupt) {
     return null;
   }
 
   const declaredRank = declaredLevel ? (LEVEL_RANK[declaredLevel] ?? 0) : 0;
   const historyRank = maxHistory ? (LEVEL_RANK[maxHistory] ?? 0) : 0;
 
-  const tampered = Boolean(maxHistory && declaredLevel && declaredRank < historyRank);
+  const tampered = chainCorrupt || Boolean(maxHistory && declaredLevel && declaredRank < historyRank);
   const effectiveRank = Math.max(declaredRank, historyRank);
   const effectiveLevel = Object.keys(LEVEL_RANK).find((k) => LEVEL_RANK[k] === effectiveRank) || (declaredLevel || maxHistory || 'L1');
 

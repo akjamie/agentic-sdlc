@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import { exists, readText, writeText, ensureDir } from '../lib/fs.js';
@@ -9,6 +10,7 @@ export const SNAPSHOT_FILE = 'risk-assessment.yaml';
 
 /**
  * Loads all historical assessment records for a change.
+ * Enforces fail-closed chain validation on read (P1-3).
  */
 export function loadRiskHistory(repoRoot, changeId) {
   if (!repoRoot || !changeId) return [];
@@ -22,9 +24,21 @@ export function loadRiskHistory(repoRoot, changeId) {
     try {
       records.push(JSON.parse(line));
     } catch {
-      // Ignore corrupt line or let invariant catch it
+      const err = new Error(`Corrupted JSON in risk history line for ${changeId}`);
+      err.code = 'TAMPER_DETECTED';
+      throw err;
     }
   }
+
+  if (records.length > 0) {
+    const chainCheck = validateChainInvariants(records);
+    if (!chainCheck.valid) {
+      const err = new Error(`Risk history tamper detected for ${changeId}: ${chainCheck.errors.join('; ')}`);
+      err.code = 'TAMPER_DETECTED';
+      throw err;
+    }
+  }
+
   return records;
 }
 
@@ -110,11 +124,10 @@ export function appendAssessmentRecord(repoRoot, changeId, recordData) {
     throw new Error(`Chain invariant validation failed: ${chainCheck.errors.join('; ')}`);
   }
 
-  // 1. Append to JSONL history
+  // 1. Append to JSONL history atomically (P2-3)
   const histPath = path.join(cdir, HISTORY_FILE);
   const line = JSON.stringify(record) + '\n';
-  const existing = exists(histPath) ? readText(histPath) : '';
-  writeText(histPath, existing + line);
+  fs.appendFileSync(histPath, line, 'utf8');
 
   // 2. Overwrite human-readable YAML snapshot
   const snapPath = path.join(cdir, SNAPSHOT_FILE);

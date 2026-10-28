@@ -28,6 +28,8 @@ export const DEFAULT_GOVERNANCE = {
   auto_approval: 'disabled'
 };
 
+export const CANONICAL_DESTRUCTIVE_PATTERN = /\b(drop\s+(table|column|database|index|schema)|truncate\s+(table|database)?|purge\s+(data|table|database)|hard\s+delete|clean\s+database|destroy\s+database)\b/i;
+
 /**
  * Hard Signal Rules (§5.2):
  * Deterministic path patterns, migration types, CI/CD, agent governance files.
@@ -42,9 +44,10 @@ export const HARD_RULES = [
     mandatory_human_review: true,
     patterns: [
       /(^|\/)AGENTS\.md$/i,
-      /(^|\/)openspec\/config\.yaml$/i
+      /(^|\/)openspec\/config\.yaml$/i,
+      /(^|\/)(assets|\.agents)\/skills\/.*SKILL\.md$/i
     ],
-    summary: 'Modifies core Agent governance constitution (AGENTS.md or openspec/config.yaml)'
+    summary: 'Modifies core Agent governance constitution (AGENTS.md, openspec/config.yaml, or agent skills)'
   },
   // 2. High-Risk Security, Credentials & Cryptography (L3)
   {
@@ -175,12 +178,16 @@ export const TEST_AND_DOC_PATTERNS = [
   /[^/]+_test\.py$/i,
   /(^|\/)docs?\//i,
   /\.(md|txt)$/i,
-  /(^|\/)assets\//i
+  /(^|\/)assets\/(?:images|media|icons|fonts)\//i
 ];
 
 export function isTestOrDocFile(filePath = '') {
   const norm = String(filePath).replace(/\\/g, '/');
-  if (/(^|\/)AGENTS\.md$/i.test(norm) || /(^|\/)openspec\/config\.yaml$/i.test(norm)) {
+  if (
+    /(^|\/)AGENTS\.md$/i.test(norm) ||
+    /(^|\/)openspec\/config\.yaml$/i.test(norm) ||
+    /(^|\/)(assets|\.agents)\/skills\//i.test(norm)
+  ) {
     return false;
   }
   return TEST_AND_DOC_PATTERNS.some((p) => p.test(norm));

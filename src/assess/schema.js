@@ -115,6 +115,12 @@ export function validateChainInvariants(records = []) {
       errors.push(`Record at index ${i} has seq ${rec.seq}, expected ${expectedSeq}`);
     }
 
+    // Cryptographic content hash integrity (P1-3)
+    const computed = computeRecordHash(rec);
+    if (rec.hash && computed !== rec.hash) {
+      errors.push(`Record ${rec.seq} hash mismatch: computed ${computed} vs declared ${rec.hash}`);
+    }
+
     if (i === 0) {
       if (rec.prev_hash !== null) {
         errors.push(`Initial record must have prev_hash: null, got ${rec.prev_hash}`);

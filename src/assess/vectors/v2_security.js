@@ -1,4 +1,6 @@
-import { HARD_RULES, isTestOrDocFile } from '../rules/builtin.js';
+import path from 'node:path';
+import { exists, readText } from '../../lib/fs.js';
+import { HARD_RULES, isTestOrDocFile, CANONICAL_DESTRUCTIVE_PATTERN } from '../rules/builtin.js';
 import { judgeChangeSemantics } from '../ai_judge.js';
 
 export function evaluateV2Security({ requirement = '', changedFiles = [], repoRoot = null } = {}) {
@@ -17,13 +19,20 @@ export function evaluateV2Security({ requirement = '', changedFiles = [], repoRo
 
   for (const rule of securityRules) {
     const hits = changedFiles.filter((f) => {
-      // Exclude test and documentation files from security/destructive hard rules (never exclude governance plane)
-      if (rule.id !== 'HARD_GOV_PLANE' && isTestOrDocFile(f)) return false;
+      // Exclude test and documentation files from security/credentials (never exclude governance plane or destructive DDL) (P1-4)
+      if (rule.id !== 'HARD_GOV_PLANE' && rule.id !== 'HARD_DESTRUCTIVE_DDL' && isTestOrDocFile(f)) return false;
       const norm = f.replace(/\\/g, '/');
       if (rule.patterns.some((p) => p.test(norm))) return true;
-      // Content-level or name-level DDL check for SQL files
+      // Content-level or name-level DDL check for SQL files (P1-2)
       if (rule.id === 'HARD_DESTRUCTIVE_DDL' && /\.(sql)$/i.test(norm)) {
         if (/drop|truncate|purge|destructive/i.test(norm)) return true;
+        if (repoRoot) {
+          const fullPath = path.isAbsolute(f) ? f : path.join(repoRoot, f);
+          if (exists(fullPath)) {
+            const sqlContent = readText(fullPath);
+            if (CANONICAL_DESTRUCTIVE_PATTERN.test(sqlContent)) return true;
+          }
+        }
       }
       return false;
     });

@@ -182,6 +182,10 @@ export function runVerify(changeId, opts = {}) {
       status === 'ready_for_impl' ? 'READY_FOR_IMPL' : `status is ${status ?? 'unset'} (run: asdlc approve ${changeId})`);
   }
 
+  const isCI = opts.ci !== undefined
+    ? Boolean(opts.ci)
+    : (opts.openingPr ? false : Boolean(process.env.CI || process.env.GITHUB_ACTIONS || process.env.GITLAB_CI || process.env.JENKINS_URL));
+
   const assessment = assess({
     stage: 'impl',
     changeId,
@@ -189,16 +193,16 @@ export function runVerify(changeId, opts = {}) {
     headSha: head,
     changedFiles,
     repoRoot,
-    persist: Boolean(repoRoot && changeId && exists(cdir))
+    persist: Boolean(repoRoot && changeId && exists(cdir) && !opts.openingPr && !isCI)
   });
 
   const effectiveLevel = assessment.risk.level;
   const isEscalated = assessment.verdict === 'escalated' || (effLevel?.declaredLevel && effLevel.declaredLevel !== effectiveLevel && effectiveLevel !== 'L1');
 
   if (isEscalated) {
-    // Synchronize .openspec.yaml on in-place escalation
+    // Synchronize .openspec.yaml on in-place escalation (local runs only, avoid dirtying tree in CI)
     const metaPath = path.join(cdir, '.openspec.yaml');
-    if (exists(metaPath)) {
+    if (!isCI && !opts.openingPr && exists(metaPath)) {
       let metaText = readText(metaPath);
       const upsertKey = (text, key, val) => {
         const re = new RegExp(`^\\s*${key}:\\s*.*$`, 'm');
@@ -218,21 +222,25 @@ export function runVerify(changeId, opts = {}) {
   }
 
   const isHumanReview = assessment.governance.implementation_review === 'ai+human';
-  const isCI = opts.ci !== undefined
-    ? Boolean(opts.ci)
-    : (opts.openingPr ? false : Boolean(process.env.CI || process.env.GITHUB_ACTIONS || process.env.GITLAB_CI || process.env.JENKINS_URL));
 
   if (isHumanReview) {
     if (isCI) {
-      const reviewPath = path.join(cdir, 'review.md');
-      const isApprovedInReview = exists(reviewPath) && /##\s*Verdict\s*\n+\s*APPROVE/i.test(readText(reviewPath));
-      if (isApprovedInReview || opts.approved) {
+      // In CI, approval cannot rely on self-committed in-tree review.md (P0-3).
+      // It must be verified via --approved flag (passed by CI workflow when platform PR approval check passes)
+      // or external platform attestation.
+      if (opts.approved) {
         add('human-gate', 'pass', `${effectiveLevel}: human lead approval verified on PR`);
       } else {
         add('human-gate', 'fail', `${effectiveLevel}: mandatory human lead approval required before merge (PR not approved by lead)`);
       }
     } else {
-      add('human-gate', 'pass', `${effectiveLevel}: mandatory human lead approval required before merge (auto-merge DENIED)`);
+      const reviewPath = path.join(cdir, 'review.md');
+      const isApprovedInReview = exists(reviewPath) && /##\s*Verdict\s*\n+\s*APPROVE/i.test(readText(reviewPath));
+      if (isApprovedInReview || opts.approved) {
+        add('human-gate', 'pass', `${effectiveLevel}: local lead review staged (APPROVE in review.md)`);
+      } else {
+        add('human-gate', 'pass', `${effectiveLevel}: mandatory human lead approval required before merge (auto-merge DENIED)`);
+      }
     }
   } else {
     add('human-gate', 'pass', `${effectiveLevel}: auto-merge permitted once AI review passes (no human review required)`);

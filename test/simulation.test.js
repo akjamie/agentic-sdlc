@@ -242,10 +242,10 @@ test('Simulation 6: In-Place Escalation after apply maintains single PR, revokes
     const ciExitUnapproved = runVerify(slug, { repoRoot: repo, base: 'HEAD~1', head: 'HEAD', skipOpenspec: true, ci: true });
     assert.equal(ciExitUnapproved, 1, 'CI verify MUST fail when escalated L2 PR has not been approved by human lead');
 
-    // 3. Once Human Lead writes APPROVE in review.md (or passes --approved), CI passes!
+    // 3. In CI, committing review.md is self-attestation; passing approved: true simulates platform PR approval
     fs.writeFileSync(path.join(cdir, 'review.md'), '## Verdict\n\nAPPROVE\n\nApproved by Tech Lead.\n');
-    const ciExitApproved = runVerify(slug, { repoRoot: repo, base: 'HEAD~1', head: 'HEAD', skipOpenspec: true, ci: true });
-    assert.equal(ciExitApproved, 0, 'CI verify MUST pass once Human Lead review verdict is APPROVE');
+    const ciExitApproved = runVerify(slug, { repoRoot: repo, base: 'HEAD~1', head: 'HEAD', skipOpenspec: true, ci: true, approved: true });
+    assert.equal(ciExitApproved, 0, 'CI verify MUST pass once Human Lead review is approved');
   } finally {
     if (oldCI !== undefined) process.env.CI = oldCI;
     else delete process.env.CI;

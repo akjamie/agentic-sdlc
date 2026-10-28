@@ -52,22 +52,23 @@ export function decideAssessment({
 
   // 3. Positive Proof for L0 (§2.2):
   // Pure Documentation or Pure Test changes evaluated by AI Semantic Judge
-  const aiJudgment = judgeChangeSemantics({ changedFiles });
-  if (aiJudgment.is_pure_test && maxRank <= 1 && !v2.mandatory_human_review && !v3.mandatory_human_review) {
-    calculatedLevel = 'L0';
-  } else if (aiJudgment.is_pure_doc && maxRank <= 1 && !v2.mandatory_human_review && !v3.mandatory_human_review) {
-    calculatedLevel = 'L0';
-  } else if (changedFiles.length > 0) {
-    const norm = changedFiles.map((f) => f.replace(/\\/g, '/'));
-    const allDoc = norm.every((f) => L0_DETERMINISTIC_PATTERNS.some((p) => p.test(f)));
-    if (allDoc && maxRank <= 1) {
+  const hasMandatoryHumanReview = Boolean(
+    v1.mandatory_human_review || v2.mandatory_human_review || v3.mandatory_human_review
+  );
+
+  const req = v1.requirement || '';
+  const aiJudgment = judgeChangeSemantics({ requirement: req, changedFiles });
+
+  if (!hasMandatoryHumanReview && maxRank <= 1) {
+    if (changedFiles.length > 0) {
+      const norm = changedFiles.map((f) => f.replace(/\\/g, '/'));
+      const allDoc = norm.every((f) => L0_DETERMINISTIC_PATTERNS.some((p) => p.test(f)));
+      if (allDoc || aiJudgment.is_pure_doc || aiJudgment.is_pure_test) {
+        calculatedLevel = 'L0';
+      }
+    } else if (aiJudgment.is_pure_test || aiJudgment.is_pure_doc || (v1.level === 'L0' && v2.no_signal && v3.no_signal)) {
       calculatedLevel = 'L0';
-    } else if (calculatedLevel === 'L0' && !allDoc && !aiJudgment.is_pure_test) {
-      // Cannot claim L0 if non-doc and non-test files are modified
-      calculatedLevel = 'L1';
     }
-  } else if (v1.level === 'L0' && maxRank <= 1 && v2.no_signal && v3.no_signal) {
-    calculatedLevel = 'L0';
   }
 
   // 4. Determine Confidence & Unresolved

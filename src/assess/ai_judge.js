@@ -7,6 +7,9 @@
  * System enforces strict expectation invariants on the AI output to prevent hallucinations.
  */
 
+import { execSync } from 'node:child_process';
+import { CANONICAL_DESTRUCTIVE_PATTERN } from './rules/builtin.js';
+
 export const AI_CLASSIFICATION_SCHEMA = {
   type: 'object',
   required: ['is_pure_test', 'is_pure_doc', 'classification', 'rationale'],
@@ -41,18 +44,22 @@ export function validateAIClassificationExpectation(aiOutput, { changedFiles = [
   const reqLower = String(requirement || '').toLowerCase();
   const normFiles = (changedFiles || []).map((f) => f.replace(/\\/g, '/').toLowerCase());
 
-  // Invariant 1: Core Governance files can NEVER be pure test or pure doc
-  const touchesGov = normFiles.some((f) => f.endsWith('agents.md') || f.includes('openspec/config.yaml'));
+  // Invariant 1: Core Governance files can NEVER be pure test or pure doc (P0-2)
+  const touchesGov = normFiles.some((f) =>
+    f.endsWith('agents.md') ||
+    f.includes('openspec/config.yaml') ||
+    /(?:assets|\.agents)\/skills\/.*skill\.md$/i.test(f)
+  );
   if (touchesGov && (aiOutput.is_pure_test || aiOutput.is_pure_doc)) {
     return {
       ok: false,
-      error: 'Invariant violation: AGENTS.md or openspec/config.yaml cannot be classified as pure test or doc',
+      error: 'Invariant violation: AGENTS.md, openspec/config.yaml, or agent skills cannot be classified as pure test or doc',
       override: { is_pure_test: false, is_pure_doc: false, classification: 'governance_plane' }
     };
   }
 
-  // Invariant 2: Explicit destructive DDL commands in requirement cannot be pure test or doc
-  if (/\b(drop\s+(table|database)|truncate\s+table|purge\s+data)\b/i.test(reqLower) && (aiOutput.is_pure_test || aiOutput.is_pure_doc)) {
+  // Invariant 2: Explicit destructive DDL commands in requirement cannot be pure test or doc (P0-1)
+  if (CANONICAL_DESTRUCTIVE_PATTERN.test(reqLower) && (aiOutput.is_pure_test || aiOutput.is_pure_doc)) {
     return {
       ok: false,
       error: 'Invariant violation: destructive data purge requirement cannot be classified as pure test or doc',
@@ -71,13 +78,31 @@ export function judgeChangeSemantics({ requirement = '', changedFiles = [], repo
   const req = String(requirement || '').toLowerCase();
   const normFiles = (changedFiles || []).map((f) => f.replace(/\\/g, '/'));
 
-  // If environment has an AI classification provider or custom evaluator, invoke it
+  // If environment has an AI classification provider command configured, invoke it (P1-1)
   let rawAiOutput = null;
+  const classifierCmd = process.env.ASDLC_CLASSIFIER_COMMAND;
+  if (classifierCmd) {
+    try {
+      const inputJson = JSON.stringify({ requirement: req, changedFiles: normFiles });
+      const stdout = execSync(classifierCmd, {
+        input: inputJson,
+        encoding: 'utf8',
+        timeout: 5000,
+        env: { ...process.env, ASDLC_INPUT_JSON: inputJson }
+      });
+      const parsed = JSON.parse(stdout.trim());
+      if (parsed && typeof parsed === 'object') {
+        rawAiOutput = parsed;
+      }
+    } catch {
+      // Fallback to validated heuristic seed on timeout or command failure
+    }
+  }
 
   // Few-shot baseline seed for offline / local test fallback
   if (!rawAiOutput) {
     const hasProductionTarget = /\b(create|add|implement|build)\b.*\b(api|endpoint|service|table|database|schema|handler|router)\b/i.test(req);
-    const hasDestructiveAction = /\b(drop\s+table|truncate|purge|delete\s+database|destroy)\b/i.test(req);
+    const hasDestructiveAction = CANONICAL_DESTRUCTIVE_PATTERN.test(req);
 
     const isDocIntent = /\b(typo|readme|docs?|documentation|comments?|whitespace)\b/i.test(req) &&
       !hasProductionTarget && !hasDestructiveAction;
@@ -109,7 +134,7 @@ export function judgeChangeSemantics({ requirement = '', changedFiles = [], repo
     rawAiOutput = {
       is_pure_test: isPureTest,
       is_pure_doc: isPureDoc,
-      contains_destructive_ops: /\b(drop\s+(table|database)|truncate\s+table)\b/i.test(req),
+      contains_destructive_ops: CANONICAL_DESTRUCTIVE_PATTERN.test(req),
       contains_api_changes: /\b(api|openapi|rest|controller|router)\b/i.test(req),
       classification: isPureTest ? 'test_only' : (isPureDoc ? 'doc_only' : 'internal_code'),
       confidence: 'high',

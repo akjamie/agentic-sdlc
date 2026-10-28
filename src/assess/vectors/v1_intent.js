@@ -1,4 +1,4 @@
-import { LEVEL_RANK } from '../rules/builtin.js';
+import { LEVEL_RANK, CANONICAL_DESTRUCTIVE_PATTERN } from '../rules/builtin.js';
 import { judgeChangeSemantics } from '../ai_judge.js';
 
 export function evaluateV1Intent({ requirement = '', specDelta = '', changedFiles = [], changeType = null } = {}) {
@@ -24,8 +24,8 @@ export function evaluateV1Intent({ requirement = '', specDelta = '', changedFile
     }
   }
 
-  // 1. Destructive Operations & Irreversibility
-  if (/\b(drop\s+(table|column|database|index|schema)|truncate\s+(table|database)|purge\s+(data|table|database)|hard\s+delete|clean\s+database)\b/i.test(req)) {
+  // 1. Destructive Operations & Irreversibility (P0-1)
+  if (CANONICAL_DESTRUCTIVE_PATTERN.test(req)) {
     level = 'L3';
     mandatory_human_review = true;
     evidence.push({
@@ -37,25 +37,28 @@ export function evaluateV1Intent({ requirement = '', specDelta = '', changedFile
   }
 
   // 2. AI Semantic Classification: Pure Test or Pure Doc Evaluation (L0)
-  const aiJudgment = judgeChangeSemantics({ requirement: req, changedFiles });
-  if (aiJudgment.is_pure_test) {
-    level = 'L0';
-    inferredType = 'chore';
-    evidence.push({
-      id: 'V1_AI_TEST_EVALUATION',
-      kind: 'ai_evaluation',
-      signal: 'soft',
-      summary: aiJudgment.rationale || 'AI Semantic Evaluation: Change is strictly test suites/mocks (evaluated as L0 trivial/routine)'
-    });
-  } else if (aiJudgment.is_pure_doc) {
-    level = 'L0';
-    inferredType = 'chore';
-    evidence.push({
-      id: 'V1_AI_DOC_EVALUATION',
-      kind: 'ai_evaluation',
-      signal: 'soft',
-      summary: aiJudgment.rationale || 'AI Semantic Evaluation: Intent is purely documentation, typo, or comment editing'
-    });
+  // CRITICAL: A soft classifier must NEVER downgrade an already-triggered hard security signal! (P0-1)
+  if (!mandatory_human_review) {
+    const aiJudgment = judgeChangeSemantics({ requirement: req, changedFiles });
+    if (aiJudgment.is_pure_test) {
+      level = 'L0';
+      inferredType = 'chore';
+      evidence.push({
+        id: 'V1_AI_TEST_EVALUATION',
+        kind: 'scanner_result',
+        signal: 'soft',
+        summary: aiJudgment.rationale || 'AI Semantic Evaluation: Change is strictly test suites/mocks (evaluated as L0 trivial/routine)'
+      });
+    } else if (aiJudgment.is_pure_doc) {
+      level = 'L0';
+      inferredType = 'chore';
+      evidence.push({
+        id: 'V1_AI_DOC_EVALUATION',
+        kind: 'scanner_result',
+        signal: 'soft',
+        summary: aiJudgment.rationale || 'AI Semantic Evaluation: Intent is purely documentation, typo, or comment editing'
+      });
+    }
   }
 
   // If empty input
