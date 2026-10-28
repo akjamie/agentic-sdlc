@@ -188,7 +188,7 @@ export function runVerify(changeId, opts = {}) {
 
   const assessment = assess({
     stage: 'impl',
-    changeId,
+    changeId: slug,
     baseSha: base,
     headSha: head,
     changedFiles,

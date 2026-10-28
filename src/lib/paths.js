@@ -39,5 +39,6 @@ export function openspecDir(repoRoot) {
 }
 
 export function changeDir(repoRoot, changeId) {
-  return path.join(openspecDir(repoRoot), CHANGES_DIR, changeId);
+  const slug = String(changeId).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return path.join(openspecDir(repoRoot), CHANGES_DIR, slug);
 }
