@@ -1,0 +1,225 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RiskAssessmentRecord",
+  "description": "ASdlc Change-Level Governance Assessment Record Schema v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "change_id",
+    "seq",
+    "prev_hash",
+    "hash",
+    "timestamp",
+    "actor",
+    "stage",
+    "role",
+    "status",
+    "verdict",
+    "change_type",
+    "source",
+    "risk",
+    "vectors",
+    "governance",
+    "reason_codes",
+    "transition"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "enum": [1]
+    },
+    "change_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "prev_hash": {
+      "type": ["string", "null"],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "actor": {
+      "type": "object",
+      "required": ["type", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["system", "human", "agent"] },
+        "id": { "type": "string" }
+      }
+    },
+    "stage": {
+      "type": "string",
+      "enum": ["new", "spec", "impl"]
+    },
+    "role": {
+      "type": "string",
+      "enum": ["primary", "cross_check"]
+    },
+    "compared_to": {
+      "type": ["string", "null"],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["provisional", "needs_input", "ready", "defaulted"]
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["ok", "escalated", "needs_input", "blocked", "defaulted"]
+    },
+    "defaulted_cause": {
+      "type": ["string", "null"]
+    },
+    "change_type": {
+      "type": "string",
+      "enum": ["chore", "fix", "change", "feature"]
+    },
+    "source": {
+      "type": "object",
+      "required": ["base_sha", "harness_rules_version", "engine_version"],
+      "additionalProperties": false,
+      "properties": {
+        "base_sha": { "type": "string" },
+        "head_sha": { "type": ["string", "null"] },
+        "harness_rules_version": { "type": "string" },
+        "engine_version": { "type": "string" },
+        "task_ref": { "type": ["string", "null"] },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["purpose", "model_id"],
+            "additionalProperties": false,
+            "properties": {
+              "purpose": { "type": "string", "enum": ["classifier", "reviewer", "implementer"] },
+              "model_id": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "required": ["level", "confidence"],
+      "additionalProperties": false,
+      "properties": {
+        "level": { "type": "string", "enum": ["L0", "L1", "L2", "L3"] },
+        "confidence": { "type": "string", "enum": ["high", "medium", "low"] }
+      }
+    },
+    "vectors": {
+      "type": "object",
+      "required": ["v1_intent", "v2_security", "v3_topology"],
+      "additionalProperties": false,
+      "properties": {
+        "v1_intent": { "$ref": "#/definitions/VectorResult" },
+        "v2_security": { "$ref": "#/definitions/VectorResult" },
+        "v3_topology": { "$ref": "#/definitions/VectorResult" }
+      }
+    },
+    "governance": {
+      "type": "object",
+      "required": ["workflow_mode", "spec_approval", "implementation_review"],
+      "additionalProperties": false,
+      "properties": {
+        "workflow_mode": { "type": "string", "enum": ["single-pr", "spec-first"] },
+        "spec_approval": { "type": "string", "enum": ["not-applicable", "automatic", "human"] },
+        "implementation_review": { "type": "string", "enum": ["ai", "ai+human"] },
+        "auto_approval": { "type": "string", "enum": ["enabled", "disabled"] }
+      }
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "HARD_RULE_HIT",
+          "SOFT_SIGNAL_ESCALATION",
+          "SECURITY_BOUNDARY_POSSIBLE",
+          "IMPACT_SCOPE_NOT_FULLY_KNOWN",
+          "ESCALATED_IN_IMPL",
+          "AI_REVIEW_DISAGREEMENT",
+          "SPEC_GAP",
+          "SPEC_INTENT_MUTATION",
+          "TYPE_MISMATCH",
+          "NEEDS_INPUT",
+          "EVIDENCE_CONFLICT",
+          "GOVERNANCE_PLANE_CHANGE",
+          "NO_PRIOR_ASSESSMENT",
+          "WAIVER_APPLIED",
+          "DEFAULTED",
+          "RECORD_MISMATCH",
+          "HISTORY_REWRITTEN",
+          "RULES_VERSION_MISMATCH",
+          "SCHEMA_INVALID"
+        ]
+      }
+    },
+    "observations": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "transition": {
+      "type": "object",
+      "required": ["from_level", "to_level", "direction"],
+      "additionalProperties": false,
+      "properties": {
+        "from_level": { "type": ["string", "null"], "enum": ["L0", "L1", "L2", "L3", null] },
+        "to_level": { "type": "string", "enum": ["L0", "L1", "L2", "L3"] },
+        "direction": { "type": "string", "enum": ["initial", "up", "same", "down"] },
+        "triggers": { "type": "array", "items": { "type": "string" } },
+        "recovered_from_default": { "type": "boolean" },
+        "waiver": {
+          "type": ["object", "null"],
+          "properties": {
+            "approved_by": { "type": "string" },
+            "reason": { "type": "string" },
+            "expires_at": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "VectorResult": {
+      "type": "object",
+      "required": ["level", "confidence", "evidence", "unresolved", "mandatory_human_review", "no_signal"],
+      "additionalProperties": false,
+      "properties": {
+        "level": { "type": "string", "enum": ["L0", "L1", "L2", "L3"] },
+        "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "kind", "signal", "summary"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "kind": { "type": "string", "enum": ["repository_fact", "task_statement", "scanner_result", "rule_hit", "reviewer_finding"] },
+              "signal": { "type": "string", "enum": ["hard", "soft"] },
+              "summary": { "type": "string" },
+              "source": { "type": "string" },
+              "source_commit": { "type": "string" },
+              "rule_id": { "type": "string" }
+            }
+          }
+        },
+        "unresolved": { "type": "array", "items": { "type": "string" } },
+        "mandatory_human_review": { "type": "boolean" },
+        "no_signal": { "type": "boolean" }
+      }
+    }
+  }
+}

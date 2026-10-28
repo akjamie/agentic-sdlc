@@ -35,6 +35,11 @@ asdlc apply <CHANGE_ID> [--auto-pr] [--target-branch <ref>]
 - If `asdlc apply` fails: **STOP immediately**. Follow the provided hint (e.g. merge Spec PR or run `asdlc approve`).
 - If `asdlc apply` succeeds: Proceed to Step 2.
 
+> [!NOTE]
+> **Governance Level & Single PR Flow (L0 / L1)**:
+> For changes evaluated as `level: L0` or `level: L1`, prior merging of a Spec PR to the protected branch is waived. `asdlc apply` immediately unblocks local TDD implementation, allowing source code and spec delta to be submitted together in a Single PR.
+
+
 ### Step 2: Read `tasks.md` and Ground Context
 1. Open and read `openspec/changes/<CHANGE_ID>/tasks.md`.
 2. Inspect the spec requirements in `openspec/changes/<CHANGE_ID>/specs/**/*.md` to understand the acceptance criteria (`AC<n>`) and required test mappings (`(test: <path>)`).

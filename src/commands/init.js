@@ -94,15 +94,6 @@ export function initRepo(opts = {}) {
   }
   if (opts.hooks !== false) installHooks(repoRoot);
 
-  // 3.5) Platform policy (v6 §7.3): committed, CODEOWNERS-protected. Default only.
-  const policyDest = path.join(repoRoot, '.sdlc', 'policy.yaml');
-  if (exists(policyDest) && !opts.force) {
-    log.step('.sdlc/policy.yaml exists (use --force to reset)');
-  } else {
-    writeText(policyDest, readText(policyAssetFile));
-    log.ok('wrote .sdlc/policy.yaml (platform-owned; protect with CODEOWNERS)');
-  }
-
   // 3.6) Pre-provision remote governance labels if git remote & gh are available
   try {
     ensureRemoteLabels(repoRoot);

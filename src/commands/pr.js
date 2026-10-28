@@ -8,6 +8,8 @@ import { runLint } from './lint.js';
 import { runVerify } from './verify.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
+import { assess, renderLabels, renderPRComment } from '../assess/index.js';
+import { readEffectiveLevel } from '../lib/level.js';
 
 export const ASDLC_LABELS = {
   'asdlc:spec-review': {
@@ -88,6 +90,10 @@ export async function createPR(changeId, targetBranch, opts = {}) {
     .split(/\r?\n/).filter(Boolean);
   const hasSourceChanges = diffFiles.some((f) => !f.startsWith(`openspec/changes/${slug}/`));
 
+  const lvlMatch = metaText.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+  const changeLevel = lvlMatch ? lvlMatch[1].toUpperCase() : null;
+  const isSinglePr = changeLevel === 'L0' || changeLevel === 'L1';
+
   let prType;
   if (opts.type) {
     prType = opts.type.toLowerCase();
@@ -96,6 +102,7 @@ export async function createPR(changeId, targetBranch, opts = {}) {
     changeStatus === 'ready_for_impl' ||
     Boolean(specSha) ||
     currentBranch.startsWith('impl/') ||
+    (isSinglePr && hasSourceChanges) ||
     (hasSourceChanges && (checkedCount > 0 || uncheckedCount === 0))
   ) {
     prType = 'impl';
@@ -122,6 +129,7 @@ export async function createPR(changeId, targetBranch, opts = {}) {
       repoRoot,
       base: targetBranch,
       protectedBranch: targetBranch,
+      openingPr: true,
       ...opts,
     });
     if (verifyExit !== 0) {
@@ -200,7 +208,23 @@ ${proposalText}
 `;
   }
 
-  // 6. Multi-tier PR creation strategy:
+  // 6. Assessment Governance & PR Metadata
+  const assessment = assess({
+    stage: isSpec ? 'spec' : 'impl',
+    changeId: slug,
+    baseSha: targetBranch,
+    headSha: 'HEAD',
+    changedFiles: diffFiles,
+    repoRoot,
+    persist: false
+  });
+  const assessLabels = renderLabels(assessment);
+  const assessComment = renderPRComment(assessment);
+  const labelsToApply = Array.from(new Set([labelPrefix, secondaryLabel, ...assessLabels]));
+
+  body = `${body}\n\n---\n\n${assessComment}\n`;
+
+  // 7. Multi-tier PR creation strategy:
   // Tier 1: Platform CLI (gh / glab)
   // Tier 2: Direct REST API (GITHUB_TOKEN / GITLAB_TOKEN)
   // Tier 3: 1-click Web compare URL fallback
@@ -213,7 +237,7 @@ ${proposalText}
 
   // Pre-provision governance labels on remote before PR creation (so gh pr create doesn't reject unknown labels)
   if (remoteInfo?.isGitHub) {
-    ensureRemoteLabels(repoRoot, [labelPrefix, secondaryLabel]);
+    ensureRemoteLabels(repoRoot, labelsToApply);
   }
 
   // Attempt Tier 1: CLI (gh)
@@ -224,7 +248,7 @@ ${proposalText}
       '--body', body,
       '--base', targetBranch,
       '--head', currentBranch,
-      '--label', `${labelPrefix},${secondaryLabel}`,
+      '--label', labelsToApply.join(','),
     ], { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     prCreated = true;
     prUrl = out.trim();

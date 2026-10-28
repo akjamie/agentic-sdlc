@@ -111,7 +111,7 @@ export function upgradeSchema() {
       log.warn(`schema asset directory missing at ${schemaAssetDir}`);
       return false;
     }
-    const dest = installSchema();
+    const dest = installSchema({ force: true });
     log.ok(`refreshed schema v${builtinSchemaVersion()} -> ${dest}`);
     return true;
   } catch (err) {

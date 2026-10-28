@@ -31,6 +31,10 @@ export function installedSchemaDir(opts = {}) {
 // Install the BU-managed schema ONCE per machine (not per repo).
 export function installSchema(opts = {}) {
   const dest = installedSchemaDir(opts);
+  if (!opts.force && exists(dest)) {
+    const installed = readInstalledVersion(opts);
+    if (installed) return dest;
+  }
   removeDir(dest); // always replace -> no stale half-copies
   ensureDir(globalSchemasDir(opts));
   copyTree(schemaAssetDir, dest);
