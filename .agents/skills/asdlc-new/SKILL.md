@@ -11,8 +11,22 @@ This skill executes **Stage 2 (New)** of the Agentic SDLC. It transforms a natur
 
 ## Workflow Sequence
 
+### Step 0: Input Grounding & Ticket Resolution (Anti-Hallucination Guard)
+When the user invokes `/asdlc:new` or provides a task, check if it references a ticket ID or link (e.g. Jira key `PROJ-123`, Jira URL, GitHub Issue `#42`, or internal company tracker link):
+
+1. **Attempt Tool/Skill Resolution**:
+   - If you have an applicable skill, MCP tool, or CLI available (e.g. Jira skill, GitHub MCP, `gh issue view`), use it to retrieve the ticket title, description, and acceptance criteria.
+2. **Handle Inaccessible / Unresolvable Tickets (Mandatory Pause)**:
+   - If the ticket link or ID cannot be read or accessed (e.g. no integration tool installed, unauthorized/VPN required, 404 not found, or network error):
+     - 🛑 **PAUSE IMMEDIATELY**: Do NOT proceed to scaffold or write specs.
+     - ❌ **DO NOT GUESS OR INVENT REQUIREMENTS**: Hallucinating specifications without verified ground truth is strictly prohibited.
+     - ❓ **ASK THE USER DIRECTLY**: Halt and prompt the user:
+       > *"I see you referenced ticket/link `<ID/URL>`, but I'm unable to access your issue tracker directly. To ensure the specifications are trustworthy and accurate, could you please paste the ticket title, description, and any acceptance criteria here?"*
+3. **Proceed with Grounded Context**:
+   - Once the user supplies the ticket details or confirms the requirement in plain language, proceed to Step 1 using that grounded requirement text. (If ticket acceptance criteria were retrieved or pasted, carry them forward into `clarifications.md` in Step 3).
+
 ### Step 1: Scaffold Change & Refresh Graph
-When the user invokes `/asdlc:new "<requirement>"`:
+When the grounded requirement is established:
 
 ```powershell
 asdlc new "<requirement>" [--batch-grill] [--no-grill]
