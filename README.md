@@ -148,6 +148,9 @@ Enterprise teams rely on deterministic code, not agent compliance or prompt enth
 
 ## 🚀 Quickstart: 5-Minute Walkthrough
 
+> 🧭 **New to Agentic SDLC?**  
+> Follow our hands-on [**30-Minute Getting Started Guide (docs/getting-started.md)**](docs/getting-started.md) for a step-by-step walkthrough with copy-paste examples, AI grilling guidance, and expected CLI outputs from zero install to your first verified Spec PR!
+
 ### 1. Installation
 
 ```bash
@@ -309,13 +312,27 @@ node --test test/simulation.test.js
 
 ---
 
+## 📚 Documentation Center
+ 
+Explore the complete documentation in the [`docs/`](docs/) directory:
+ 
+- ⏱️ [**30-Minute Getting Started Guide**](docs/getting-started.md): Frictionless step-by-step tutorial from install to first Spec PR.
+- 📐 [**Spec Format & Lint Reference**](docs/spec-format.md): Human-readable guide to R0–R8 lint rules with pass/fail examples.
+- 🌐 [**Quickstart Guide (Bilingual)**](docs/quickstart.md): End-to-end walkthrough covering the complete 7-stage lifecycle.
+- 🏛️ [**System Architecture & Whitepaper**](docs/about.md): Why Agentic SDLC, L0–L3 governance, and cryptographic anti-tamper proofs.
+- 🩺 [**Environment Doctor Manual**](docs/doctor.md): Diagnostic reference for all 12 health checks and `--fix` automated healing.
+- ⌨️ [**CLI Command Reference**](docs/usage.md): Full flag, option, and exit code reference for all `asdlc` commands.
+- 📖 [**Standard Glossary**](docs/glossary.md): Authoritative lexicon for living specs, spec SHAs, and architectural god nodes.
+ 
+---
+ 
 ## 🤝 Community & Contributing
-
+ 
 We welcome contributions from developers, architects, and researchers advancing the state of Agentic Software Engineering!
-
+ 
 - **Contributing Guide**: Check out [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, development conventions, and PR expectations.
 - **Architectural Specs**: Read [docs/architecture.md](docs/architecture.md) for deep dives on the 3-plane model.
-- **Enterprise Blueprint**: Browse [docs/blueprint.html](docs/blueprint.html) (or [Chinese version](docs/blueprint.zh.html)) for enterprise deployment patterns.
+- **Documentation Index**: See [docs/README.md](docs/README.md) for the active documentation catalog.
 
 ---
 
