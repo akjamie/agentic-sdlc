@@ -8,30 +8,9 @@ import { git } from '../lib/git.js';
 import { ensureGraphify, buildGraph, ensureGitignore } from '../lib/graphify.js';
 import { refreshAgents } from '../lib/agents.js';
 import { ensureRemoteLabels } from './pr.js';
+import { detectTools, installSkills, installCommands } from '../lib/tools.js';
 
-// Directory -> OpenSpec tool id. We detect what the repo already uses so we can
-// wire OpenSpec's own agent commands/skills (we do NOT invent our own).
-const TOOL_DIRS = {
-  '.opencode': 'opencode',
-  '.claude': 'claude',
-  '.codex': 'codex',
-  '.pi': 'pi',
-  '.dsh': 'dsh',
-  '.cursor': 'cursor',
-  '.gemini': 'gemini',
-  '.qwen': 'qwen',
-  '.trae': 'trae',
-  '.zed': 'zed',
-  '.windsurf': 'windsurf',
-  '.devin': 'devin',
-  '.agents': 'agents',
-};
-
-export function detectTools(repoRoot) {
-  return Object.entries(TOOL_DIRS)
-    .filter(([dir]) => exists(path.join(repoRoot, dir)))
-    .map(([, id]) => id);
-}
+export { detectTools, installSkills, installCommands };
 
 export function initRepo(opts = {}) {
   const repoRoot = path.resolve(opts.repoRoot ?? process.cwd());
@@ -115,11 +94,12 @@ export function initRepo(opts = {}) {
     }
   }
 
-  // 4.5) Bundled Agent Skills: install out-of-the-box skills (grilling, asdlc-apply)
-  //      into the project's agent tools directory (.agents/skills, .claude/skills, etc.)
+  // 4.5) Bundled Agent Skills & Slash Commands: install out-of-the-box skills and
+  //      slash command parity into detected agent tools (.claude, .opencode, .pi, .agents, .github, etc.)
   const explicitTools = opts.tools ? opts.tools.split(',').map((s) => s.trim().toLowerCase()) : [];
   const allTools = [...new Set([...detectTools(repoRoot), ...explicitTools])];
   installSkills(repoRoot, allTools);
+  installCommands(repoRoot, allTools);
 
   // 5) AGENTS.md: the routing layer the agentic IDE reads (workflow + system
   //    status derived from the graph). Written after the graph so status has nodes.
@@ -133,36 +113,6 @@ export function initRepo(opts = {}) {
   log.info('  3. after the spec PR merges: asdlc approve <CHANGE-ID>');
   log.info('  4. implementation PR:  asdlc verify <CHANGE-ID> --repo <name>');
   return repoRoot;
-}
-
-// All supported tools and their skills directory name (tools that use a 'skills/' subdir convention)
-const TOOL_SKILLS_DIRS = {
-  claude: '.claude',
-  opencode: '.opencode',
-  pi: '.pi',
-  dsh: '.dsh',
-  cursor: '.cursor',
-  gemini: '.gemini',
-  windsurf: '.windsurf',
-  trae: '.trae',
-  codex: '.codex',
-  zed: '.zed',
-};
-
-export function installSkills(repoRoot, tools = []) {
-  if (!exists(skillsAssetDir)) return;
-  const targetDirs = ['.agents'];
-  for (const t of tools) {
-    const key = String(t).toLowerCase().replace(/^\./, '');
-    if (TOOL_SKILLS_DIRS[key]) targetDirs.push(TOOL_SKILLS_DIRS[key]);
-    else if (key) targetDirs.push(`.${key}`);
-  }
-  const count = listDir(skillsAssetDir).filter((d) => d.isDirectory()).length;
-  for (const dir of new Set(targetDirs)) {
-    const dest = path.join(repoRoot, dir, 'skills');
-    copyTree(skillsAssetDir, dest);
-    log.ok(`installed bundled skills (${count} skills) -> ${dir}/skills/`);
-  }
 }
 
 export function installHooks(repoRoot) {

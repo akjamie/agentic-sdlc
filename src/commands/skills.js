@@ -7,19 +7,7 @@ import { detectTools, installSkills } from './init.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
 
-// Standard agent tools and their home/global directories
-const GLOBAL_TOOL_DIRS = {
-  agents: '.agents',
-  opencode: '.opencode',
-  pi: '.pi',
-  dsh: '.dsh',
-  claude: '.claude',
-  cursor: '.cursor',
-  codex: '.codex',
-  trae: '.trae',
-  zed: '.zed',
-  gemini: '.gemini',
-};
+import { TOOL_REGISTRY, getToolDefinition } from '../lib/tools.js';
 
 /**
  * Parse YAML frontmatter from a SKILL.md file
@@ -84,18 +72,18 @@ export function installGlobalSkills(opts = {}) {
     const requested = opts.tools.split(',').map((t) => t.trim().toLowerCase());
     for (const tool of requested) {
       if (tool === 'all') {
-        Object.values(GLOBAL_TOOL_DIRS).forEach((dir) => targets.add(dir));
+        Object.values(TOOL_REGISTRY).forEach((t) => targets.add(t.detectDir));
       } else {
-        const clean = tool.replace(/^\./, '');
-        targets.add(GLOBAL_TOOL_DIRS[clean] || `.${clean}`);
+        const def = getToolDefinition(tool);
+        targets.add(def ? def.detectDir : `.${tool.replace(/^\./, '')}`);
       }
     }
   } else {
     // If no explicit tools given, always install to .agents (universal)
     // plus any detected tool directories present in home
-    for (const [tool, dir] of Object.entries(GLOBAL_TOOL_DIRS)) {
-      if (exists(path.join(home, dir))) {
-        targets.add(dir);
+    for (const tool of Object.values(TOOL_REGISTRY)) {
+      if (exists(path.join(home, tool.detectDir))) {
+        targets.add(tool.detectDir);
       }
     }
   }

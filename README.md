@@ -314,6 +314,7 @@ node --test test/simulation.test.js
 We welcome contributions from developers, architects, and researchers advancing the state of Agentic Software Engineering!
 
 - **Contributing Guide**: Check out [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, development conventions, and PR expectations.
+- **IDE Slash-Command Parity**: First-class slash commands (`/asdlc-*`) across Claude Code, OpenCode, Pi, Antigravity, GitHub Copilot, Cursor, Trae, and Windsurf (see [docs/usage.md](docs/usage.md)).
 - **Architectural Specs**: Read [docs/architecture.md](docs/architecture.md) for deep dives on the 3-plane model.
 - **Enterprise Blueprint**: Browse [docs/blueprint.html](docs/blueprint.html) (or [Chinese version](docs/blueprint.zh.html)) for enterprise deployment patterns.
 
