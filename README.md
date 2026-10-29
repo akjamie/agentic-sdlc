@@ -316,7 +316,7 @@ We welcome contributions from developers, architects, and researchers advancing 
 - **Contributing Guide**: Check out [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, development conventions, and PR expectations.
 - **Specification & Linting Reference**: Read [docs/spec-format.md](docs/spec-format.md) for R0–R8 pass/fail examples, BDD rules, and troubleshooting remedies.
 - **Architectural Specs**: Read [docs/architecture.md](docs/architecture.md) for deep dives on the 3-plane model.
-- **Enterprise Blueprint**: Browse [docs/blueprint.html](docs/blueprint.html) (or [Chinese version](docs/blueprint.zh.html)) for enterprise deployment patterns.
+- **Enterprise Blueprint**: Browse [docs/blueprint.md](docs/blueprint.md) (or [Chinese version](docs/blueprint.zh.md)) for enterprise deployment patterns.
 
 ---
 

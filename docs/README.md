@@ -23,7 +23,7 @@
 
 以下文档属于系统演进过程中的阶段性方案手稿与历史评审备忘录，供架构溯源参考：
 
-- **`blueprint.html` / `blueprint.zh.html`**:  
-  早期蓝图（Blueprint v10）的编译单页 HTML 设计手稿。核心原则与当前版本保持一致，但其主要内容已结构化提炼至 [about.md](./about.md) 与 [architecture.md](./architecture.md)。
+- **[`blueprint.md`](./blueprint.md) / [`blueprint.zh.md`](./blueprint.zh.md)**:  
+  早期蓝图（Blueprint v10）的设计手稿（已全面转为 Markdown）。核心原则与当前版本保持一致，其主要内容已结构化提炼至 [about.md](./about.md) 与 [architecture.md](./architecture.md)。
 - **`solution-review.md`**:  
   项目初期（2026-10-09）的顾问视角评审备忘录（Gap Analysis Review）。文中提出的文档分散等历史问题现已在当前版本中全部解决。日常研发使用请以本索引推荐的活跃文档为主。
