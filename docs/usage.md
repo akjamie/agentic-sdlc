@@ -68,7 +68,7 @@ This one command:
 - `/asdlc-new` — Stage 1/2: Grounding, high-signal grilling interview, settle clarifications, author specs.
 - `/asdlc-lint` — Stage 3: Deterministic BDD & AC quality checks (R0–R8).
 - `/asdlc-pr` — Stage 3.5: Automated Spec/Impl PR generation with governance labels.
-- `/asdlc-approve` — Stage 4: Cryptographic `specSha` lock & transition to `READY_FOR_IMPL`.
+- `/asdlc-approve` — Stage 4: Git-anchored `specSha` lock & transition to `READY_FOR_IMPL`.
 - `/asdlc-apply` — Stage 5: Guarded task-level TDD implementation loop.
 - `/asdlc-test` — Stage 5.5: Execute AC test runners mapped to requirements.
 - `/asdlc-verify` — Stage 6: Audit 12 enterprise quality gates.
@@ -143,13 +143,13 @@ IDE using task-level TDD + converge.
 # Local TDD validation: run tests mapped from change specs
 asdlc test TECH-1234
 
-# CI gate execution: output structured JSON for AI review
+# Independent review / CI gate execution: output structured JSON for AI review
 asdlc test TECH-1234 --json
 ```
 
 Executes all test files mapped via `(test: <path>)` in `specs/**/*.md`.
 - **Local TDD**: Agents run it locally to verify red-to-green transitions.
-- **CI Gate**: CI Implementation Review executes it independently to enforce **Player ≠ Referee** (blocking PR merge if any test fails).
+- **Independent Review / CI Gate**: `asdlc-impl-review` (run by an independent review agent or PR automation) executes it independently to enforce **Player ≠ Referee** (blocking merge if any test fails).
 
 ### 6. Verify — `asdlc verify <ID>`
 

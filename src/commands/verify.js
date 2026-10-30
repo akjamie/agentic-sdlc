@@ -11,7 +11,7 @@ import { checkSchema } from '../lib/schema.js';
 import { loadPolicy, isAdvisory, DEFAULT_POLICY, matchesAny } from '../lib/policy.js';
 import { classifyPR } from '../lib/prtype.js';
 import { isSinglePrLevel, requiresHumanReview, readChangeLevel, readEffectiveLevel } from '../lib/level.js';
-import { assess, renderCheckSummary, loadInitialAssessment } from '../assess/index.js';
+import { assess, renderCheckSummary, loadRiskHistory } from '../assess/index.js';
 import { checkTestPresence, checkTaskEvidence } from '../lib/tdd.js';
 import { log, dim } from '../lib/log.js';
 
@@ -22,15 +22,27 @@ import { log, dim } from '../lib/log.js';
 function meta(repoRoot, changeId) {
   const p = path.join(changeDir(repoRoot, toChangeSlug(changeId)), '.openspec.yaml');
   if (!exists(p)) return {};
-  const text = readText(p);
-  const sha = text.match(/^\s*specSha:\s*['"]?([^\s'"]+)['"]?\s*$/m);
-  const status = text.match(/^\s*status:\s*['"]?([^\s'"]+)['"]?\s*$/m);
-  const lvl = text.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
-  return {
-    specSha: sha ? sha[1] : null,
-    status: status ? status[1] : null,
-    level: lvl ? lvl[1].toUpperCase() : null,
-  };
+  try {
+    const data = readYaml(p) ?? {};
+    return {
+      specSha: data.specSha ? String(data.specSha) : null,
+      status: data.status ? String(data.status) : null,
+      level: data.level ? String(data.level).toUpperCase() : null,
+      escalatedInImpl: data.escalatedInImpl === true || String(data.escalatedInImpl).toLowerCase() === 'true',
+    };
+  } catch {
+    const text = readText(p);
+    const sha = text.match(/^\s*specSha:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+    const status = text.match(/^\s*status:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+    const lvl = text.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+    const esc = text.match(/^\s*escalatedInImpl:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+    return {
+      specSha: sha ? sha[1] : null,
+      status: status ? status[1] : null,
+      level: lvl ? lvl[1].toUpperCase() : null,
+      escalatedInImpl: esc ? esc[1].toLowerCase() === 'true' : false,
+    };
+  }
 }
 
 function readYamlConfig(repoRoot) {
@@ -133,15 +145,27 @@ export function runVerify(changeId, opts = {}) {
   } else {
     add('level-integrity', 'pass', `conforms to recorded history (${effLevel?.effectiveLevel || 'L1'})`);
   }
-  const { specSha, status } = meta(repoRoot, changeId);
-  const changeLevel = effLevel?.effectiveLevel || meta(repoRoot, changeId).level || null;
+  const metaInfo = meta(repoRoot, changeId);
+  const { specSha, status } = metaInfo;
+  const changeLevel = effLevel?.effectiveLevel || metaInfo.level || null;
 
   const changedFiles = (git(['diff', '--name-only', `${base}...${head}`], repoRoot, { allowFail: true }) ?? '')
     .split(/\r?\n/).filter(Boolean);
   const changeOnMain = changeOnRef(repoRoot, branch, slug);
-  const initialAss = loadInitialAssessment(repoRoot, slug);
-  const wasInitialSinglePr = initialAss && isSinglePrLevel(initialAss.risk?.level);
-  const isSinglePr = Boolean(wasInitialSinglePr || isSinglePrLevel(changeLevel));
+
+  // Single-PR privilege applies ONLY if the change is currently L0/L1 OR legitimately entered
+  // implementation as L0/L1 and escalated strictly during `impl` (NOT during `new`/`spec`).
+  let history = [];
+  try { history = loadRiskHistory(repoRoot, slug); } catch { /* handled by readEffectiveLevel */ }
+  const preImplRecords = history.filter((r) => r.stage === 'new' || r.stage === 'spec');
+  const escalatedOnlyInImpl = Boolean(
+    metaInfo.escalatedInImpl ||
+    (history.length > 0 &&
+      preImplRecords.length > 0 &&
+      preImplRecords.every((r) => isSinglePrLevel(r.risk?.level)) &&
+      history.some((r) => r.stage === 'impl' && !isSinglePrLevel(r.risk?.level)))
+  );
+  const isSinglePr = Boolean(isSinglePrLevel(changeLevel) || escalatedOnlyInImpl);
 
   const pr = classifyPR({ changedFiles, changeOnMain, policy, emergency: opts.emergency, level: changeLevel, repoRoot, singlePr: isSinglePr });
   add('pr-type', pr.type === 'invalid' ? 'fail' : 'pass', `type=${pr.type} (${pr.reason})`);
@@ -157,7 +181,7 @@ export function runVerify(changeId, opts = {}) {
   const approvedSha = lastCommitTouching(repoRoot, branch, lockedPaths);
   if (effLevel?.tampered) {
     add('approved-spec', 'fail', 'governance level tampered: declared level is lower than history');
-  } else if (isSinglePrLevel(changeLevel) || wasInitialSinglePr) {
+  } else if (isSinglePr) {
     add('approved-spec', 'pass', `${changeLevel || 'single-pr'} single-PR mode (spec approval co-located in implementation PR)`);
   } else if (!approvedSha) {
     add('approved-spec', 'fail', `no commit on locked paths is merged into ${branch} (not approved)`);
@@ -169,13 +193,13 @@ export function runVerify(changeId, opts = {}) {
 
   // Lightweight tamper guard: in a two-phase implementation PR, locked spec files MUST NOT be modified
   const lockedModified = changedFiles.filter((f) => matchesAny(f, policy?.locked_paths ?? DEFAULT_POLICY.locked_paths));
-  if (!isSinglePrLevel(changeLevel) && !wasInitialSinglePr && pr.type === 'impl' && lockedModified.length > 0) {
+  if (!isSinglePr && pr.type === 'impl' && lockedModified.length > 0) {
     add('spec-tamper', 'fail', `${lockedModified.length} locked spec file(s) modified in implementation PR (${lockedModified.join(', ')})`);
   } else {
     add('spec-tamper', 'pass', 'locked spec paths unmodified');
   }
 
-  if (isSinglePrLevel(changeLevel) || wasInitialSinglePr) {
+  if (isSinglePr) {
     add('flow-state', 'pass', `${changeLevel || 'single-pr'} single-PR mode (direct implementation)`);
   } else {
     add('flow-state', status === 'ready_for_impl' ? 'pass' : 'fail',
@@ -197,9 +221,12 @@ export function runVerify(changeId, opts = {}) {
   });
 
   const effectiveLevel = assessment.risk.level;
-  const isEscalated = assessment.verdict === 'escalated' || (effLevel?.declaredLevel && effLevel.declaredLevel !== effectiveLevel && effectiveLevel !== 'L1');
+  const isEscalatedInImpl = Boolean(
+    (assessment.reason_codes || []).includes('ESCALATED_IN_IMPL') ||
+    (isSinglePr && !isSinglePrLevel(effectiveLevel))
+  );
 
-  if (isEscalated) {
+  if (isEscalatedInImpl) {
     // Synchronize .openspec.yaml on in-place escalation (local runs only, avoid dirtying tree in CI)
     const metaPath = path.join(cdir, '.openspec.yaml');
     if (!isCI && !opts.openingPr && exists(metaPath)) {

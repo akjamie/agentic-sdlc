@@ -15,24 +15,28 @@
 
 ---
 
-## ⚡ The Dilemma: "Vibe Coding" vs. "Enterprise Bureaucracy"
+## ⚡ The AI Software Engineering Bottleneck Shift
 
-Autonomous AI coding agents (Claude Code, Cursor, OpenCode, Codex) are transforming software delivery. But engineering leads face a frustrating dilemma:
+AI coding agents (Claude Code, Cursor, OpenCode, Codex) write hundreds of lines of code in seconds. However, as code generation cost approaches zero, the engineering bottleneck shifts to **three predictable modes of failure in real-world codebases**:
 
 ```
-              UNGOVERNED "VIBE CODING"             RIGID "ALWAYS TWO-PR" FRAMEWORKS
-               (Chaos & Silent Drift)                   (Suffocating Bureaucracy)
-            ┌───────────────────────────┐            ┌───────────────────────────┐
-            │ 💥 Hallucinated contracts │            │ 🐌 2 PRs for a 1-line doc │
-            │ 💥 Code shipped w/o tests │    VS      │ 🐌 45-min review for typo │
-            │ 💥 Agents rewrite specs   │            │ 🐌 Dev velocity tanks     │
-            │ 💥 Self-grading exams     │            │ 🐌 Agents circumvent tool │
-            └───────────────────────────┘            └───────────────────────────┘
+                       HOW AUTONOMOUS AI AGENTS DRIFT IN PRODUCTION
+ ┌───────────────────────────┐  ┌───────────────────────────┐  ┌───────────────────────────┐
+ │ 1. Guessing on Ambiguity  │  │ 2. Reward-Hacking Exams   │  │ 3. Review Fatigue Chaos   │
+ ├───────────────────────────┤  ├───────────────────────────┤  ├───────────────────────────┤
+ │ Agents guess architecture │  │ When tests or edge cases  │  │ Tech Leads are flooded    │
+ │ and schema assumptions    │  │ fail, agents weaken test  │  │ with 500-line AI diffs    │
+ │ silently across 15 files  │  │ assertions or modify specs│  │ lacking verified intent,  │
+ │ instead of clarifying.    │  │ to force green builds.    │  │ tests, or rationale.      │
+ └───────────────────────────┘  └───────────────────────────┘  └───────────────────────────┘
 ```
+
+> **Why prompts alone (`AGENTS.md`, `CLAUDE.md`) cannot fix this:**  
+> Prompts are **suggestions**, not gates. An autonomous agent under token pressure will prioritize getting code written over adherence to instructions. True governance requires **deterministic exit-coded gates and independent verification agents**.
 
 ### The Solution: Adaptive Dual-Track SDLC (`asdlc`)
 
-`agentic-sdlc` bridges this gap with an **Intelligent, Neuro-Symbolic Governance Plane**:
+`agentic-sdlc` bridges this gap with an **Intelligent, Adaptive Governance Plane**:
 - 🚀 **Frictionless Agility for Routine Work (L0 / L1)**: Pure test additions, documentation updates, and bounded local refactors run in a streamlined **Single-PR** mode with automated validation and zero red tape.
 - 🛡️ **Ironclad Rigor for High-Impact Changes (L2 / L3)**: Cross-boundary APIs (Spring Boot, FastAPI, Go, NestJS), database schemas, security tokens, and constitutional rules enforce **Dual-PR Spec-First** contracts with human sign-off.
 - 🤝 **Humane In-Place Scope Escalation**: If scope unexpectedly expands during implementation, the system **never punishes the engineer** by ripping their Git branch apart. It maintains the single PR in-place, revokes auto-merge, and routes to a Tech Lead for human review.
@@ -41,7 +45,7 @@ Autonomous AI coding agents (Claude Code, Cursor, OpenCode, Codex) are transform
 
 ## 🧭 Adaptive Risk-Tiered Governance (L0–L3)
 
-Every change evaluated by `asdlc` is continuously assessed along its lifecycle across 5 orthogonal risk vectors (Intent, Architecture/API, Security/Data, AST Topology, and Test/Doc Semantics).
+Every change evaluated by `asdlc` is continuously assessed along its lifecycle across core risk vectors (Task Intent, Security/Data Boundaries, and AST Topology/Architecture).
 
 ```mermaid
 flowchart TD
@@ -63,7 +67,7 @@ flowchart TD
         T_L2 --> DP1["Spec PR to main<br/>(asdlc pr spec)"]
         T_L3 --> DP1
         DP1 --> G_SPEC["CI Spec Review & Human TL Approval"]
-        G_SPEC --> S_LOCK["approvedSha Cryptographic Lock<br/>(asdlc approve)"]
+        G_SPEC --> S_LOCK["approvedSha Git SHA Lock<br/>(asdlc approve)"]
         S_LOCK --> DP2["Implementation Unlocked<br/>(asdlc apply)"]
         DP2 --> DP3["Task-Level TDD Red-Green Loop<br/>(asdlc test)"]
         DP3 --> PR_IMPL["Implementation PR to main<br/>(Human Tech Lead Final Gate)"]
@@ -102,12 +106,12 @@ flowchart TD
 
 ## 🛡️ Non-Negotiable Engineering Invariants
 
-Enterprise teams rely on deterministic code, not agent compliance or prompt enthusiasm. Every invariant is backed by cryptographic proofs or exit-coded engines:
+Enterprise teams rely on deterministic code, not agent compliance or prompt enthusiasm. Every invariant is backed by Git-anchored proofs, hash-chain integrity, or exit-coded engines:
 
 | # | Enterprise Invariant | How `asdlc` Enforces It | Failure Mode |
 | :-: | :--- | :--- | :--- |
 | **1** | **No Apply Before Spec Approval (L2/L3)** | `asdlc apply` physically inspects path-limited Git history for `approvedSha` on `main`. | 🚫 **Hard Refusal** — Zero production code allowed without an approved spec. |
-| **2** | **Cryptographic Anti-Tamper (`spec-tamper`)** | Implementation diffs must NOT modify locked spec files once approved on `main`. | 🚫 **Instant Rejection** — Agents cannot alter requirements to make failing tests pass. |
+| **2** | **Git-Anchored Anti-Tamper (`spec-tamper`)** | Implementation diffs must NOT modify locked spec files once approved on `main`. | 🚫 **Instant Rejection** — Agents cannot alter requirements to make failing tests pass. |
 | **3** | **Anti-Gaming Hash Chain** | Every level transition is sealed in an append-only, SHA-256 hash-chained `risk-history.jsonl`. | 🚫 **Integrity Breach** — Manual downgrades (`L2 -> L1`) are detected and blocked. |
 | **4** | **AI Classifier Invariant Defense** | AI semantic classifier output is validated against hard mathematical expectations. | 🚫 **Evasion Shield** — Prompts claiming a `DROP TABLE` is "just a test" are vetoed to L3. |
 | **5** | **Zero Untested Code (`test-presence`)** | Any change touching production source code (`src/**`, `app/**`) requires test diffs. | 🚫 **Rejection** — Stops AI "code dumps" without corresponding test coverage. |
@@ -140,7 +144,7 @@ Enterprise teams rely on deterministic code, not agent compliance or prompt enth
 │ ├─ assess/    Neuro-symbolic risk evaluation & hash-chain history     │
 │ ├─ speclint/  R0–R8 BDD/AC linting & scenario coverage traceability   │
 │ ├─ graphify/  Knowledge graph & code AST topology discovery           │
-│ └─ verify/    12 cryptographic & structural quality gates              │
+│ └─ verify/    12 deterministic & structural quality gates              │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -220,11 +224,11 @@ asdlc pr user-auth main
 | [`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Scaffolds change, queries AST hubs, runs conversational anti-fatigue `grill-me`. |
 | [`asdlc-lint`](assets/skills/asdlc-lint/SKILL.md) | Enforces deterministic BDD GIVEN/WHEN/THEN and R5 scenario-to-AC coverage. |
 | [`asdlc-pr`](assets/skills/asdlc-pr/SKILL.md) | Smart PR dispatcher: automatically handles Spec PR vs. Implementation PR. |
-| [`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md) | Stamps cryptographic `specSha` lock upon Spec PR merge. |
+| [`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md) | Stamps Git `specSha` lock upon Spec PR merge. |
 | [`asdlc-apply`](assets/skills/asdlc-apply/SKILL.md) | Strict task-level TDD engine (`Red -> Green -> Refactor -> Evidence -> Converge`). |
 | [`asdlc-verify`](assets/skills/asdlc-verify/SKILL.md) | Pre-flight audit across 12 gates (test presence, evidence, tamper guard, schema). |
-| [`asdlc-spec-review`](assets/skills/asdlc-spec-review/SKILL.md) | CI-triggered 6-dimensional spec review before human lead approval. |
-| [`asdlc-impl-review`](assets/skills/asdlc-impl-review/SKILL.md) | CI-triggered Player ≠ Referee implementation reviewer with Anthropic convergence rules. |
+| [`asdlc-spec-review`](assets/skills/asdlc-spec-review/SKILL.md) | Independent review agent: 6-dimensional spec review before human lead approval. |
+| [`asdlc-impl-review`](assets/skills/asdlc-impl-review/SKILL.md) | Independent review agent: Player ≠ Referee verification with test execution and Anthropic convergence rules. |
 | [`asdlc-archive`](assets/skills/asdlc-archive/SKILL.md) | Syncs specs to living catalog, refreshes AST graph, and updates system status. |
 | [`asdlc-doctor`](assets/skills/asdlc-doctor/SKILL.md) | 12-invariant diagnostic engine with 1-click automated remediation (`--fix`). |
 | [`asdlc-status`](assets/skills/asdlc-status/SKILL.md) | Real-time change lifecycle dashboard and next actionable command guidance. |
@@ -239,7 +243,7 @@ Every implementation diff must pass the 12 deterministic gates in `asdlc verify`
 flowchart TD
     V["<b>asdlc verify &lt;ID&gt;</b><br/>Deterministic Implementation Gatekeeper"]
 
-    subgraph TIER1 ["Tier 1 · Cryptographic & Contract Integrity"]
+    subgraph TIER1 ["Tier 1 · Contract & Hash-Chain Integrity"]
         G_APPROVED["<b>approved-spec</b><br/>Matches commit on main"]
         G_TAMPER["<b>spec-tamper</b><br/>Zero spec modifications in Impl PR"]
         G_LEVEL["<b>level-integrity</b><br/>Hash-chain tamper check"]
@@ -319,7 +323,7 @@ Explore the complete documentation in the [`docs/`](docs/) directory:
 - ⏱️ [**30-Minute Getting Started Guide**](docs/getting-started.md): Frictionless step-by-step tutorial from install to first Spec PR.
 - 📐 [**Spec Format & Lint Reference**](docs/spec-format.md): Human-readable guide to R0–R8 lint rules with pass/fail examples.
 - 🌐 [**Quickstart Guide (Bilingual)**](docs/quickstart.md): End-to-end walkthrough covering the complete 7-stage lifecycle.
-- 🏛️ [**System Architecture & Whitepaper**](docs/about.md): Why Agentic SDLC, L0–L3 governance, and cryptographic anti-tamper proofs.
+- 🏛️ [**System Architecture & Whitepaper**](docs/about.md): Why Agentic SDLC, L0–L3 governance, and Git SHA anti-tamper locks.
 - 🩺 [**Environment Doctor Manual**](docs/doctor.md): Diagnostic reference for all 12 health checks and `--fix` automated healing.
 - ⌨️ [**CLI Command Reference**](docs/usage.md): Full flag, option, and exit code reference for all `asdlc` commands.
 - 📖 [**Standard Glossary**](docs/glossary.md): Authoritative lexicon for living specs, spec SHAs, and architectural god nodes.

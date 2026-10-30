@@ -34,28 +34,8 @@ export function newChange(requirement, opts = {}) {
   // Determine grill mode: 'none' (--no-grill), 'batch' (--batch-grill), or 'interactive' (default grill-me)
   const grillMode = opts.grill === false ? 'none' : (opts.batchGrill ? 'batch' : 'interactive');
 
-  // Infer governance level (L0, L1, L2, L3) via unified assessment engine
-  const { level, changeType, workflowMode, reason: levelReason } = inferInitialLevel({
-    requirement,
-    explicitLevel: opts.level,
-    repoRoot,
-    changeId: slug
-  });
-
-  // Record requirement, grill mode, and governance level in change metadata (.openspec.yaml)
-  const metaPath = path.join(cdir, '.openspec.yaml');
-  if (exists(metaPath)) {
-    const existing = readText(metaPath).trimEnd();
-    writeText(metaPath, `${existing}\nrequirement: ${JSON.stringify(requirement)}\ngrillMode: "${grillMode}"\nchangeType: "${changeType}"\nworkflowMode: "${workflowMode}"\nlevel: "${level}"\nlevelReason: ${JSON.stringify(levelReason)}\n`);
-  }
-
-  if (workflowMode === 'single-pr') {
-    log.ok(`assigned governance level: ${level} [Type: ${changeType}] (${levelReason}) - [Single PR mode: code & specs in one PR]`);
-  } else {
-    log.ok(`assigned governance level: ${level} [Type: ${changeType}] (${levelReason}) - [Spec-first mode: Spec PR required before implementation]`);
-  }
-
-  const g = ensureGraphify();
+  // Grounding in knowledge graph (explore.md) before assessing initial risk level
+  const g = ensureGraphify({ autoInstall: false });
   if (!g.installed) {
     log.warn('[WARN] explore.md generated without graph context (Graphify not installed). Run `asdlc init --graph` to enable architectural AST index.');
     const fallbackMd = `# Explore: ${slug}
@@ -114,6 +94,27 @@ _(unavailable - graph query error)_
       writeText(path.join(cdir, 'explore.md'), fallbackMd);
       log.ok(`wrote explore.md (fallback with error note)`);
     }
+  }
+
+  // Infer governance level (L0, L1, L2, L3) via unified assessment engine (grounded in explore.md)
+  const { level, changeType, workflowMode, reason: levelReason } = inferInitialLevel({
+    requirement,
+    explicitLevel: opts.level,
+    repoRoot,
+    changeId: slug
+  });
+
+  // Record requirement, grill mode, and governance level in change metadata (.openspec.yaml)
+  const metaPath = path.join(cdir, '.openspec.yaml');
+  if (exists(metaPath)) {
+    const existing = readText(metaPath).trimEnd();
+    writeText(metaPath, `${existing}\nrequirement: ${JSON.stringify(requirement)}\ngrillMode: "${grillMode}"\nchangeType: "${changeType}"\nworkflowMode: "${workflowMode}"\nlevel: "${level}"\nlevelReason: ${JSON.stringify(levelReason)}\n`);
+  }
+
+  if (workflowMode === 'single-pr') {
+    log.ok(`assigned governance level: ${level} [Type: ${changeType}] (${levelReason}) - [Single PR mode: code & specs in one PR]`);
+  } else {
+    log.ok(`assigned governance level: ${level} [Type: ${changeType}] (${levelReason}) - [Spec-first mode: Spec PR required before implementation]`);
   }
 
   // Seed the grilling interview / clarification record.

@@ -40,7 +40,10 @@ The CLI:
    - **Default (conversational)**: Runs high-signal, recommendation-led `grill-me` (1 material decision at a time).
    - **`--batch-grill`**: Evaluates the entire design tree and presents the active frontier in structured batches.
    - **`--no-grill`**: Bypasses interactive grilling for self-evident fixes and pre-aligned tasks.
-5. **Technical Design Auto-Detection**: If the requirement touches UI/UX, frontend, APIs, services, databases, or architecture (or if `--design` is passed), seeds `design.md` with enterprise-grade technical design scaffolding.
+5. **Agent-Native Semantic Grounding**:
+   - As an AI agent in an active reasoning session, evaluate the true architectural and security intent of the requirement.
+   - If the requirement touches APIs, schemas, or destructive operations, record your agent evaluation into `openspec/changes/<SLUG>/.agent-assess.json` (e.g. `{"classification":"api_contract","rationale":"..."}`). The governance engine reads this alongside Graphify AST hubs to enforce accurate risk tiers without developer gaming.
+6. **Technical Design Auto-Detection**: If the requirement touches UI/UX, frontend, APIs, services, databases, or architecture (or if `--design` is passed), seeds `design.md` with enterprise-grade technical design scaffolding.
 
 > [!IMPORTANT]
 > **NO PAUSE / CONTINUOUS EXECUTION**: Do NOT stop after `asdlc new` to ask the author "Should I start grilling?".
@@ -131,7 +134,7 @@ Once `## Open questions` in `clarifications.md` is empty, author the change docu
 4. **Review Provenance (Player $\ne$ Referee)**:
    - The authoring agent MUST NOT approve its own spec.
    - Do NOT stamp `review.md` with self-approval.
-   - Independent AI review (`asdlc:spec-review`) is executed automatically on the Spec PR by CI.
+   - Independent AI review (`asdlc:spec-review`) is executed by an independent review agent (locally or via PR automation).
    - Formal approval is given by the human lead via PR merge or `asdlc approve <SLUG>`.
 
 ### Step 5: Transition to Lint

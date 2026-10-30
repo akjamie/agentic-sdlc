@@ -92,3 +92,22 @@ test('REMOVED requirement needs a Reason (R8, major)', () => {
   const t = `${GOOD}\n## REMOVED Requirements\n\n### Requirement: Legacy\nNo reason here.\n`;
   assert.ok(codes(t).includes('R8-removed-reason'));
 });
+
+test('docs/getting-started.md: specification snippet complies with speclint rules', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const docPath = path.resolve(process.cwd(), 'docs/getting-started.md');
+  const tutorial = fs.readFileSync(docPath, 'utf8');
+  const match = tutorial.match(/# Capability: Auth Login Rate Limiting[\s\S]*?```/);
+  assert.ok(match, 'getting-started.md must contain the sample spec.md');
+  const specText = match[0].replace(/```$/, '').trim();
+  const findings = lintSpecText(specText);
+  const blockers = countBlockers(findings);
+  assert.equal(blockers, 0, `getting-started.md spec snippet must have 0 blockers, found: ${JSON.stringify(findings)}`);
+});
+
+test('speclint: handles CRLF line endings without false-positive R5-ac blocker', () => {
+  const crlfSnippet = GOOD.replace(/\n/g, '\r\n');
+  const findings = lintSpecText(crlfSnippet);
+  assert.equal(countBlockers(findings), 0, `CRLF spec snippet must have 0 blockers, found: ${JSON.stringify(findings)}`);
+});

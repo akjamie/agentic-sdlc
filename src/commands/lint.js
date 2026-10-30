@@ -1,8 +1,9 @@
 import path from 'node:path';
-import { exists, readText, walkFiles } from '../lib/fs.js';
+import { exists, readText, writeText, walkFiles } from '../lib/fs.js';
 import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug, readLintConfig, jsonOut } from '../lib/cliutil.js';
 import { lintSpecText, countBlockers } from '../lib/speclint.js';
+import { assess } from '../assess/index.js';
 import { log, dim } from '../lib/log.js';
 
 // THE spec check (v10: lint absorbed review). Deterministic:
@@ -90,7 +91,7 @@ export function runLint(changeId, opts = {}) {
 
   const reviewPath = path.join(cdir, 'review.md');
   if (!exists(reviewPath)) {
-    add('review.md', 'pass', 'delegated to CI bot (review comments & summary posted on PR)');
+    add('review.md', 'pass', 'delegated to independent review agent (review comments & summary posted on PR)');
     add('review verdict', 'pass', 'pending human PR review on GitHub/GitLab');
   } else {
     const text = readText(reviewPath);
@@ -98,6 +99,35 @@ export function runLint(changeId, opts = {}) {
     const verdict = verdictOf(text);
     add('review verdict', verdict === 'APPROVE' ? 'pass' : 'fail', verdict ? `verdict: ${verdict}` : 'no verdict found');
     add('blocking findings', hasBlockingFindings(text) ? 'fail' : 'pass', hasBlockingFindings(text) ? 'blocking findings present' : '');
+  }
+
+  // Spec-stage risk assessment: ground in artifacts and sync level/workflow mode
+  const metaPath = path.join(cdir, '.openspec.yaml');
+  let currLvl = null;
+  if (exists(metaPath)) {
+    const lvlMatch = readText(metaPath).match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+    currLvl = lvlMatch ? lvlMatch[1].toUpperCase() : null;
+  }
+  const agentAssessPath = path.join(cdir, '.agent-assess.json');
+  if (currLvl || exists(agentAssessPath) || exists(path.join(cdir, 'risk-history.jsonl'))) {
+    const assessment = assess({
+      stage: 'spec',
+      changeId: slug,
+      repoRoot,
+      persist: true
+    });
+    const effectiveLevel = assessment.risk.level;
+    if (exists(metaPath) && currLvl !== effectiveLevel) {
+      let metaText = readText(metaPath);
+      const upsertKey = (text, key, val) => {
+        const re = new RegExp(`^\\s*${key}:\\s*.*$`, 'm');
+        return re.test(text) ? text.replace(re, `${key}: "${val}"`) : `${text.trimEnd()}\n${key}: "${val}"\n`;
+      };
+      metaText = upsertKey(metaText, 'level', effectiveLevel);
+      metaText = upsertKey(metaText, 'workflowMode', assessment.governance.workflow_mode);
+      writeText(metaPath, metaText);
+    }
+    add('governance level', 'pass', `${effectiveLevel} (${assessment.governance.workflow_mode})`);
   }
 
   const { rules } = readLintConfig(repoRoot);

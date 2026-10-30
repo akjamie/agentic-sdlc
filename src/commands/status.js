@@ -56,7 +56,7 @@ export function statusChange(changeId, opts = {}) {
   let next;
   if (!has('explore.md') && !has('proposal.md')) next = `asdlc new ${changeId}`;
   else if (!has('proposal.md') || specFiles.length === 0) next = 'author proposal.md + specs/**';
-  else if (!approvedSha) next = `run: asdlc lint ${changeId} && asdlc pr ${changeId} (CI handles AI review on PR; once merged run: asdlc approve ${changeId})`;
+  else if (!approvedSha) next = `run: asdlc lint ${changeId} && asdlc pr ${changeId} (after independent spec review & merge, run: asdlc approve ${changeId})`;
   else if (unchecked !== 0) next = `asdlc apply ${changeId}, then complete tasks in tasks.md`;
   else next = `asdlc verify ${changeId}`;
 

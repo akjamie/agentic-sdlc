@@ -137,7 +137,7 @@ asdlc approve user-login-with-jwt
 ### What this freezes:
 1. Calculates the path-limited Git SHA (`specSha`) of `proposal.md` and `specs/**`.
 2. Sets `status: ready_for_impl` in `.openspec.yaml`.
-3. Stamps `review.md` with `## Verdict: APPROVE` and cryptographic audit trail.
+3. Stamps `review.md` with `## Verdict: APPROVE` and Git-anchored audit trail.
 4. Unlocks Stage 5 for implementation!
 
 ---
@@ -159,7 +159,7 @@ The agent executes the immutable 5-step TDD loop:
 asdlc test user-login-with-jwt
 ```
 
-> **Player ≠ Referee Guard**: During the implementation PR review, CI independently runs `asdlc test <ID> --json`. If any mapped AC test fails, merge is automatically blocked regardless of what was written in `tasks.md`.
+> **Player ≠ Referee Guard**: During implementation review, the independent review agent (or CI) runs `asdlc test <ID> --json`. If any mapped AC test fails, merge is automatically blocked regardless of what was written in `tasks.md`.
 > **Security Guard**: If the agent attempts to modify `proposal.md` or `specs/**` during implementation to cheat test requirements, `asdlc verify` will immediately detect `spec-tamper` and reject the PR!
 
 ---
@@ -322,7 +322,7 @@ AI 严格遵循五步 TDD 循环：
 asdlc test user-login-with-jwt
 ```
 
-> **裁判员 ≠ 运动员门禁**：在发起代码实现 PR 时，CI 会独立执行 `asdlc test <ID> --json` 获取客观真理。任何 mapped AC 测试失败或缺失，CI 审查均直接标记为 Blocker 阻断合入，不再仅轻信任务列表中的自我声明。
+> **裁判员 ≠ 运动员门禁**：在代码实现审查时，独立审查 Agent（或 CI）会独立执行 `asdlc test <ID> --json` 获取客观真理。任何 mapped AC 测试失败或缺失，均直接标记为 Blocker 阻断合入，不再仅轻信任务列表中的自我声明。
 > **防篡改卫士**：如果 AI 在实施过程中试图修改 `proposal.md` 或 `specs/**` 降低测试标准，后续验证阶段将触发 `spec-tamper` 拦截并阻断合入！
 
 ---

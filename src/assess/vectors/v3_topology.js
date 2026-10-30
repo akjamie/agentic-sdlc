@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { HARD_RULES, isTestOrDocFile } from '../rules/builtin.js';
+import { HARD_RULES, isTestOrDocFile, isChangeMetadataFile } from '../rules/builtin.js';
+import { getGraphTopologyMetrics } from '../../lib/graphify.js';
 
-export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRoot = null } = {}) {
+export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRoot = null, changeId = null } = {}) {
   const req = String(requirement || '').toLowerCase();
   const evidence = [];
   const unresolved = [];
@@ -72,7 +73,100 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
     }
   }
 
-  // 2. Check Requirement Semantics for Architecture / Schema / Infra
+  // 2. Graphify AST Knowledge Graph Centrality & God Nodes Check
+  // Escalates to L2 if changed files touch architectural hubs with high cross-file fan-in
+  if (repoRoot) {
+    try {
+      const topoMetrics = getGraphTopologyMetrics(repoRoot);
+      if (topoMetrics.available && topoMetrics.fileInDegree) {
+        // High centrality threshold: >= 20 cross-file inbound dependencies
+        // Exclude purely peripheral utility loggers or formats
+        const GOD_NODE_THRESHOLD = 20;
+        const hitHubs = [];
+
+        const substantiveFiles = changedFiles.filter((f) => !isChangeMetadataFile(f));
+
+        // Check 1: Physical changed files
+        for (const f of substantiveFiles) {
+          if (isTestOrDocFile(f)) continue;
+          const norm = f.replace(/\\/g, '/');
+          if (/(^|\/)(log|logger|logging|cliutil)\.[a-z0-9]+$/i.test(norm)) continue; // ignore pure logger / cli wrappers
+          const inDegree = topoMetrics.fileInDegree[norm] || 0;
+          if (inDegree >= GOD_NODE_THRESHOLD) {
+            hitHubs.push({ file: norm, inDegree });
+          }
+        }
+
+        // Check 2: Pre-implementation stages (no substantive changedFiles yet) — ground in explore.md query
+        // IMPORTANT:
+        //  a) Only inspect the ## Query: section (never the global ## Architectural hubs header).
+        //  b) When Graphify outputs a BFS depth=2 traversal with `Start: [...]`, restrict matches to
+        //     0-hop Start nodes so 2-hop neighbor hubs (e.g. leaf -> caller -> fs.js) do not trigger false positives.
+        if (substantiveFiles.length === 0 && hitHubs.length === 0 && changeId) {
+          try {
+            const expPath = path.join(repoRoot, 'openspec', 'changes', changeId, 'explore.md');
+            if (fs.existsSync(expPath)) {
+              const expContent = fs.readFileSync(expPath, 'utf8');
+              const queryMatch = expContent.match(/##\s*Query:[^\n]*\n([\s\S]*?)(?:\n##\s|$)/i);
+              const queryContent = queryMatch ? queryMatch[1] : '';
+              if (queryContent && !queryContent.includes('_(no matches)_') && !queryContent.includes('_(unavailable')) {
+                const startHeaderMatch = queryContent.match(/\bStart:\s*\[([^\]]*)\]/);
+                let directHitFiles = null;
+                let startLabels = null;
+
+                if (startHeaderMatch) {
+                  startLabels = new Set();
+                  const rawList = startHeaderMatch[1];
+                  for (const m of rawList.matchAll(/['"]([^'"]+)['"]/g)) {
+                    startLabels.add(m[1].trim());
+                  }
+                  directHitFiles = new Set();
+                  for (const m of queryContent.matchAll(/^NODE\s+(.+?)\s+\[src=([^\s\]]+)/gm)) {
+                    const nodeLabel = m[1].trim();
+                    const nodeSrc = m[2].replace(/\\/g, '/');
+                    if (startLabels.has(nodeLabel) && !isTestOrDocFile(nodeSrc)) {
+                      directHitFiles.add(nodeSrc);
+                    }
+                  }
+                }
+
+                for (const [hubFile, inDeg] of (topoMetrics.topHubs || [])) {
+                  if (inDeg >= GOD_NODE_THRESHOLD && !/(^|\/)(log|logger|logging|cliutil)\.[a-z0-9]+$/i.test(hubFile)) {
+                    const baseName = path.basename(hubFile);
+                    const matched = directHitFiles !== null
+                      ? (directHitFiles.has(hubFile) || startLabels.has(hubFile) || startLabels.has(baseName))
+                      : (queryContent.includes(hubFile) || queryContent.includes(baseName));
+                    if (matched) {
+                      hitHubs.push({ file: hubFile, inDegree: inDeg });
+                    }
+                  }
+                }
+              }
+            }
+          } catch { /* ignore explore read */ }
+        }
+
+        if (hitHubs.length > 0) {
+          no_signal = false;
+          if (level === 'L1') {
+            level = 'L2';
+          }
+          const hubDesc = hitHubs.slice(0, 3).map((h) => `${h.file} (${h.inDegree} inbound refs)`).join(', ');
+          evidence.push({
+            id: 'V3_GRAPHIFY_GOD_NODE',
+            kind: 'topology_centrality',
+            signal: 'hard',
+            summary: `Touches Graphify AST architectural hub: ${hubDesc}`,
+            source: hitHubs[0].file
+          });
+        }
+      }
+    } catch {
+      /* ignore graph metrics reading failure */
+    }
+  }
+
+  // 3. Check Requirement Semantics for Architecture / Schema / Infra
   const topoKeywords = [
     'api', 'endpoint', 'openapi', 'swagger', 'grpc', 'protobuf', 'graphql', 'webhook',
     'fastapi', 'springboot', 'spring boot', 'controller', 'rest api', 'router',

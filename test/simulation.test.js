@@ -336,3 +336,79 @@ test('Simulation 10: PR Comment renders high-visibility Level and Action highlig
   assert.match(l2Comment, /最终治理等级.*L2/);
 });
 
+test('Simulation 11: Agent-assess escalation from L1 to L2 at spec stage blocks applyGuard with NOT_APPROVED', () => {
+  const repo = setupRepo();
+  try {
+    const slug = 'agent-escalate-test';
+    const cdir = path.join(repo, 'openspec', 'changes', slug);
+    fs.mkdirSync(path.join(cdir, 'specs'), { recursive: true });
+
+    fs.writeFileSync(path.join(cdir, 'proposal.md'), '# Proposal: Helper\n');
+    fs.writeFileSync(path.join(cdir, 'specs', 'spec.md'), '## Spec: Helper\n');
+    fs.writeFileSync(path.join(cdir, 'tasks.md'), '- [ ] 1. task\n');
+    fs.writeFileSync(path.join(cdir, '.openspec.yaml'), 'schema: agentic-repo-change\nlevel: "L1"\nstatus: "drafting"\n');
+
+    // Baseline assessment was L1
+    assess({ stage: 'new', changeId: slug, requirement: 'minor helper', repoRoot: repo });
+
+    // Agent writes .agent-assess.json during design because it added an API contract
+    fs.writeFileSync(path.join(cdir, '.agent-assess.json'), JSON.stringify({
+      classification: 'api_contract',
+      contains_api_changes: true,
+      rationale: 'Exposes new REST endpoint /api/v1/helper'
+    }));
+
+    // Calling applyGuard MUST escalate to L2 and block direct implementation with NOT_APPROVED
+    assert.throws(
+      () => applyGuard(slug, { repoRoot: repo, targetBranch: 'main' }),
+      (err) => err.code === 'NOT_APPROVED'
+    );
+
+    // Verify .openspec.yaml was updated to L2
+    const meta = fs.readFileSync(path.join(cdir, '.openspec.yaml'), 'utf8');
+    assert.match(meta, /level: "L2"/);
+    assert.match(meta, /workflowMode: "spec-first"/);
+
+    // Attempting to bypass applyGuard and runVerify directly before Spec PR merge MUST FAIL (no Single-PR privilege leak!)
+    const unapprovedVerify = runVerify(slug, { repoRoot: repo, protectedBranch: 'main', base: 'main', head: 'HEAD', skipOpenspec: true });
+    assert.equal(unapprovedVerify, 1, 'Spec-escalated L2 change must NOT inherit initial L1 Single-PR exemption in verify');
+
+    // Now simulate valid Spec PR merge into main + applyGuard unlock
+    fs.mkdirSync(path.join(cdir, 'specs', 'helper-cap'), { recursive: true });
+    fs.rmSync(path.join(cdir, 'specs', 'spec.md'), { force: true });
+    fs.writeFileSync(path.join(cdir, 'proposal.md'), '# Proposal\n\n## Why\nHelper API endpoint.\n');
+    fs.writeFileSync(path.join(cdir, 'specs', 'helper-cap', 'spec.md'),
+      `# Spec Delta\n\n## Purpose\nHelper API capability exposes safe helper lookups with strict contract validation.\n\n## ADDED Requirements\n\n### Requirement: Helper API\nThe system SHALL serve helper responses.\n\n#### Scenario: Query helper\n- **GIVEN** a client\n- **WHEN** helper endpoint is called\n- **THEN** returns 200 OK\n\n**Acceptance criteria**\n- [ ] AC1: works (test: tests/helper.test.js)\n\n## Constraints & NFRs\n\n## Out of Scope\n\n## Test Strategy\nUnit test.\n`);
+    fs.writeFileSync(path.join(cdir, 'tasks.md'), '- [ ] 1. add helper endpoint (AC1) verify: tests/helper.test.js\n');
+    git(['add', '.'], repo);
+    git(['commit', '-m', 'spec: approve escalated L2 spec on main'], repo);
+
+    assert.doesNotThrow(() => applyGuard(slug, { repoRoot: repo, targetBranch: 'main' }));
+
+    // Implement on a feature branch
+    git(['checkout', '-b', 'impl/agent-escalate-test'], repo);
+    fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'src', 'helper.js'), 'export const helper = () => "ok";\n');
+    fs.mkdirSync(path.join(repo, 'tests'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'tests', 'helper.test.js'), '// test\n');
+    fs.writeFileSync(path.join(cdir, 'tasks.md'), '- [x] 1. add helper endpoint (AC1) verify: tests/helper.test.js\n');
+    git(['add', '.'], repo);
+    git(['commit', '-m', 'impl: implement helper endpoint'], repo);
+
+    const cleanImplVerify = runVerify(slug, { repoRoot: repo, protectedBranch: 'main', base: 'main', head: 'HEAD', skipOpenspec: true, ci: false });
+    assert.equal(cleanImplVerify, 0, 'Valid Two-Phase implementation of spec-escalated L2 change must pass verify');
+    const postImplMeta = fs.readFileSync(path.join(cdir, '.openspec.yaml'), 'utf8');
+    assert.doesNotMatch(postImplMeta, /escalatedInImpl:\s*"true"/, 'Spec-stage escalation must NOT be marked escalatedInImpl');
+
+    // Tampering with locked proposal.md during implementation PR MUST be caught by spec-tamper!
+    fs.appendFileSync(path.join(cdir, 'proposal.md'), '\nSneaky post-approval edit.\n');
+    git(['add', '.'], repo);
+    git(['commit', '-m', 'impl: tamper locked proposal'], repo);
+
+    const tamperedVerify = runVerify(slug, { repoRoot: repo, protectedBranch: 'main', base: 'main', head: 'HEAD', skipOpenspec: true, ci: false });
+    assert.equal(tamperedVerify, 1, 'Tampering locked proposal.md in impl PR of spec-escalated L2 change MUST fail spec-tamper');
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+

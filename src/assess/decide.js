@@ -1,4 +1,4 @@
-import { LEVEL_RANK, DEFAULT_GOVERNANCE, L0_DETERMINISTIC_PATTERNS } from './rules/builtin.js';
+import { LEVEL_RANK, DEFAULT_GOVERNANCE, L0_DETERMINISTIC_PATTERNS, isChangeMetadataFile } from './rules/builtin.js';
 import { judgeChangeSemantics } from './ai_judge.js';
 
 /**
@@ -57,12 +57,14 @@ export function decideAssessment({
   );
 
   const req = v1.requirement || '';
-  const aiJudgment = judgeChangeSemantics({ requirement: req, changedFiles });
+  const aiJudgment = v1.aiJudgment || judgeChangeSemantics({ requirement: req, changedFiles });
 
   if (!hasMandatoryHumanReview && maxRank <= 1) {
-    if (changedFiles.length > 0) {
-      const norm = changedFiles.map((f) => f.replace(/\\/g, '/'));
-      const allDoc = norm.every((f) => L0_DETERMINISTIC_PATTERNS.some((p) => p.test(f)));
+    const substantiveFiles = changedFiles
+      .map((f) => f.replace(/\\/g, '/'))
+      .filter((f) => !isChangeMetadataFile(f));
+    if (substantiveFiles.length > 0) {
+      const allDoc = substantiveFiles.every((f) => L0_DETERMINISTIC_PATTERNS.some((p) => p.test(f)));
       if (allDoc || aiJudgment.is_pure_doc || aiJudgment.is_pure_test) {
         calculatedLevel = 'L0';
       }
@@ -114,7 +116,7 @@ export function decideAssessment({
     } else if (highestRank > baseRank) {
       direction = 'same';
       triggers.push(`Level remains escalated at ${finalLevel} above baseline ${baselineLevel}`);
-      if (stage === 'impl') {
+      if (stage === 'impl' && (previous?.reason_codes || []).includes('ESCALATED_IN_IMPL')) {
         reason_codes.push('ESCALATED_IN_IMPL');
       }
     } else {

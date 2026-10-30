@@ -6,6 +6,7 @@ import { lastCommitTouching, git } from '../lib/git.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
 import { isSinglePrLevel, readEffectiveLevel } from '../lib/level.js';
+import { assess } from '../assess/index.js';
 
 // Guard before implementing: the spec must be APPROVED on the target branch
 // (i.e. the Spec PR has been merged into targetBranch, locking proposal.md & specs/**).
@@ -15,7 +16,6 @@ export function applyGuard(changeId, opts = {}) {
   const cdir = changeDir(repoRoot, slug);
   if (!exists(cdir)) fail(`change '${slug}' not found`);
 
-  // 1. Resolve target branch dynamically: CLI option -> .openspec.yaml -> git tracking -> main/master
   const metaPath = path.join(cdir, '.openspec.yaml');
   let meta = {};
   if (exists(metaPath)) {
@@ -49,7 +49,32 @@ export function applyGuard(changeId, opts = {}) {
     });
   }
 
-  const effectiveLevel = levelInfo?.effectiveLevel || meta.level || null;
+  let effectiveLevel = levelInfo?.effectiveLevel || meta.level || null;
+  const agentAssessPath = path.join(cdir, '.agent-assess.json');
+  if (meta.level && (exists(agentAssessPath) || levelInfo?.maxHistoryLevel)) {
+    const assessment = assess({
+      stage: 'spec',
+      changeId: slug,
+      repoRoot,
+      persist: true
+    });
+    const assessedLevel = assessment.risk.level;
+    const rank = { L0: 0, L1: 1, L2: 2, L3: 3 };
+    if ((rank[assessedLevel] ?? 0) > (rank[effectiveLevel] ?? 0)) {
+      effectiveLevel = assessedLevel;
+      if (exists(metaPath)) {
+        let metaText = readText(metaPath);
+        const upsertKey = (text, key, val) => {
+          const re = new RegExp(`^\\s*${key}:\\s*.*$`, 'm');
+          return re.test(text) ? text.replace(re, `${key}: "${val}"`) : `${text.trimEnd()}\n${key}: "${val}"\n`;
+        };
+        metaText = upsertKey(metaText, 'level', effectiveLevel);
+        metaText = upsertKey(metaText, 'workflowMode', assessment.governance.workflow_mode);
+        writeText(metaPath, metaText);
+      }
+    }
+  }
+
   const isSinglePr = isSinglePrLevel(effectiveLevel);
   let approvedSha = null;
 
@@ -88,7 +113,7 @@ export function applyGuard(changeId, opts = {}) {
       });
     }
 
-    // 4. Content-level cryptographic zero-diff invariant:
+    // 4. Content-level Git-anchored zero-diff invariant:
     // The local spec content MUST match the approved version on the target branch
     const diff = (git(['diff', approvedSha, '--', ...locked], repoRoot, { allowFail: true }) ?? '').trim();
     if (diff) {
@@ -109,6 +134,10 @@ export function applyGuard(changeId, opts = {}) {
         };
         metaText = upsertKey(metaText, 'specSha', approvedSha);
         metaText = upsertKey(metaText, 'status', 'ready_for_impl');
+        if (effectiveLevel && effectiveLevel !== meta.level) {
+          metaText = upsertKey(metaText, 'level', effectiveLevel);
+          metaText = upsertKey(metaText, 'workflowMode', 'spec-first');
+        }
         writeText(metaPath, metaText);
       }
       log.ok(`${slug}: recognized PR approval on ${branch} (synced state to ready_for_impl @ ${approvedSha.slice(0, 8)})`);

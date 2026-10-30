@@ -13,7 +13,7 @@ This skill executes **Stage 4 (Approve)** of the Agentic SDLC. It transitions a 
 
 `asdlc approve` is **branch-agnostic**. It does not enforce a rigid branching dogma, nor does it require selecting artificial "modes". 
 
-In enterprise environments (whether using `feature -> staging -> main`, trunk-based, or multi-level git flow), **Approve** represents a single cryptographic gate:
+In enterprise environments (whether using `feature -> staging -> main`, trunk-based, or multi-level git flow), **Approve** represents a single Git-anchored tamper-detection gate:
 
 ```text
 [Stage 2: Grilling / Proposal] 

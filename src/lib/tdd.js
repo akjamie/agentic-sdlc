@@ -3,8 +3,12 @@
 export function isTestFile(file) {
   const normalized = String(file).replace(/\\/g, '/');
   return (
-    /(?:^|\/)(?:tests?|__tests__|spec)\//i.test(normalized) ||
-    /\.(?:test|spec)\.[a-zA-Z0-9]+$/i.test(normalized)
+    /(?:^|\/)(?:tests?|__tests__|testing|spec|fixtures?|mocks?)\//i.test(normalized) ||
+    /\.(?:test|spec)\.[a-zA-Z0-9]+$/i.test(normalized) ||
+    /_test\.go$/i.test(normalized) ||
+    /test_[^/]+\.py$/i.test(normalized) ||
+    /[^/]+_test\.py$/i.test(normalized) ||
+    /(?:^|\/).*(?:Test|Tests|TestCase|IT)\.(?:java|kt|scala)$/i.test(normalized)
   );
 }
 

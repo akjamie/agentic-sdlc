@@ -181,6 +181,11 @@ export const TEST_AND_DOC_PATTERNS = [
   /(^|\/)assets\/(?:images|media|icons|fonts)\//i
 ];
 
+export function isChangeMetadataFile(filePath = '') {
+  const norm = String(filePath).replace(/\\/g, '/');
+  return /(^|\/)openspec\/changes\/[^/]+\//i.test(norm);
+}
+
 export function isTestOrDocFile(filePath = '') {
   const norm = String(filePath).replace(/\\/g, '/');
   if (

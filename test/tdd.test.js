@@ -7,6 +7,10 @@ test('isTestFile: recognizes standard test directories and file patterns', () =>
   assert.equal(isTestFile('tests/unit/bar.spec.ts'), true);
   assert.equal(isTestFile('src/__tests__/baz.js'), true);
   assert.equal(isTestFile('lib/feature.test.py'), true);
+  // Polyglot patterns (Go, Python, Java)
+  assert.equal(isTestFile('internal/auth/login_test.go'), true);
+  assert.equal(isTestFile('app/test_handler.py'), true);
+  assert.equal(isTestFile('src/test/UserAuthTest.java'), true);
   assert.equal(isTestFile('src/index.js'), false);
   assert.equal(isTestFile('README.md'), false);
 });

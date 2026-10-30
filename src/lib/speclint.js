@@ -76,9 +76,10 @@ function scenarios(body) {
 function acceptanceCriteria(body) {
   const out = [];
   for (const line of body.split('\n')) {
-    const m = line.match(/^\s*-\s*\[[ xX]\]\s*(AC\d+)\s*:\s*(.+)$/);
+    const trimmed = line.trimEnd();
+    const m = trimmed.match(/^\s*-\s*\[[ xX]\]\s*(AC\d+)\s*:\s*(.+)$/);
     if (!m) continue;
-    const t = line.match(/\(test:\s*([^)]+?)\s*\)/i);
+    const t = trimmed.match(/\(test:\s*([^)]+?)\s*\)/i);
     out.push({ id: m[1], text: m[2].replace(/\(test:.*$/i, '').trim(), test: t ? t[1].trim() : null });
   }
   return out;
@@ -109,7 +110,8 @@ const DEFAULT_SEVERITY = {
   'R8-removed-reason': 'major',
 };
 
-export function lintSpecText(text, { requireGiven = true, repoRoot = null, rules = {} } = {}) {
+export function lintSpecText(rawText, { requireGiven = true, repoRoot = null, rules = {} } = {}) {
+  const text = String(rawText || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const findings = [];
   const add = (code, rawSeverity, message, location = '') => {
     const configured = rules[code] ?? DEFAULT_SEVERITY[code] ?? rawSeverity;
