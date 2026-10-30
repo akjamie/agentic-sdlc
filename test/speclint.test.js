@@ -105,3 +105,9 @@ test('docs/getting-started.md: specification snippet complies with speclint rule
   const blockers = countBlockers(findings);
   assert.equal(blockers, 0, `getting-started.md spec snippet must have 0 blockers, found: ${JSON.stringify(findings)}`);
 });
+
+test('speclint: handles CRLF line endings without false-positive R5-ac blocker', () => {
+  const crlfSnippet = GOOD.replace(/\n/g, '\r\n');
+  const findings = lintSpecText(crlfSnippet);
+  assert.equal(countBlockers(findings), 0, `CRLF spec snippet must have 0 blockers, found: ${JSON.stringify(findings)}`);
+});
