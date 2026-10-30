@@ -1,10 +1,10 @@
 /**
- * AI Semantic Classifier with Strict Expectation & Invariant Validation (Specification §2.2 & §5.3)
+ * Agent-Native Semantic Evaluation with Strict Expectation & Invariant Validation (Specification §2.2 & §5.3)
  *
  * Design principle:
- * Path patterns and filename suffixes are only few-shot examples, NOT hardcoded dogma.
- * Real classification is performed via AI semantic judgment of test/doc nature.
- * System enforces strict expectation invariants on the AI output to prevent hallucinations.
+ * Classification is performed natively by the executing AI Agent within its live reasoning session,
+ * supplemented by environment hooks and validated baseline heuristics.
+ * The system enforces strict expectation invariants on the semantic output to prevent hallucinations.
  */
 
 import { execSync } from 'node:child_process';
@@ -20,7 +20,7 @@ export const AI_CLASSIFICATION_SCHEMA = {
     contains_api_changes: { type: 'boolean' },
     classification: { type: 'string', enum: ['test_only', 'doc_only', 'api_contract', 'internal_code', 'destructive', 'governance_plane'] },
     confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
-    evaluator_mode: { type: 'string', enum: ['llm_classifier', 'heuristic_seed'] },
+    evaluator_mode: { type: 'string', enum: ['agent_native', 'llm_classifier', 'heuristic_seed'] },
     rationale: { type: 'string' }
   }
 };
@@ -73,36 +73,52 @@ export function validateAIClassificationExpectation(aiOutput, { changedFiles = [
 
 /**
  * Semantic evaluation entrypoint:
- * Invokes AI classifier if available, or uses validated few-shot seed heuristic as offline fallback.
+ * Grounded in Agent session reasoning, environment model hooks, or validated heuristic baseline.
  */
-export function judgeChangeSemantics({ requirement = '', changedFiles = [], repoRoot = null } = {}) {
+export function judgeChangeSemantics({ requirement = '', changedFiles = [], repoRoot = null, agentContext = null } = {}) {
   const req = String(requirement || '').toLowerCase();
   const normFiles = (changedFiles || []).map((f) => f.replace(/\\/g, '/'));
 
-  // If environment has an AI classification provider command configured, invoke it (P1-1)
   let rawAiOutput = null;
-  let evaluatorMode = 'heuristic_seed';
-  const classifierCmd = process.env.ASDLC_CLASSIFIER_COMMAND;
-  if (classifierCmd) {
-    try {
-      const inputJson = JSON.stringify({ requirement: req, changedFiles: normFiles });
-      const stdout = execSync(classifierCmd, {
-        input: inputJson,
-        encoding: 'utf8',
-        timeout: 5000,
-        env: { ...process.env, ASDLC_INPUT_JSON: inputJson }
-      });
-      const parsed = JSON.parse(stdout.trim());
-      if (parsed && typeof parsed === 'object') {
-        rawAiOutput = parsed;
-        evaluatorMode = 'llm_classifier';
+
+  // 1. Direct Agent-Native Evaluation:
+  // When running inside an AI coding agent session, accept verified semantic reasoning from the agent
+  if (agentContext && typeof agentContext === 'object') {
+    rawAiOutput = {
+      is_pure_test: Boolean(agentContext.is_pure_test),
+      is_pure_doc: Boolean(agentContext.is_pure_doc),
+      contains_destructive_ops: Boolean(agentContext.contains_destructive_ops || CANONICAL_DESTRUCTIVE_PATTERN.test(req)),
+      contains_api_changes: Boolean(agentContext.contains_api_changes),
+      classification: agentContext.classification || (agentContext.is_pure_test ? 'test_only' : (agentContext.is_pure_doc ? 'doc_only' : 'internal_code')),
+      confidence: agentContext.confidence || 'high',
+      evaluator_mode: 'agent_native',
+      rationale: agentContext.rationale || 'Evaluated natively by executing AI Agent in active session'
+    };
+  }
+
+  // 2. External Provider Command (if configured via environment hook)
+  if (!rawAiOutput) {
+    const classifierCmd = process.env.ASDLC_CLASSIFIER_COMMAND;
+    if (classifierCmd) {
+      try {
+        const inputJson = JSON.stringify({ requirement: req, changedFiles: normFiles });
+        const stdout = execSync(classifierCmd, {
+          input: inputJson,
+          encoding: 'utf8',
+          timeout: 5000,
+          env: { ...process.env, ASDLC_INPUT_JSON: inputJson }
+        });
+        const parsed = JSON.parse(stdout.trim());
+        if (parsed && typeof parsed === 'object') {
+          rawAiOutput = { ...parsed, evaluator_mode: 'llm_classifier' };
+        }
+      } catch {
+        // Fallback to baseline heuristic on timeout or execution failure
       }
-    } catch {
-      // Fallback to validated heuristic seed on timeout or command failure
     }
   }
 
-  // Few-shot baseline seed for offline / local test fallback
+  // 3. Validated baseline heuristic seed (deterministic fallback for standalone CLI execution)
   if (!rawAiOutput) {
     const hasProductionTarget = /\b(create|add|implement|build)\b.*\b(api|endpoint|service|table|database|schema|handler|router)\b/i.test(req);
     const hasDestructiveAction = CANONICAL_DESTRUCTIVE_PATTERN.test(req);
