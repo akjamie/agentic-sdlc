@@ -111,6 +111,36 @@ test('lint: fails when review.md verdict is NEEDS_REVISION', () => {
   assert.equal(exit, 1);
 });
 
+test('lint: includes rule codes and docs/spec-format.md reference when BDD blockers exist', () => {
+  const repo = tmpRepo();
+  const dir = scaffold(repo, 'TECH-1');
+  const specDir = path.join(dir, 'specs', 'demo-cap');
+  fs.mkdirSync(specDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(specDir, 'spec.md'),
+    '# Capability\n\n## Purpose\nA valid purpose description with well over fifty characters to satisfy rule one.\n\n## ADDED Requirements\n\n### Requirement: Broken\nNo normative word here.\n\n## Test Strategy\nUnit tests.\n',
+  );
+  let output = '';
+  const origWrite = process.stdout.write;
+  try {
+    process.stdout.write = (chunk) => {
+      output += chunk;
+      return true;
+    };
+    const exit = runLint('TECH-1', { repoRoot: repo, json: true });
+    assert.equal(exit, 1);
+    assert.ok(output);
+    const parsed = JSON.parse(output);
+    const bddResult = parsed.results.find((r) => r.name === 'BDD + acceptance criteria');
+    assert.ok(bddResult);
+    assert.equal(bddResult.status, 'fail');
+    assert.ok(bddResult.detail.includes('docs/spec-format.md'));
+    assert.ok(bddResult.detail.includes('R2-normative'));
+  } finally {
+    process.stdout.write = origWrite;
+  }
+});
+
 test('apply: refuses when spec is not approved on the protected branch', () => {
   const repo = tmpRepo();
   scaffold(repo, 'TECH-1');
