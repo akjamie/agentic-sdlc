@@ -336,3 +336,40 @@ test('Simulation 10: PR Comment renders high-visibility Level and Action highlig
   assert.match(l2Comment, /最终治理等级.*L2/);
 });
 
+test('Simulation 11: Agent-assess escalation from L1 to L2 at spec stage blocks applyGuard with NOT_APPROVED', () => {
+  const repo = setupRepo();
+  try {
+    const slug = 'agent-escalate-test';
+    const cdir = path.join(repo, 'openspec', 'changes', slug);
+    fs.mkdirSync(path.join(cdir, 'specs'), { recursive: true });
+
+    fs.writeFileSync(path.join(cdir, 'proposal.md'), '# Proposal: Helper\n');
+    fs.writeFileSync(path.join(cdir, 'specs', 'spec.md'), '## Spec: Helper\n');
+    fs.writeFileSync(path.join(cdir, 'tasks.md'), '- [ ] 1. task\n');
+    fs.writeFileSync(path.join(cdir, '.openspec.yaml'), 'schema: agentic-repo-change\nlevel: "L1"\nstatus: "drafting"\n');
+
+    // Baseline assessment was L1
+    assess({ stage: 'new', changeId: slug, requirement: 'minor helper', repoRoot: repo });
+
+    // Agent writes .agent-assess.json during design because it added an API contract
+    fs.writeFileSync(path.join(cdir, '.agent-assess.json'), JSON.stringify({
+      classification: 'api_contract',
+      contains_api_changes: true,
+      rationale: 'Exposes new REST endpoint /api/v1/helper'
+    }));
+
+    // Calling applyGuard MUST escalate to L2 and block direct implementation with NOT_APPROVED
+    assert.throws(
+      () => applyGuard(slug, { repoRoot: repo, targetBranch: 'main' }),
+      (err) => err.code === 'NOT_APPROVED'
+    );
+
+    // Verify .openspec.yaml was updated to L2
+    const meta = fs.readFileSync(path.join(cdir, '.openspec.yaml'), 'utf8');
+    assert.match(meta, /level: "L2"/);
+    assert.match(meta, /workflowMode: "spec-first"/);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+

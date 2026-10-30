@@ -88,7 +88,7 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
         for (const f of changedFiles) {
           if (isTestOrDocFile(f)) continue;
           const norm = f.replace(/\\/g, '/');
-          if (/^(?:src\/lib\/log|src\/lib\/cliutil)\.js$/i.test(norm)) continue; // ignore pure logger / cli wrappers
+          if (/(^|\/)(log|logger|logging|cliutil)\.[a-z0-9]+$/i.test(norm)) continue; // ignore pure logger / cli wrappers
           const inDegree = topoMetrics.fileInDegree[norm] || 0;
           if (inDegree >= GOD_NODE_THRESHOLD) {
             hitHubs.push({ file: norm, inDegree });
@@ -96,16 +96,22 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
         }
 
         // Check 2: If stage: new without changedFiles yet, ground in explore.md query if present
+        // IMPORTANT: Only match against the ## Query: section to prevent false-positives
+        // from the global ## Architectural hubs (god nodes) header.
         if (hitHubs.length === 0 && changeId) {
           try {
             const expPath = path.join(repoRoot, 'openspec', 'changes', changeId, 'explore.md');
             if (fs.existsSync(expPath)) {
               const expContent = fs.readFileSync(expPath, 'utf8');
-              for (const [hubFile, inDeg] of (topoMetrics.topHubs || [])) {
-                if (inDeg >= GOD_NODE_THRESHOLD && !/log\.js|cliutil\.js/i.test(hubFile)) {
-                  const baseName = path.basename(hubFile);
-                  if (expContent.includes(hubFile) || expContent.includes(baseName)) {
-                    hitHubs.push({ file: hubFile, inDegree: inDeg });
+              const queryMatch = expContent.match(/##\s*Query:[^\n]*\n([\s\S]*?)(?:\n##\s|$)/i);
+              const queryContent = queryMatch ? queryMatch[1] : '';
+              if (queryContent && !queryContent.includes('_(no matches)_') && !queryContent.includes('_(unavailable')) {
+                for (const [hubFile, inDeg] of (topoMetrics.topHubs || [])) {
+                  if (inDeg >= GOD_NODE_THRESHOLD && !/(^|\/)(log|logger|logging|cliutil)\.[a-z0-9]+$/i.test(hubFile)) {
+                    const baseName = path.basename(hubFile);
+                    if (queryContent.includes(hubFile) || queryContent.includes(baseName)) {
+                      hitHubs.push({ file: hubFile, inDegree: inDeg });
+                    }
                   }
                 }
               }

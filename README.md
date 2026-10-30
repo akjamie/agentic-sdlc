@@ -227,8 +227,8 @@ asdlc pr user-auth main
 | [`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md) | Stamps Git `specSha` lock upon Spec PR merge. |
 | [`asdlc-apply`](assets/skills/asdlc-apply/SKILL.md) | Strict task-level TDD engine (`Red -> Green -> Refactor -> Evidence -> Converge`). |
 | [`asdlc-verify`](assets/skills/asdlc-verify/SKILL.md) | Pre-flight audit across 12 gates (test presence, evidence, tamper guard, schema). |
-| [`asdlc-spec-review`](assets/skills/asdlc-spec-review/SKILL.md) | CI-triggered 6-dimensional spec review before human lead approval. |
-| [`asdlc-impl-review`](assets/skills/asdlc-impl-review/SKILL.md) | CI-triggered Player ≠ Referee implementation reviewer with Anthropic convergence rules. |
+| [`asdlc-spec-review`](assets/skills/asdlc-spec-review/SKILL.md) | Independent review agent: 6-dimensional spec review before human lead approval. |
+| [`asdlc-impl-review`](assets/skills/asdlc-impl-review/SKILL.md) | Independent review agent: Player ≠ Referee verification with test execution and Anthropic convergence rules. |
 | [`asdlc-archive`](assets/skills/asdlc-archive/SKILL.md) | Syncs specs to living catalog, refreshes AST graph, and updates system status. |
 | [`asdlc-doctor`](assets/skills/asdlc-doctor/SKILL.md) | 12-invariant diagnostic engine with 1-click automated remediation (`--fix`). |
 | [`asdlc-status`](assets/skills/asdlc-status/SKILL.md) | Real-time change lifecycle dashboard and next actionable command guidance. |

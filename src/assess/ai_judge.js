@@ -8,7 +8,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { CANONICAL_DESTRUCTIVE_PATTERN } from './rules/builtin.js';
+import { CANONICAL_DESTRUCTIVE_PATTERN, isTestOrDocFile } from './rules/builtin.js';
 
 export const AI_CLASSIFICATION_SCHEMA = {
   type: 'object',
@@ -65,6 +65,16 @@ export function validateAIClassificationExpectation(aiOutput, { changedFiles = [
       ok: false,
       error: 'Invariant violation: destructive data purge requirement cannot be classified as pure test or doc',
       override: { is_pure_test: false, is_pure_doc: false, classification: 'destructive' }
+    };
+  }
+
+  // Invariant 3: Production source code files cannot be disguised as pure test or doc
+  const touchesProductionCode = normFiles.some((f) => !isTestOrDocFile(f));
+  if (touchesProductionCode && (aiOutput.is_pure_test || aiOutput.is_pure_doc)) {
+    return {
+      ok: false,
+      error: 'Invariant violation: changes touching production source files cannot be classified as pure test or doc',
+      override: { is_pure_test: false, is_pure_doc: false, classification: 'internal_code' }
     };
   }
 
