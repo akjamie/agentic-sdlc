@@ -119,7 +119,7 @@ v6 原有的平台治理设计(PR 类型、路径锁定、policy.yaml、SPEC_GAP
 
 ```bash
 # 本地 tarball 方式的开发者体验
-npm install -g https://internal-artifactory/asdlc/asdlc-1.3.0.tgz
+npm install -g https://internal-artifactory/asdlc/asdlc-1.4.0.tgz
 asdlc --version
 ```
 
@@ -537,7 +537,7 @@ AGENTS.md 一页纸路由规则(什么走规格、什么走快速通道)与 v6 �
 
 ```yaml
 # asdlc.lock(和 .sdlc/policy.yaml 一样,平台团队保护,团队不能改)
-asdlc: 1.3.0
+asdlc: 1.4.0
 openspec: 1.3.1
 graphify:
   impl: node        # python | go | node,见 §15.3
