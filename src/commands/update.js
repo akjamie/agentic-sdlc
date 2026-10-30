@@ -2,7 +2,7 @@ import path from 'node:path';
 import { exists } from '../lib/fs.js';
 import { resolveRepoRoot, openspecDir, OPENSPEC_DIR } from '../lib/paths.js';
 import { log } from '../lib/log.js';
-import { detectTools, installSkills, installHooks } from './init.js';
+import { detectTools, installSkills, installCommands, installHooks } from './init.js';
 import { ensureGraphify, buildGraph, ensureGitignore } from '../lib/graphify.js';
 import { refreshAgents } from '../lib/agents.js';
 
@@ -38,11 +38,12 @@ export function updateRepo(opts = {}) {
   log.info(`Repository: ${repoRoot}`);
   log.info('');
 
-  // 1) Skills refresh
+  // 1) Skills & slash commands refresh
   if (opts.skills !== false) {
-    log.step('refreshing bundled agent skills in repository...');
+    log.step('refreshing bundled agent skills and slash commands in repository...');
     const tools = detectTools(repoRoot);
     installSkills(repoRoot, tools);
+    installCommands(repoRoot, tools);
   }
 
   // 2) Codebase AST knowledge graph (KB / graphify)

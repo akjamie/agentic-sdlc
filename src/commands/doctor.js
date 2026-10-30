@@ -8,6 +8,7 @@ import { refreshAgents } from '../lib/agents.js';
 import { readYaml } from '../lib/yaml.js';
 import { git } from '../lib/git.js';
 import { log, dim } from '../lib/log.js';
+import { detectTools, checkToolHealth, installSkills, installCommands } from '../lib/tools.js';
 
 // Environment + setup health. Exit non-zero only on a critical failure
 // (no OpenSpec project, or the managed schema is not installed / is overridden).
@@ -34,6 +35,12 @@ export function doctor(opts = {}) {
   const schemaV = readInstalledVersion();
   add('managed schema', schemaV ? 'pass' : 'fail', schemaV ? `v${schemaV} (bundled v${builtinSchemaVersion()})` : 'not installed (run `asdlc init` or `asdlc upgrade`)');
 
+  let gi = null;
+  let ignored = false;
+  let hooksPath = null;
+  let hasRouting = false;
+  let detectedTools = [];
+
   // If in global mode or not in a repository workspace, check global skills and skip repo-specific checks
   if (isGlobal || (!isRepo && !hasProject)) {
     const globalSkills = path.join(process.env.HOME || process.env.USERPROFILE || '', '.agents', 'skills');
@@ -52,20 +59,32 @@ export function doctor(opts = {}) {
     if (exists(cfgPath)) { try { cfgSchema = (readYaml(cfgPath) ?? {}).schema ?? null; } catch { /* ignore */ } }
     add('repo config schema', cfgSchema === 'agentic-repo-change' ? 'pass' : 'warn', cfgSchema ?? 'unset');
 
-    let hooksPath = null;
     try { hooksPath = git(['config', '--get', 'core.hooksPath'], repoRoot, { allowFail: true }); } catch { /* ignore */ }
     add('.githooks', hooksPath === '.githooks' ? 'pass' : 'warn', hooksPath === '.githooks' ? 'core.hooksPath=.githooks' : `core.hooksPath=${hooksPath ?? 'unset'}`);
 
     const agents = path.join(repoRoot, 'AGENTS.md');
-    const hasRouting = exists(agents) && readText(agents).includes('<!-- asdlc:routing -->');
+    hasRouting = exists(agents) && readText(agents).includes('<!-- asdlc:routing -->');
     add('AGENTS.md routing', hasRouting ? 'pass' : 'warn', hasRouting ? '' : 'missing (run `asdlc init`)');
 
     const gstatus = graphStatus(repoRoot);
     add('knowledge graph', gstatus === 'fresh' ? 'pass' : 'warn', gstatus);
 
-    const gi = path.join(repoRoot, '.gitignore');
-    const ignored = exists(gi) && readText(gi).split(/\r?\n/).some((l) => l.trim() === GITIGNORE_LINE);
+    gi = path.join(repoRoot, '.gitignore');
+    ignored = exists(gi) && readText(gi).split(/\r?\n/).some((l) => l.trim() === GITIGNORE_LINE);
     add('graphify-out ignored', ignored ? 'pass' : 'warn', ignored ? '' : `add ${GITIGNORE_LINE} to .gitignore`);
+
+    // 3) Agent Tools & Slash-Command Parity Checks
+    detectedTools = detectTools(repoRoot);
+    if (detectedTools.length === 0) {
+      add('agent tools', 'pass', 'none detected (.agents used as default)');
+    } else {
+      for (const toolId of detectedTools) {
+        const health = checkToolHealth(repoRoot, toolId);
+        if (health) {
+          add(`tool: ${health.name}`, health.status, health.detail);
+        }
+      }
+    }
   }
 
   let failed = 0;
@@ -120,6 +139,15 @@ export function doctor(opts = {}) {
         const g = ensureGraphify();
         if (g.installed) log.ok('fixed: installed graphify CLI');
       } catch (e) { log.warn(`fix failed for graphify: ${e.message}`); }
+    }
+
+    // 7. Tool skills & slash commands remediation
+    if (detectedTools && detectedTools.length > 0) {
+      try {
+        installSkills(repoRoot, detectedTools);
+        installCommands(repoRoot, detectedTools);
+        log.ok('fixed: synchronized skills and commands for detected tools');
+      } catch (e) { log.warn(`fix failed for tool parity: ${e.message}`); }
     }
     log.info('');
   }

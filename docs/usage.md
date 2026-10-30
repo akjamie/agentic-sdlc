@@ -39,12 +39,44 @@ This one command:
 1. installs OpenSpec (a pinned devDependency) and Graphify (uv/pip)
 2. runs `openspec init` and wires your agentic IDE (auto-detected)
 3. installs the managed schema centrally — no per-repo copy
-4. installs bundled skills (`grilling`, `asdlc-apply`) into `.agents/skills/`
+4. installs bundled skills (`grilling`, `asdlc-apply`) and slash commands across all detected IDE tools
 5. writes `openspec/config.yaml` (governance rules + lint policy)
 6. writes `.sdlc/policy.yaml` (platform-owned; protect with CODEOWNERS)
 7. installs `.githooks/` (pre-push, post-merge) + `core.hooksPath`
 8. writes a `Jenkinsfile` (CI gate pipeline)
 9. writes `AGENTS.md` routing (workflow + system status from the code graph)
+
+---
+
+## 🤖 IDE Slash-Command & Tool Parity Matrix
+
+`asdlc init` and `asdlc update` auto-detect configured AI tools in your repository and guarantee consistent slash commands and skills across all environments:
+
+| Tool | Detected Marker | Slash Commands Path | Command Format | Skills Target |
+| :--- | :---: | :--- | :---: | :--- |
+| **Claude Code** | `.claude/` | `.claude/commands/asdlc-*.md` | Markdown (`.md`) | `.claude/skills/` |
+| **OpenCode** | `.opencode/` | `.opencode/commands/asdlc-*.md` | Markdown (`.md`) | `.opencode/skills/` |
+| **Pi (`oh-my-pi`)** | `.pi/` | `.pi/prompts/asdlc-*.md` | Markdown (`.md`) | `.pi/skills/` |
+| **Antigravity** | `.agents/` (or `.antigravity/`) | `.agents/workflows/asdlc-*.md` | Markdown (`.md`) | `.agents/skills/` |
+| **GitHub Copilot** | `.github/` | `.github/prompts/asdlc-*.prompt.md` | Copilot (`.prompt.md`) | `.github/skills/` |
+| **Cursor** | `.cursor/` | `.cursor/commands/asdlc-*.md` | Markdown (`.md`) | `.cursor/skills/` |
+| **Trae** | `.trae/` | `.trae/commands/asdlc-*.md` | Markdown (`.md`) | `.trae/skills/` |
+| **Windsurf / Devin** | `.windsurf/` (or `.devin/`) | `.windsurf/workflows/asdlc-*.md` | Markdown (`.md`) | `.windsurf/skills/` |
+| **Gemini CLI** | `.gemini/` | `.gemini/commands/asdlc/*.toml` | TOML (`.toml`) | `.gemini/skills/` |
+
+### Standard Slash Commands
+- `/asdlc-new` — Stage 1/2: Grounding, high-signal grilling interview, settle clarifications, author specs.
+- `/asdlc-lint` — Stage 3: Deterministic BDD & AC quality checks (R0–R8).
+- `/asdlc-pr` — Stage 3.5: Automated Spec/Impl PR generation with governance labels.
+- `/asdlc-approve` — Stage 4: Cryptographic `specSha` lock & transition to `READY_FOR_IMPL`.
+- `/asdlc-apply` — Stage 5: Guarded task-level TDD implementation loop.
+- `/asdlc-test` — Stage 5.5: Execute AC test runners mapped to requirements.
+- `/asdlc-verify` — Stage 6: Audit 12 enterprise quality gates.
+- `/asdlc-archive` — Stage 7: Merge deltas to living specs & refresh AST graph.
+- `/asdlc-status` — Change orientation or compact repository portfolio view.
+- `/asdlc-doctor` — Toolchain diagnostic check validating per-tool command & skill health.
+
+---
 
 ## The seven stages
 
