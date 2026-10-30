@@ -119,7 +119,7 @@ All of v6's platform governance design (PR types, path locking, policy.yaml, SPE
 
 ```bash
 # developer experience with the local-tarball method
-npm install -g https://internal-artifactory/asdlc/asdlc-1.3.0.tgz
+npm install -g https://internal-artifactory/asdlc/asdlc-1.4.0.tgz
 asdlc --version
 ```
 
@@ -539,7 +539,7 @@ Three components evolve independently with completely different release cadences
 
 ```yaml
 # asdlc.lock (like .sdlc/policy.yaml, protected by the platform team, teams cannot modify)
-asdlc: 1.3.0
+asdlc: 1.4.0
 openspec: 1.3.1
 graphify:
   impl: node        # python | go | node, see §15.3
