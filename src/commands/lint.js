@@ -109,8 +109,15 @@ export function runLint(changeId, opts = {}) {
     for (const fnd of lintSpecText(readText(path.join(cdir, 'specs', file)), { rules })) findings.push({ ...fnd, file });
   }
   const blockers = countBlockers(findings);
-  add('BDD + acceptance criteria', blockers === 0 ? 'pass' : 'fail',
-    blockers === 0 ? `${findings.length} advisory finding(s)` : `${blockers} blocker(s)`);
+  let bddDetail = blockers === 0 ? `${findings.length} advisory finding(s)` : `${blockers} blocker(s)`;
+  if (blockers > 0) {
+    const list = findings
+      .map((f) => `${f.code}: ${f.message}${f.location ? ` (${f.location})` : ''}`)
+      .slice(0, 5);
+    const overflow = findings.length > 5 ? ` (+${findings.length - 5} more)` : '';
+    bddDetail = `${blockers} blocker(s) [${list.join('; ')}${overflow}] (see docs/spec-format.md)`;
+  }
+  add('BDD + acceptance criteria', blockers === 0 ? 'pass' : 'fail', bddDetail);
 
   return finish(results, { json: opts.json, changeId });
 }

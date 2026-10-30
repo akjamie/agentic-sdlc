@@ -280,7 +280,7 @@ flowchart TD
 ```bash
 asdlc init [--ci jenkins|github]   # Scaffold repository with OpenSpec, Graphify, and skills
 asdlc new "<intent>"               # Scaffold change with AST explore + grill-me interview
-asdlc lint <ID>                    # Validate BDD scenarios, AC rules, and coverage
+asdlc lint <ID>                    # Validate BDD scenarios, AC rules, and coverage (docs/spec-format.md)
 asdlc pr <ID> <target-branch>      # Smart PR creator (auto-handles Spec PR vs Impl PR)
 asdlc approve <ID>                 # Record approvedSha and transition to ready_for_impl
 asdlc apply <ID>                   # Guarded implementation launcher (checks approvedSha)
@@ -331,7 +331,9 @@ Explore the complete documentation in the [`docs/`](docs/) directory:
 We welcome contributions from developers, architects, and researchers advancing the state of Agentic Software Engineering!
  
 - **Contributing Guide**: Check out [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, development conventions, and PR expectations.
+- **Specification & Linting Reference**: Read [docs/spec-format.md](docs/spec-format.md) for R0–R8 pass/fail examples, BDD rules, and troubleshooting remedies.
 - **Architectural Specs**: Read [docs/architecture.md](docs/architecture.md) for deep dives on the 3-plane model.
+- **Enterprise Blueprint**: Browse [docs/blueprint.md](docs/blueprint.md) (or [Chinese version](docs/blueprint.zh.md)) for enterprise deployment patterns.
 - **Documentation Index**: See [docs/README.md](docs/README.md) for the active documentation catalog.
 
 ---

@@ -111,6 +111,8 @@ It validates:
 - [x] Traceable Acceptance Criteria (`AC1`, `AC2` mapped to test paths).
 - [x] Presence of all required artifacts.
 
+> 💡 **Encountering lint rejections?** Consult the complete [Specification Format & Linting Reference (spec-format.md)](./spec-format.md) for R0–R8 pass/fail examples and 1-minute remedies.
+
 Once lint passes with 0 blockers, automatically open your **Spec PR**:
 
 ```bash
