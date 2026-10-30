@@ -59,7 +59,7 @@ The flow:
   asdlc archive <ID>             finish: archive change + sync living specs to openspec/specs/
 
 Navigation, health & maintenance:
-  asdlc status <ID>              where a change is in the 7 stages + the next command
+  asdlc status [ID]              where a change is in the 7 stages (or portfolio overview if omitted)
   asdlc doctor                   environment + repo setup health
   asdlc update                   update repo state: skills, AST knowledge graph (KB) & AGENTS.md
   asdlc upgrade [--global]       upgrade asdlc CLI, openspec, graphify & managed schema
