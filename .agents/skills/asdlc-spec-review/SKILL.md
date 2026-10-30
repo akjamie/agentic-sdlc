@@ -5,10 +5,10 @@ aliases:
   - spec-review
 ---
 
-# /asdlc:spec-review — CI-Triggered Independent Spec Reviewer
+# /asdlc:spec-review — Independent Spec Review Agent
 
-This skill executes **independent AI spec review**, triggered by CI when a PR carries the `asdlc:spec-review` label.
-It posts its findings as a **markdown PR comment** via the GitHub API so the human TL sees them inline on the PR.
+This skill executes **independent AI spec review**, executed by an independent reviewer agent (either triggered on PR or invoked locally on a change ID).
+It evaluates the specification and provides clear review findings so the human Tech Lead can make informed approval decisions.
 
 It applies the **Player ≠ Referee** principle: the reviewing agent MUST NOT be the agent that authored the spec.
 
@@ -16,13 +16,15 @@ It applies the **Player ≠ Referee** principle: the reviewing agent MUST NOT be
 > **Scope**: Reviews *intent* — BDD quality, logical consistency, architectural soundness, AC testability.
 > Does NOT re-run `asdlc lint` (deterministic structural checks are already gated by `asdlc pr`).
 > Does NOT review implementation code — that is `asdlc-impl-review`.
-> Output is a **PR comment**, not a local file.
+> Output can be posted as a PR comment or reported locally.
 
 ---
 
-## Trigger
+## Invocation & Triggers
 
-This skill is invoked by CI when a PR is labeled `asdlc:spec-review`. The typical invocation in a GitHub Actions workflow or Jenkinsfile:
+This skill can be invoked:
+1. **Locally by an independent agent**: `/asdlc:spec-review <CHANGE_ID>`
+2. **Automatically on PRs** carrying the `asdlc:spec-review` label via PR automation workflows:
 
 ```yaml
 # GitHub Actions example

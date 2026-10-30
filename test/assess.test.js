@@ -261,3 +261,46 @@ test('assess: P1-3 regression - tampered risk-history.jsonl fails closed on read
   }
 });
 
+test('assess: Graphify AST god node centrality triggers L2 escalation for high fan-in modules', () => {
+  const repoRoot = process.cwd();
+  // src/lib/fs.js has > 100 inbound refs in Graphify AST
+  const rec = assess({
+    stage: 'impl',
+    changeId: 'god-node-test',
+    changedFiles: ['src/lib/fs.js'],
+    repoRoot,
+    persist: false
+  });
+
+  assert.equal(rec.risk.level, 'L2');
+  assert.ok(rec.vectors.v3_topology.evidence.some((e) => e.id === 'V3_GRAPHIFY_GOD_NODE'));
+});
+
+test('assess: agent-native semantic evaluation correctly escalates api_contract and respects invariants', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'asdlc-agent-native-'));
+  try {
+    const changeId = 'agent-eval-test';
+    const cdir = path.join(tmp, 'openspec', 'changes', changeId);
+    fs.mkdirSync(cdir, { recursive: true });
+
+    // Seed agent assessment record
+    fs.writeFileSync(path.join(cdir, '.agent-assess.json'), JSON.stringify({
+      classification: 'api_contract',
+      rationale: 'Agent evaluated requirement as modifying cross-boundary router contract'
+    }));
+
+    const rec = assess({
+      stage: 'new',
+      changeId,
+      requirement: 'update internal user session handler',
+      repoRoot: tmp,
+      persist: false
+    });
+
+    assert.equal(rec.risk.level, 'L2');
+    assert.ok(rec.vectors.v1_intent.evidence.some((e) => e.id === 'V1_AI_API_CONTRACT_INTENT'));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+

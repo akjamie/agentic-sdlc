@@ -1,4 +1,5 @@
 import path from 'node:path';
+import YAML from 'yaml';
 import { exists, readText, writeText, walkFiles } from '../lib/fs.js';
 import { readYaml } from '../lib/yaml.js';
 import { openspecDir, changeDir } from '../lib/paths.js';

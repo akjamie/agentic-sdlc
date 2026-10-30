@@ -6,10 +6,10 @@ aliases:
   - code-review-asdlc
 ---
 
-# /asdlc:impl-review — CI-Triggered Independent Implementation Reviewer
+# /asdlc:impl-review — Independent Implementation Review Agent
 
-This skill executes **independent AI implementation review**, triggered by CI when a PR carries the `asdlc:impl-review` label.
-It posts its findings as a **markdown PR comment** via the GitHub API so the human lead sees them inline on the PR.
+This skill executes **independent AI implementation review**, executed by an independent reviewer agent (either triggered on PR or invoked locally on a change ID).
+It evaluates the code against approved specifications, test evidence, and production safety.
 
 It applies the **Player ≠ Referee** principle: the reviewing agent MUST NOT be the agent that authored the implementation.
 
@@ -19,21 +19,23 @@ Drawing from Anthropic's engineering practices for scaling AI code reviews, this
 1. **Convergence Protocol**: Review loops must converge, not thrash. Capped at **3 rounds** max; re-reviews inspect **incremental diffs only**.
 2. **Defect Attribution**: Clearly separates defects introduced by this PR (`[Blocker: Introduced]`) from pre-existing legacy issues (`[Tech Debt: Pre-existing]`). Pre-existing flaws **never block** the PR.
 3. **Repository Contract (`REVIEW.md`)**: Respects repository-defined domain rules, failure modes, and ignore paths from the trusted base branch over generic AI opinions.
-4. **Risk-Based Tiering**: Scrutiny scales with the change's risk profile (Tier 1 Docs/Style, Tier 2 Standard, Tier 3 Critical/Auth/Billing). Highest-risk file sets the PR tier.
-5. **Class-of-Bug Grouping**: Defect patterns are grouped into singular findings rather than fragmented into line-by-line spam.
-6. **Structural & Actionable Findings**: Every finding provides explicit Location, Defect, Impact, and Action Required for instant clarity to both AI agents and human leads.
+4. **Mandatory Acceptance Test Verification (`asdlc test`)**: Reviewer mandates that `asdlc test <CHANGE_ID>` has executed and all mapped AC assertions pass before issuing approval.
+5. **Risk-Based Tiering**: Scrutiny scales with the change's risk profile (Tier 1 Docs/Style, Tier 2 Standard, Tier 3 Critical/Auth/Billing). Highest-risk file sets the PR tier.
+6. **Class-of-Bug Grouping**: Defect patterns are grouped into singular findings rather than fragmented into line-by-line spam.
+7. **Structural & Actionable Findings**: Every finding provides explicit Location, Defect, Impact, and Action Required for instant clarity to both AI agents and human leads.
 
 > [!IMPORTANT]
 > **Scope**: Reviews *implementation conformance and code quality* — spec adherence, test rigor, architecture, and production safety.
-> Requires `asdlc verify <CHANGE_ID>` to have passed (12 gates) before this review is meaningful.
-> Does NOT re-run `asdlc verify`. Does NOT review spec intent — that is `asdlc-spec-review`.
-> Output is a **PR comment**, not a local file.
+> Requires `asdlc test <CHANGE_ID>` and `asdlc verify <CHANGE_ID>` to have passed before this review can issue an APPROVE verdict.
+> Does NOT review spec intent — that is `asdlc-spec-review`.
 
 ---
 
-## Trigger
+## Invocation & Triggers
 
-This skill is invoked by CI when a PR is labeled `asdlc:impl-review`. The typical invocation in a GitHub Actions workflow or Jenkinsfile:
+This skill can be invoked:
+1. **Locally by an independent agent**: `/asdlc:impl-review <CHANGE_ID>`
+2. **Automatically on PRs** carrying the `asdlc:impl-review` label via PR automation workflows:
 
 ```yaml
 # GitHub Actions example

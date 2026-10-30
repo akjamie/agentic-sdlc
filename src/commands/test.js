@@ -102,7 +102,14 @@ export function runTests(changeId, opts = {}) {
     const allGo = uniqueTestPaths.every((p) => p.endsWith('.go'));
     const allPy = uniqueTestPaths.every((p) => p.endsWith('.py'));
     const allJava = uniqueTestPaths.every((p) => /\.(java|kt)$/i.test(p));
-    if (allGo) return `go test ${uniqueTestPaths.join(' ')}`;
+    if (allGo) {
+      // In Go, package directory syntax './path/to/pkg' is required so intra-package symbols resolve
+      const goPkgs = [...new Set(uniqueTestPaths.map((p) => {
+        const dir = path.dirname(p).replace(/\\/g, '/');
+        return dir === '.' ? '.' : `./${dir}`;
+      }))];
+      return `go test ${goPkgs.join(' ')}`;
+    }
     if (allPy) return `pytest ${uniqueTestPaths.join(' ')}`;
     if (allJava) return 'mvn test';
     return process.platform === 'win32'

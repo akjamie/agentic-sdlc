@@ -38,6 +38,7 @@ export function assess({
 
     // If requirement is empty or for spec stage, load proposal.md and design.md from change dir
     let effectiveReq = requirement || '';
+    let agentContext = null;
     if (repoRoot && changeId) {
       try {
         const cdir = changeDir(repoRoot, changeId);
@@ -46,13 +47,21 @@ export function assess({
           const propText = fs.readFileSync(propPath, 'utf8');
           effectiveReq = `${effectiveReq}\n${propText}`.trim();
         }
+
+        // Check if change contains agent assessment context (.agent-assess.json or .openspec.yaml assessment)
+        const agentCtxPath = path.join(cdir, '.agent-assess.json');
+        if (fs.existsSync(agentCtxPath)) {
+          try {
+            agentContext = JSON.parse(fs.readFileSync(agentCtxPath, 'utf8'));
+          } catch { /* ignore parse error */ }
+        }
       } catch { /* ignore read failure */ }
     }
 
     // 1. Evaluate Three Risk Vectors
-    const v1 = evaluateV1Intent({ requirement: effectiveReq, changedFiles, changeType });
+    const v1 = evaluateV1Intent({ requirement: effectiveReq, changedFiles, changeType, agentContext });
     const v2 = evaluateV2Security({ requirement: effectiveReq, changedFiles, repoRoot });
-    const v3 = evaluateV3Topology({ requirement: effectiveReq, changedFiles, repoRoot });
+    const v3 = evaluateV3Topology({ requirement: effectiveReq, changedFiles, repoRoot, changeId });
 
     // Inferred or provided Change Type
     const effectiveType = changeType || v1.inferredType || 'change';

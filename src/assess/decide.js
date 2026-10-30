@@ -57,7 +57,7 @@ export function decideAssessment({
   );
 
   const req = v1.requirement || '';
-  const aiJudgment = judgeChangeSemantics({ requirement: req, changedFiles });
+  const aiJudgment = v1.aiJudgment || judgeChangeSemantics({ requirement: req, changedFiles });
 
   if (!hasMandatoryHumanReview && maxRank <= 1) {
     if (changedFiles.length > 0) {

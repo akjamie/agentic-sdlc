@@ -3,7 +3,7 @@ import path from 'node:path';
 import { HARD_RULES, isTestOrDocFile } from '../rules/builtin.js';
 import { getGraphTopologyMetrics } from '../../lib/graphify.js';
 
-export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRoot = null } = {}) {
+export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRoot = null, changeId = null } = {}) {
   const req = String(requirement || '').toLowerCase();
   const evidence = [];
   const unresolved = [];
@@ -75,21 +75,42 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
 
   // 2. Graphify AST Knowledge Graph Centrality & God Nodes Check
   // Escalates to L2 if changed files touch architectural hubs with high cross-file fan-in
-  if (repoRoot && changedFiles.length > 0) {
+  if (repoRoot) {
     try {
       const topoMetrics = getGraphTopologyMetrics(repoRoot);
       if (topoMetrics.available && topoMetrics.fileInDegree) {
         // High centrality threshold: >= 20 cross-file inbound dependencies
+        // Exclude purely peripheral utility loggers or formats
         const GOD_NODE_THRESHOLD = 20;
         const hitHubs = [];
 
+        // Check 1: Physical changed files
         for (const f of changedFiles) {
           if (isTestOrDocFile(f)) continue;
           const norm = f.replace(/\\/g, '/');
+          if (/^(?:src\/lib\/log|src\/lib\/cliutil)\.js$/i.test(norm)) continue; // ignore pure logger / cli wrappers
           const inDegree = topoMetrics.fileInDegree[norm] || 0;
           if (inDegree >= GOD_NODE_THRESHOLD) {
             hitHubs.push({ file: norm, inDegree });
           }
+        }
+
+        // Check 2: If stage: new without changedFiles yet, ground in explore.md query if present
+        if (hitHubs.length === 0 && changeId) {
+          try {
+            const expPath = path.join(repoRoot, 'openspec', 'changes', changeId, 'explore.md');
+            if (fs.existsSync(expPath)) {
+              const expContent = fs.readFileSync(expPath, 'utf8');
+              for (const [hubFile, inDeg] of (topoMetrics.topHubs || [])) {
+                if (inDeg >= GOD_NODE_THRESHOLD && !/log\.js|cliutil\.js/i.test(hubFile)) {
+                  const baseName = path.basename(hubFile);
+                  if (expContent.includes(hubFile) || expContent.includes(baseName)) {
+                    hitHubs.push({ file: hubFile, inDegree: inDeg });
+                  }
+                }
+              }
+            }
+          } catch { /* ignore explore read */ }
         }
 
         if (hitHubs.length > 0) {
@@ -97,7 +118,7 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
           if (level === 'L1') {
             level = 'L2';
           }
-          const hubDesc = hitHubs.map((h) => `${h.file} (${h.inDegree} inbound refs)`).join(', ');
+          const hubDesc = hitHubs.slice(0, 3).map((h) => `${h.file} (${h.inDegree} inbound refs)`).join(', ');
           evidence.push({
             id: 'V3_GRAPHIFY_GOD_NODE',
             kind: 'topology_centrality',
