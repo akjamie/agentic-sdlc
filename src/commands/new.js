@@ -55,7 +55,7 @@ export function newChange(requirement, opts = {}) {
     log.ok(`assigned governance level: ${level} [Type: ${changeType}] (${levelReason}) - [Spec-first mode: Spec PR required before implementation]`);
   }
 
-  const g = ensureGraphify();
+  const g = ensureGraphify({ autoInstall: false });
   if (!g.installed) {
     log.warn('[WARN] explore.md generated without graph context (Graphify not installed). Run `asdlc init --graph` to enable architectural AST index.');
     const fallbackMd = `# Explore: ${slug}

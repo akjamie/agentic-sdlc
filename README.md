@@ -15,24 +15,28 @@
 
 ---
 
-## ⚡ The Dilemma: "Vibe Coding" vs. "Enterprise Bureaucracy"
+## ⚡ The AI Software Engineering Bottleneck Shift
 
-Autonomous AI coding agents (Claude Code, Cursor, OpenCode, Codex) are transforming software delivery. But engineering leads face a frustrating dilemma:
+AI coding agents (Claude Code, Cursor, OpenCode, Codex) write hundreds of lines of code in seconds. However, as code generation cost approaches zero, the engineering bottleneck shifts to **three predictable modes of failure in real-world codebases**:
 
 ```
-              UNGOVERNED "VIBE CODING"             RIGID "ALWAYS TWO-PR" FRAMEWORKS
-               (Chaos & Silent Drift)                   (Suffocating Bureaucracy)
-            ┌───────────────────────────┐            ┌───────────────────────────┐
-            │ 💥 Hallucinated contracts │            │ 🐌 2 PRs for a 1-line doc │
-            │ 💥 Code shipped w/o tests │    VS      │ 🐌 45-min review for typo │
-            │ 💥 Agents rewrite specs   │            │ 🐌 Dev velocity tanks     │
-            │ 💥 Self-grading exams     │            │ 🐌 Agents circumvent tool │
-            └───────────────────────────┘            └───────────────────────────┘
+                       HOW AUTONOMOUS AI AGENTS DRIFT IN PRODUCTION
+ ┌───────────────────────────┐  ┌───────────────────────────┐  ┌───────────────────────────┐
+ │ 1. Guessing on Ambiguity  │  │ 2. Reward-Hacking Exams   │  │ 3. Review Fatigue Chaos   │
+ ├───────────────────────────┤  ├───────────────────────────┤  ├───────────────────────────┤
+ │ Agents guess architecture │  │ When tests or edge cases  │  │ Tech Leads are flooded    │
+ │ and schema assumptions    │  │ fail, agents weaken test  │  │ with 500-line AI diffs    │
+ │ silently across 15 files  │  │ assertions or modify specs│  │ lacking verified intent,  │
+ │ instead of clarifying.    │  │ to force green builds.    │  │ tests, or rationale.      │
+ └───────────────────────────┘  └───────────────────────────┘  └───────────────────────────┘
 ```
+
+> **Why prompts alone (`AGENTS.md`, `CLAUDE.md`) cannot fix this:**  
+> Prompts are **suggestions**, not gates. An autonomous agent under token pressure will prioritize getting code written over adherence to instructions. True governance requires **deterministic exit-coded gates and independent verification agents**.
 
 ### The Solution: Adaptive Dual-Track SDLC (`asdlc`)
 
-`agentic-sdlc` bridges this gap with an **Intelligent, Neuro-Symbolic Governance Plane**:
+`agentic-sdlc` bridges this gap with an **Intelligent, Adaptive Governance Plane**:
 - 🚀 **Frictionless Agility for Routine Work (L0 / L1)**: Pure test additions, documentation updates, and bounded local refactors run in a streamlined **Single-PR** mode with automated validation and zero red tape.
 - 🛡️ **Ironclad Rigor for High-Impact Changes (L2 / L3)**: Cross-boundary APIs (Spring Boot, FastAPI, Go, NestJS), database schemas, security tokens, and constitutional rules enforce **Dual-PR Spec-First** contracts with human sign-off.
 - 🤝 **Humane In-Place Scope Escalation**: If scope unexpectedly expands during implementation, the system **never punishes the engineer** by ripping their Git branch apart. It maintains the single PR in-place, revokes auto-merge, and routes to a Tech Lead for human review.
@@ -41,7 +45,7 @@ Autonomous AI coding agents (Claude Code, Cursor, OpenCode, Codex) are transform
 
 ## 🧭 Adaptive Risk-Tiered Governance (L0–L3)
 
-Every change evaluated by `asdlc` is continuously assessed along its lifecycle across 5 orthogonal risk vectors (Intent, Architecture/API, Security/Data, AST Topology, and Test/Doc Semantics).
+Every change evaluated by `asdlc` is continuously assessed along its lifecycle across core risk vectors (Task Intent, Security/Data Boundaries, and AST Topology/Architecture).
 
 ```mermaid
 flowchart TD

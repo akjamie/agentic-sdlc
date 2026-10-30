@@ -203,23 +203,38 @@ The decisions are recorded into `openspec/changes/rate-limiting-login/clarificat
 With `clarifications.md` settled, your agent creates three key files inside `openspec/changes/rate-limiting-login/`:
 
 1. **`proposal.md`**: High-level problem statement, user capabilities, and operational limits.
-2. **`specs/rate-limiting/spec.md`**: Formal BDD scenarios using Gherkin syntax with explicit **Acceptance Criteria (AC)**:
+2. **`specs/rate-limiting/spec.md`**: Formal BDD specification complying with deterministic lint rules (R0–R8):
 
 ```markdown
 # Capability: Auth Login Rate Limiting
 
-## Scenario 1: Request within allowed rate limit
-- **Given** client IP `192.0.2.1` has made 2 requests in the last 60 seconds
-- **When** the client submits a POST request to `/api/auth/login`
-- **Then** the request proceeds to authentication
-- **And** the HTTP response status is not 429
+## Purpose
+Provides sliding-window rate limiting for the /api/auth/login endpoint in Redis to protect user authentication against credential stuffing and brute-force attacks.
 
-## Scenario 2: Request exceeding rate limit is throttled
-- **Given** client IP `192.0.2.1` has made 5 requests in the last 60 seconds
-- **When** the client submits a 6th POST request to `/api/auth/login`
-- **Then** the HTTP response status is 429 Too Many Requests
-- **And** the `Retry-After` header indicates remaining seconds in window
-- **And** the response body contains RFC 7807 problem details with `type: "rate-limit-exceeded"`
+## ADDED Requirements
+
+### Requirement: Sliding-Window Rate Limiting
+The system SHALL limit client login attempts using a 60-second sliding window keyed by client IP and return RFC 7807 problem details when exhausted.
+
+#### Scenario: Request within allowed rate limit
+- **GIVEN** client IP "192.0.2.1" has made 2 requests in the last 60 seconds
+- **WHEN** the client submits a POST request to "/api/auth/login"
+- **THEN** the request proceeds to authentication
+- **AND** the HTTP response status is not 429
+
+#### Scenario: Request exceeding rate limit is throttled
+- **GIVEN** client IP "192.0.2.1" has made 5 requests in the last 60 seconds
+- **WHEN** the client submits a 6th POST request to "/api/auth/login"
+- **THEN** the HTTP response status is 429 Too Many Requests
+- **AND** the Retry-After header indicates remaining seconds in window
+
+**Acceptance criteria**
+- [ ] AC1: Allows requests under limit to proceed without HTTP 429 (test: test/rateLimit.test.js)
+- [ ] AC2: Throttles 6th request with HTTP 429 and Retry-After header (test: test/rateLimit.test.js)
+
+## Test Strategy
+- **Unit Testing**: Sliding-window counting and Redis TTL expiry logic in `test/rateLimit.test.js`.
+- **Integration Testing**: End-to-end `/api/auth/login` rate limiting middleware tests with mocked Redis client.
 ```
 
 3. **`tasks.md`**: Atomic, test-driven implementation checklist:
@@ -248,38 +263,28 @@ asdlc lint rate-limiting-login
 ```text
 asdlc lint: validating change 'rate-limiting-login'...
 
-  [PASS] R0: openspec-valid
-        .openspec.yaml conforms to schema v1
-  [PASS] R1: artifacts-present
+  [PASS] artifacts
         proposal.md, clarifications.md, tasks.md, specs/ present
-  [PASS] R2: clarifications-settled
+  [PASS] clarifications-settled
         0 unsettled decision forks remaining
-  [PASS] R3: bdd-structure
-        2 Gherkin scenarios detected with Given/When/Then keywords
-  [PASS] R4: acceptance-criteria
-        all scenarios contain deterministic assertion criteria
-  [PASS] R5: security-and-error-coverage
-        HTTP 429 and Redis failure edge cases specified
-  [PASS] R6: task-coverage
-        4 tasks mapped 1-to-1 with scenarios and tests
-  [PASS] R7: domain-api-standards
-        follows RESTful RFC 7807 problem details schema
-  [PASS] R8: spec-drift-guard
-        no source code modified during spec drafting
+  [PASS] spec delta: specs/rate-limiting/spec.md
+        0 blocker(s), 0 advisory finding(s)
+  [PASS] openspec-validate
+        strict validation passed
 
-Lint passed! Spec is production-ready.
+lint: passed (0 blockers, 0 warnings)
 Next command: asdlc pr rate-limiting-login main
 ```
 
 ### What if a Rule Fails?
-Suppose `clarifications.md` still contained an unsettled marker (`[TODO: decide later]`). The linter would block:
+Suppose `spec.md` was missing acceptance criteria mappings. The linter would immediately block with an actionable rule code:
 
 ```text
-  [FAIL] R2: clarifications-settled
-        1 unsettled question found: "Q3: Redis outage fallback [TODO: decide later]"
-        Fix: resolve all decisions before opening Spec PR.
+  [FAIL] R5-ac: "Sliding-Window Rate Limiting" has no Acceptance criteria (AC<n>)
+  [FAIL] R6-ac-test: "AC1" has no (test: <path>) mapping
 
-Lint failed: 1 blocking violation(s).
+lint: failed (2 blockers, 0 warnings)
+Fix: ensure all requirements define ACs mapped to test paths: - [ ] AC1: description (test: path/to/test)
 ```
 Simply edit `clarifications.md` to settle the decision and re-run `asdlc lint rate-limiting-login`.
 

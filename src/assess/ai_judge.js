@@ -139,8 +139,8 @@ export function judgeChangeSemantics({ requirement = '', changedFiles = [], repo
       classification: isPureTest ? 'test_only' : (isPureDoc ? 'doc_only' : 'internal_code'),
       confidence: 'high',
       rationale: isPureTest
-        ? 'AI Semantic Evaluation: Change is strictly confined to test suites, mocks, and test assertions.'
-        : (isPureDoc ? 'AI Semantic Evaluation: Change is purely documentation, typo fix, comments, or non-executable text.' : 'General code change')
+        ? 'Deterministic Heuristic Baseline: Change is strictly confined to test suites, mocks, and test assertions.'
+        : (isPureDoc ? 'Deterministic Heuristic Baseline: Change is purely documentation, typo fix, comments, or non-executable text.' : 'General code change')
     };
   }
 

@@ -26,7 +26,7 @@ While traditional software engineering relies on manual handoffs and post-facto 
 │       ↓                                                                                │
 │   [5. APPLY]       Guarded task-level TDD (Red -> Green -> Refactor -> Converge)       │
 │       ↓                                                                                │
-│   [6. VERIFY]      9 verification gates (tamper detection, test presence, CI tests)   │
+│   [6. VERIFY]      12 verification gates (tamper detection, test presence, verification tests) │
 │       ↓                                                                                │
 │   [7. ARCHIVE]     Living specs sync -> README update -> constitutional protection     │
 └────────────────────────────────────────────────────────────────────────────────────────┘
@@ -112,7 +112,7 @@ The rapid adoption of Large Language Models in software development has created 
 ## 6. Open Source Roadmap & Community
 ## 开源路线图与企业展望
 
-1. **Free Public Distribution on npm**: Available globally via `npm install -g agentic-sdlc`.
+1. **Free Public Distribution on npm**: Available globally via `npm install -g @akjamie/agentic-sdlc`.
 2. **Automated CI/CD via GitHub Actions**: Automated test verification and granular release pipelines.
 3. **Enterprise Overlays**: Pluggable BU governance policies, SOC2/ISO audit log exporters, and internal model adapter support.
 

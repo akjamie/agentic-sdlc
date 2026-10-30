@@ -1,10 +1,11 @@
 import path from 'node:path';
 import { exists, readText, walkFiles } from '../lib/fs.js';
-import { changeDir } from '../lib/paths.js';
+import { changeDir, openspecDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
 import { runShell } from '../lib/exec.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
+import { readYaml } from '../lib/yaml.js';
 
 export function parseSpecAcceptanceCriteria(specText) {
   const acs = [];
@@ -88,9 +89,28 @@ export function runTests(changeId, opts = {}) {
     log.info('');
   }
 
-  const runnerCmd = opts.runner ?? (process.platform === 'win32'
-    ? `node --test ${uniqueTestPaths.map((p) => `"${p}"`).join(' ')}`
-    : `node --test ${uniqueTestPaths.join(' ')}`);
+  const testCfg = path.join(openspecDir(repoRoot), 'config.yaml');
+  let configuredRunner = null;
+  if (exists(testCfg)) {
+    try {
+      const parsed = readYaml(testCfg);
+      configuredRunner = parsed?.test?.runner || parsed?.testing?.runner || null;
+    } catch { /* ignore config parse error */ }
+  }
+
+  const defaultRunner = () => {
+    const allGo = uniqueTestPaths.every((p) => p.endsWith('.go'));
+    const allPy = uniqueTestPaths.every((p) => p.endsWith('.py'));
+    const allJava = uniqueTestPaths.every((p) => /\.(java|kt)$/i.test(p));
+    if (allGo) return `go test ${uniqueTestPaths.join(' ')}`;
+    if (allPy) return `pytest ${uniqueTestPaths.join(' ')}`;
+    if (allJava) return 'mvn test';
+    return process.platform === 'win32'
+      ? `node --test ${uniqueTestPaths.map((p) => `"${p}"`).join(' ')}`
+      : `node --test ${uniqueTestPaths.join(' ')}`;
+  };
+
+  const runnerCmd = opts.runner ?? configuredRunner ?? defaultRunner();
 
   const res = runShell(runnerCmd, repoRoot, {
     env: { NODE_TEST_CONTEXT: undefined },

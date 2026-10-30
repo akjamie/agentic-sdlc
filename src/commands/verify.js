@@ -22,15 +22,24 @@ import { log, dim } from '../lib/log.js';
 function meta(repoRoot, changeId) {
   const p = path.join(changeDir(repoRoot, toChangeSlug(changeId)), '.openspec.yaml');
   if (!exists(p)) return {};
-  const text = readText(p);
-  const sha = text.match(/^\s*specSha:\s*['"]?([^\s'"]+)['"]?\s*$/m);
-  const status = text.match(/^\s*status:\s*['"]?([^\s'"]+)['"]?\s*$/m);
-  const lvl = text.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
-  return {
-    specSha: sha ? sha[1] : null,
-    status: status ? status[1] : null,
-    level: lvl ? lvl[1].toUpperCase() : null,
-  };
+  try {
+    const data = readYaml(p) ?? {};
+    return {
+      specSha: data.specSha ? String(data.specSha) : null,
+      status: data.status ? String(data.status) : null,
+      level: data.level ? String(data.level).toUpperCase() : null,
+    };
+  } catch {
+    const text = readText(p);
+    const sha = text.match(/^\s*specSha:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+    const status = text.match(/^\s*status:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+    const lvl = text.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+    return {
+      specSha: sha ? sha[1] : null,
+      status: status ? status[1] : null,
+      level: lvl ? lvl[1].toUpperCase() : null,
+    };
+  }
 }
 
 function readYamlConfig(repoRoot) {
