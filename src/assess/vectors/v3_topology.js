@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { HARD_RULES, isTestOrDocFile } from '../rules/builtin.js';
+import { getGraphTopologyMetrics } from '../../lib/graphify.js';
 
 export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRoot = null } = {}) {
   const req = String(requirement || '').toLowerCase();
@@ -72,7 +73,46 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
     }
   }
 
-  // 2. Check Requirement Semantics for Architecture / Schema / Infra
+  // 2. Graphify AST Knowledge Graph Centrality & God Nodes Check
+  // Escalates to L2 if changed files touch architectural hubs with high cross-file fan-in
+  if (repoRoot && changedFiles.length > 0) {
+    try {
+      const topoMetrics = getGraphTopologyMetrics(repoRoot);
+      if (topoMetrics.available && topoMetrics.fileInDegree) {
+        // High centrality threshold: >= 20 cross-file inbound dependencies
+        const GOD_NODE_THRESHOLD = 20;
+        const hitHubs = [];
+
+        for (const f of changedFiles) {
+          if (isTestOrDocFile(f)) continue;
+          const norm = f.replace(/\\/g, '/');
+          const inDegree = topoMetrics.fileInDegree[norm] || 0;
+          if (inDegree >= GOD_NODE_THRESHOLD) {
+            hitHubs.push({ file: norm, inDegree });
+          }
+        }
+
+        if (hitHubs.length > 0) {
+          no_signal = false;
+          if (level === 'L1') {
+            level = 'L2';
+          }
+          const hubDesc = hitHubs.map((h) => `${h.file} (${h.inDegree} inbound refs)`).join(', ');
+          evidence.push({
+            id: 'V3_GRAPHIFY_GOD_NODE',
+            kind: 'topology_centrality',
+            signal: 'hard',
+            summary: `Touches Graphify AST architectural hub: ${hubDesc}`,
+            source: hitHubs[0].file
+          });
+        }
+      }
+    } catch {
+      /* ignore graph metrics reading failure */
+    }
+  }
+
+  // 3. Check Requirement Semantics for Architecture / Schema / Infra
   const topoKeywords = [
     'api', 'endpoint', 'openapi', 'swagger', 'grpc', 'protobuf', 'graphql', 'webhook',
     'fastapi', 'springboot', 'spring boot', 'controller', 'rest api', 'router',

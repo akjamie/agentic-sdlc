@@ -12,7 +12,7 @@ import { CANONICAL_DESTRUCTIVE_PATTERN } from './rules/builtin.js';
 
 export const AI_CLASSIFICATION_SCHEMA = {
   type: 'object',
-  required: ['is_pure_test', 'is_pure_doc', 'classification', 'rationale'],
+  required: ['is_pure_test', 'is_pure_doc', 'classification', 'rationale', 'evaluator_mode'],
   properties: {
     is_pure_test: { type: 'boolean' },
     is_pure_doc: { type: 'boolean' },
@@ -20,6 +20,7 @@ export const AI_CLASSIFICATION_SCHEMA = {
     contains_api_changes: { type: 'boolean' },
     classification: { type: 'string', enum: ['test_only', 'doc_only', 'api_contract', 'internal_code', 'destructive', 'governance_plane'] },
     confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+    evaluator_mode: { type: 'string', enum: ['llm_classifier', 'heuristic_seed'] },
     rationale: { type: 'string' }
   }
 };
@@ -80,6 +81,7 @@ export function judgeChangeSemantics({ requirement = '', changedFiles = [], repo
 
   // If environment has an AI classification provider command configured, invoke it (P1-1)
   let rawAiOutput = null;
+  let evaluatorMode = 'heuristic_seed';
   const classifierCmd = process.env.ASDLC_CLASSIFIER_COMMAND;
   if (classifierCmd) {
     try {
@@ -93,6 +95,7 @@ export function judgeChangeSemantics({ requirement = '', changedFiles = [], repo
       const parsed = JSON.parse(stdout.trim());
       if (parsed && typeof parsed === 'object') {
         rawAiOutput = parsed;
+        evaluatorMode = 'llm_classifier';
       }
     } catch {
       // Fallback to validated heuristic seed on timeout or command failure
@@ -138,10 +141,13 @@ export function judgeChangeSemantics({ requirement = '', changedFiles = [], repo
       contains_api_changes: /\b(api|openapi|rest|controller|router)\b/i.test(req),
       classification: isPureTest ? 'test_only' : (isPureDoc ? 'doc_only' : 'internal_code'),
       confidence: 'high',
+      evaluator_mode: 'heuristic_seed',
       rationale: isPureTest
         ? 'Deterministic Heuristic Baseline: Change is strictly confined to test suites, mocks, and test assertions.'
         : (isPureDoc ? 'Deterministic Heuristic Baseline: Change is purely documentation, typo fix, comments, or non-executable text.' : 'General code change')
     };
+  } else {
+    rawAiOutput.evaluator_mode = rawAiOutput.evaluator_mode || 'llm_classifier';
   }
 
   // Mandatory expectation check

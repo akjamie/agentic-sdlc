@@ -391,7 +391,7 @@ sequenceDiagram
    ```bash
    asdlc approve rate-limiting-login
    ```
-   This captures the commit hash as the cryptographic `approvedSha` and locks the spec files against unauthorized modification.
+   This captures the commit hash as the path-limited `approvedSha` and locks the spec files against unauthorized modification.
 
 2. **Stage 5 (Apply)**:  
    Implementation begins! Run:

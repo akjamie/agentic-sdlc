@@ -10,7 +10,7 @@
 
 **Agentic SDLC (ASDLC)** is an enterprise-grade, specification-driven software development lifecycle designed specifically for the era of AI coding agents. 
 
-While traditional software engineering relies on manual handoffs and post-facto code reviews, and raw "vibe coding" leads to architectural erosion and hallucination drift, **Agentic SDLC introduces an unbreakable 7-stage governance pipeline**. It binds AI agents to cryptographically frozen specifications, strict TDD loops, and automated multi-gate verification.
+While traditional software engineering relies on manual handoffs and post-facto code reviews, and raw "vibe coding" leads to architectural erosion and hallucination drift, **Agentic SDLC introduces an unbreakable 7-stage governance pipeline**. It binds AI agents to Git-locked specifications, strict TDD loops, and automated multi-gate verification.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -22,7 +22,7 @@ While traditional software engineering relies on manual handoffs and post-facto 
 │       ↓                                                                                │
 │   [3. LINT]        Deterministic AC/BDD linter -> open Spec PR                         │
 │       ↓                                                                                │
-│   [4. APPROVE]     Human / TL sign-off -> cryptographic specSha lock (READY_FOR_IMPL)   │
+│   [4. APPROVE]     Human / TL sign-off -> Git specSha lock (READY_FOR_IMPL)            │
 │       ↓                                                                                │
 │   [5. APPLY]       Guarded task-level TDD (Red -> Green -> Refactor -> Converge)       │
 │       ↓                                                                                │
@@ -54,7 +54,7 @@ The rapid adoption of Large Language Models in software development has created 
 ## 3. Core Architectural Pillars
 ## 核心架构支柱与关键创新
 
-### Pillar 1: Cryptographic Spec SHA Freezing (规约密码学快照锁定)
+### Pillar 1: Git-Anchored Spec SHA Freezing (规约 Git 快照锁定与防篡改)
 - When a human or Tech Lead reviews and approves a specification (`asdlc approve <ID>`), the system records a path-limited Git commit hash (`specSha`) covering only `proposal.md` and `specs/**`.
 - During implementation (Stage 5), the AI is strictly prohibited from touching the approved spec.
 - In Stage 6 (`asdlc verify`), any unauthorized modification triggers the `spec-tamper` blocking gate. **The AI cannot change the contract once approved.**
@@ -86,7 +86,7 @@ The rapid adoption of Large Language Models in software development has created 
 
 | Dimension / 维度 | Raw Copilot / Cursor | Traditional SDLC | Agentic SDLC (ASDLC) |
 | :--- | :--- | :--- | :--- |
-| **Contract Authority** | None (Ad-hoc prompt) | Jira / Confluence (Disconnected) | **Cryptographic Spec SHA (In-Repo Git Gate)** |
+| **Contract Authority** | None (Ad-hoc prompt) | Jira / Confluence (Disconnected) | **Git-Anchored Spec SHA (In-Repo Git Gate)** |
 | **AI Freedom** | Unconstrained (High drift risk) | N/A (Manual coding) | **Bounded Execution (Stage Guards)** |
 | **Context Grounding** | Vector similarity / Embeddings | Human memory | **AST Knowledge Graph (Graphify)** |
 | **Quality Verification** | Manual reviewer eye-check | CI test runs | **9 Automated Gates (Anti-tamper, AC, TDD)** |

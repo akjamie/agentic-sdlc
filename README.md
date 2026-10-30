@@ -67,7 +67,7 @@ flowchart TD
         T_L2 --> DP1["Spec PR to main<br/>(asdlc pr spec)"]
         T_L3 --> DP1
         DP1 --> G_SPEC["CI Spec Review & Human TL Approval"]
-        G_SPEC --> S_LOCK["approvedSha Cryptographic Lock<br/>(asdlc approve)"]
+        G_SPEC --> S_LOCK["approvedSha Git SHA Lock<br/>(asdlc approve)"]
         S_LOCK --> DP2["Implementation Unlocked<br/>(asdlc apply)"]
         DP2 --> DP3["Task-Level TDD Red-Green Loop<br/>(asdlc test)"]
         DP3 --> PR_IMPL["Implementation PR to main<br/>(Human Tech Lead Final Gate)"]
@@ -106,12 +106,12 @@ flowchart TD
 
 ## 🛡️ Non-Negotiable Engineering Invariants
 
-Enterprise teams rely on deterministic code, not agent compliance or prompt enthusiasm. Every invariant is backed by cryptographic proofs or exit-coded engines:
+Enterprise teams rely on deterministic code, not agent compliance or prompt enthusiasm. Every invariant is backed by Git-anchored proofs, hash-chain integrity, or exit-coded engines:
 
 | # | Enterprise Invariant | How `asdlc` Enforces It | Failure Mode |
 | :-: | :--- | :--- | :--- |
 | **1** | **No Apply Before Spec Approval (L2/L3)** | `asdlc apply` physically inspects path-limited Git history for `approvedSha` on `main`. | 🚫 **Hard Refusal** — Zero production code allowed without an approved spec. |
-| **2** | **Cryptographic Anti-Tamper (`spec-tamper`)** | Implementation diffs must NOT modify locked spec files once approved on `main`. | 🚫 **Instant Rejection** — Agents cannot alter requirements to make failing tests pass. |
+| **2** | **Git-Anchored Anti-Tamper (`spec-tamper`)** | Implementation diffs must NOT modify locked spec files once approved on `main`. | 🚫 **Instant Rejection** — Agents cannot alter requirements to make failing tests pass. |
 | **3** | **Anti-Gaming Hash Chain** | Every level transition is sealed in an append-only, SHA-256 hash-chained `risk-history.jsonl`. | 🚫 **Integrity Breach** — Manual downgrades (`L2 -> L1`) are detected and blocked. |
 | **4** | **AI Classifier Invariant Defense** | AI semantic classifier output is validated against hard mathematical expectations. | 🚫 **Evasion Shield** — Prompts claiming a `DROP TABLE` is "just a test" are vetoed to L3. |
 | **5** | **Zero Untested Code (`test-presence`)** | Any change touching production source code (`src/**`, `app/**`) requires test diffs. | 🚫 **Rejection** — Stops AI "code dumps" without corresponding test coverage. |
@@ -144,7 +144,7 @@ Enterprise teams rely on deterministic code, not agent compliance or prompt enth
 │ ├─ assess/    Neuro-symbolic risk evaluation & hash-chain history     │
 │ ├─ speclint/  R0–R8 BDD/AC linting & scenario coverage traceability   │
 │ ├─ graphify/  Knowledge graph & code AST topology discovery           │
-│ └─ verify/    12 cryptographic & structural quality gates              │
+│ └─ verify/    12 deterministic & structural quality gates              │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -224,7 +224,7 @@ asdlc pr user-auth main
 | [`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Scaffolds change, queries AST hubs, runs conversational anti-fatigue `grill-me`. |
 | [`asdlc-lint`](assets/skills/asdlc-lint/SKILL.md) | Enforces deterministic BDD GIVEN/WHEN/THEN and R5 scenario-to-AC coverage. |
 | [`asdlc-pr`](assets/skills/asdlc-pr/SKILL.md) | Smart PR dispatcher: automatically handles Spec PR vs. Implementation PR. |
-| [`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md) | Stamps cryptographic `specSha` lock upon Spec PR merge. |
+| [`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md) | Stamps Git `specSha` lock upon Spec PR merge. |
 | [`asdlc-apply`](assets/skills/asdlc-apply/SKILL.md) | Strict task-level TDD engine (`Red -> Green -> Refactor -> Evidence -> Converge`). |
 | [`asdlc-verify`](assets/skills/asdlc-verify/SKILL.md) | Pre-flight audit across 12 gates (test presence, evidence, tamper guard, schema). |
 | [`asdlc-spec-review`](assets/skills/asdlc-spec-review/SKILL.md) | CI-triggered 6-dimensional spec review before human lead approval. |
@@ -243,7 +243,7 @@ Every implementation diff must pass the 12 deterministic gates in `asdlc verify`
 flowchart TD
     V["<b>asdlc verify &lt;ID&gt;</b><br/>Deterministic Implementation Gatekeeper"]
 
-    subgraph TIER1 ["Tier 1 · Cryptographic & Contract Integrity"]
+    subgraph TIER1 ["Tier 1 · Contract & Hash-Chain Integrity"]
         G_APPROVED["<b>approved-spec</b><br/>Matches commit on main"]
         G_TAMPER["<b>spec-tamper</b><br/>Zero spec modifications in Impl PR"]
         G_LEVEL["<b>level-integrity</b><br/>Hash-chain tamper check"]
@@ -323,7 +323,7 @@ Explore the complete documentation in the [`docs/`](docs/) directory:
 - ⏱️ [**30-Minute Getting Started Guide**](docs/getting-started.md): Frictionless step-by-step tutorial from install to first Spec PR.
 - 📐 [**Spec Format & Lint Reference**](docs/spec-format.md): Human-readable guide to R0–R8 lint rules with pass/fail examples.
 - 🌐 [**Quickstart Guide (Bilingual)**](docs/quickstart.md): End-to-end walkthrough covering the complete 7-stage lifecycle.
-- 🏛️ [**System Architecture & Whitepaper**](docs/about.md): Why Agentic SDLC, L0–L3 governance, and cryptographic anti-tamper proofs.
+- 🏛️ [**System Architecture & Whitepaper**](docs/about.md): Why Agentic SDLC, L0–L3 governance, and Git SHA anti-tamper locks.
 - 🩺 [**Environment Doctor Manual**](docs/doctor.md): Diagnostic reference for all 12 health checks and `--fix` automated healing.
 - ⌨️ [**CLI Command Reference**](docs/usage.md): Full flag, option, and exit code reference for all `asdlc` commands.
 - 📖 [**Standard Glossary**](docs/glossary.md): Authoritative lexicon for living specs, spec SHAs, and architectural god nodes.
