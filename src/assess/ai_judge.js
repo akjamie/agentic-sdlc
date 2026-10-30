@@ -8,7 +8,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { CANONICAL_DESTRUCTIVE_PATTERN, isTestOrDocFile } from './rules/builtin.js';
+import { CANONICAL_DESTRUCTIVE_PATTERN, isTestOrDocFile, isChangeMetadataFile } from './rules/builtin.js';
 
 export const AI_CLASSIFICATION_SCHEMA = {
   type: 'object',
@@ -69,7 +69,9 @@ export function validateAIClassificationExpectation(aiOutput, { changedFiles = [
   }
 
   // Invariant 3: Production source code files cannot be disguised as pure test or doc
-  const touchesProductionCode = normFiles.some((f) => !isTestOrDocFile(f));
+  // Exclude per-change SDLC metadata artifacts (openspec/changes/<id>/*) which accompany every branch
+  const substantiveFiles = normFiles.filter((f) => !isChangeMetadataFile(f));
+  const touchesProductionCode = substantiveFiles.some((f) => !isTestOrDocFile(f));
   if (touchesProductionCode && (aiOutput.is_pure_test || aiOutput.is_pure_doc)) {
     return {
       ok: false,
@@ -154,23 +156,24 @@ export function judgeChangeSemantics({ requirement = '', changedFiles = [], repo
       /^license$/i
     ];
 
-    const allTestFiles = normFiles.length > 0 && normFiles.every((f) => testPatternSamples.some((p) => p.test(f)));
-    const allDocFiles = normFiles.length > 0 && normFiles.every((f) => docPatternSamples.some((p) => p.test(f)));
+    const substantiveFiles = normFiles.filter((f) => !isChangeMetadataFile(f));
+    const allTestFiles = substantiveFiles.length > 0 && substantiveFiles.every((f) => testPatternSamples.some((p) => p.test(f)));
+    const allDocFiles = substantiveFiles.length > 0 && substantiveFiles.every((f) => docPatternSamples.some((p) => p.test(f)));
 
-    const isPureTest = allTestFiles || (normFiles.length === 0 && isTestIntent);
-    const isPureDoc = allDocFiles || (normFiles.length === 0 && isDocIntent);
+    const isPureTest = allTestFiles || (substantiveFiles.length === 0 && isTestIntent);
+    const isPureDoc = allDocFiles || (substantiveFiles.length === 0 && isDocIntent);
 
     rawAiOutput = {
       is_pure_test: isPureTest,
       is_pure_doc: isPureDoc,
       contains_destructive_ops: CANONICAL_DESTRUCTIVE_PATTERN.test(req),
-      contains_api_changes: /\b(api|openapi|rest|controller|router)\b/i.test(req),
+      contains_api_changes: false,
       classification: isPureTest ? 'test_only' : (isPureDoc ? 'doc_only' : 'internal_code'),
       confidence: 'high',
       evaluator_mode: 'heuristic_seed',
       rationale: isPureTest
         ? 'Deterministic Heuristic Baseline: Change is strictly confined to test suites, mocks, and test assertions.'
-        : (isPureDoc ? 'Deterministic Heuristic Baseline: Change is purely documentation, typo fix, comments, or non-executable text.' : 'General code change')
+        : (isPureDoc ? 'Deterministic Heuristic Baseline: Change is purely documentation, typo fix, comments, or non-executable text.' : 'Deterministic Heuristic Baseline: General code change')
     };
   } else {
     rawAiOutput.evaluator_mode = rawAiOutput.evaluator_mode || 'llm_classifier';
@@ -179,14 +182,16 @@ export function judgeChangeSemantics({ requirement = '', changedFiles = [], repo
   // Mandatory expectation check
   const check = validateAIClassificationExpectation(rawAiOutput, { changedFiles, requirement });
   if (!check.ok) {
+    const mode = rawAiOutput?.evaluator_mode || 'heuristic_seed';
     if (check.override) {
-      return { ...rawAiOutput, ...check.override, confidence: 'medium', invariant_override: true, rejection_reason: check.error };
+      return { ...rawAiOutput, ...check.override, evaluator_mode: mode, confidence: 'medium', invariant_override: true, rejection_reason: check.error };
     }
     return {
       is_pure_test: false,
       is_pure_doc: false,
       classification: 'internal_code',
       confidence: 'low',
+      evaluator_mode: mode,
       rationale: `AI output failed expectation verification: ${check.error}`
     };
   }

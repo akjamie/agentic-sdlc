@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { HARD_RULES, isTestOrDocFile } from '../rules/builtin.js';
+import { HARD_RULES, isTestOrDocFile, isChangeMetadataFile } from '../rules/builtin.js';
 import { getGraphTopologyMetrics } from '../../lib/graphify.js';
 
 export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRoot = null, changeId = null } = {}) {
@@ -84,8 +84,10 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
         const GOD_NODE_THRESHOLD = 20;
         const hitHubs = [];
 
+        const substantiveFiles = changedFiles.filter((f) => !isChangeMetadataFile(f));
+
         // Check 1: Physical changed files
-        for (const f of changedFiles) {
+        for (const f of substantiveFiles) {
           if (isTestOrDocFile(f)) continue;
           const norm = f.replace(/\\/g, '/');
           if (/(^|\/)(log|logger|logging|cliutil)\.[a-z0-9]+$/i.test(norm)) continue; // ignore pure logger / cli wrappers
@@ -95,10 +97,12 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
           }
         }
 
-        // Check 2: If stage: new without changedFiles yet, ground in explore.md query if present
-        // IMPORTANT: Only match against the ## Query: section to prevent false-positives
-        // from the global ## Architectural hubs (god nodes) header.
-        if (hitHubs.length === 0 && changeId) {
+        // Check 2: Pre-implementation stages (no substantive changedFiles yet) — ground in explore.md query
+        // IMPORTANT:
+        //  a) Only inspect the ## Query: section (never the global ## Architectural hubs header).
+        //  b) When Graphify outputs a BFS depth=2 traversal with `Start: [...]`, restrict matches to
+        //     0-hop Start nodes so 2-hop neighbor hubs (e.g. leaf -> caller -> fs.js) do not trigger false positives.
+        if (substantiveFiles.length === 0 && hitHubs.length === 0 && changeId) {
           try {
             const expPath = path.join(repoRoot, 'openspec', 'changes', changeId, 'explore.md');
             if (fs.existsSync(expPath)) {
@@ -106,10 +110,33 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
               const queryMatch = expContent.match(/##\s*Query:[^\n]*\n([\s\S]*?)(?:\n##\s|$)/i);
               const queryContent = queryMatch ? queryMatch[1] : '';
               if (queryContent && !queryContent.includes('_(no matches)_') && !queryContent.includes('_(unavailable')) {
+                const startHeaderMatch = queryContent.match(/\bStart:\s*\[([^\]]*)\]/);
+                let directHitFiles = null;
+                let startLabels = null;
+
+                if (startHeaderMatch) {
+                  startLabels = new Set();
+                  const rawList = startHeaderMatch[1];
+                  for (const m of rawList.matchAll(/['"]([^'"]+)['"]/g)) {
+                    startLabels.add(m[1].trim());
+                  }
+                  directHitFiles = new Set();
+                  for (const m of queryContent.matchAll(/^NODE\s+(.+?)\s+\[src=([^\s\]]+)/gm)) {
+                    const nodeLabel = m[1].trim();
+                    const nodeSrc = m[2].replace(/\\/g, '/');
+                    if (startLabels.has(nodeLabel) && !isTestOrDocFile(nodeSrc)) {
+                      directHitFiles.add(nodeSrc);
+                    }
+                  }
+                }
+
                 for (const [hubFile, inDeg] of (topoMetrics.topHubs || [])) {
                   if (inDeg >= GOD_NODE_THRESHOLD && !/(^|\/)(log|logger|logging|cliutil)\.[a-z0-9]+$/i.test(hubFile)) {
                     const baseName = path.basename(hubFile);
-                    if (queryContent.includes(hubFile) || queryContent.includes(baseName)) {
+                    const matched = directHitFiles !== null
+                      ? (directHitFiles.has(hubFile) || startLabels.has(hubFile) || startLabels.has(baseName))
+                      : (queryContent.includes(hubFile) || queryContent.includes(baseName));
+                    if (matched) {
                       hitHubs.push({ file: hubFile, inDegree: inDeg });
                     }
                   }

@@ -3,9 +3,9 @@ import path from 'node:path';
 import { exists, readText, writeText } from './fs.js';
 import { headSha } from './git.js';
 
-// graphify is a BU-standard authoring aid: it builds a code-derived knowledge
-// graph (deterministic AST, no LLM key) that the drafting agent queries for a
-// map of the codebase before writing a spec. It is NOT a gate.
+// graphify builds a deterministic code-derived AST knowledge graph (no LLM key)
+// used both to ground explore.md before spec authoring and to compute cross-file
+// fan-in / blast-radius centrality in v3_topology risk assessment.
 //
 // The graph is a DERIVED CACHE bound to the current HEAD (graphify-out/), never
 // committed; refreshed when HEAD moves.
@@ -71,14 +71,26 @@ export function loadGraphData(repoRoot) {
   }
 }
 
+function isNonProdCaller(filePath = '') {
+  const norm = String(filePath).replace(/\\/g, '/');
+  return (
+    /(^|\/)(tests?|__tests__|testing|docs?)\//i.test(norm) ||
+    /\.(test|spec)\.[a-z0-9]+$/i.test(norm) ||
+    /_test\.go$/i.test(norm) ||
+    /(^|\/)test_[^/]+\.py$/i.test(norm) ||
+    /_test\.py$/i.test(norm) ||
+    /\.(md|txt)$/i.test(norm)
+  );
+}
+
 /**
  * Calculates cross-file fan-in (inbound dependency count) from Graphify AST.
- * If file touches high-centrality symbols or modules, returns metrics.
+ * Excludes test/doc callers so test suites do not artificially inflate hub centrality.
  */
 export function getGraphTopologyMetrics(repoRoot) {
   const graph = loadGraphData(repoRoot);
   if (!graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.links)) {
-    return { available: false, fileInDegree: {}, godNodes: [] };
+    return { available: false, fileInDegree: {}, topHubs: [] };
   }
 
   const nodeToFile = {};
@@ -93,7 +105,7 @@ export function getGraphTopologyMetrics(repoRoot) {
   for (const link of graph.links) {
     const targetFile = nodeToFile[link.target];
     const sourceFile = nodeToFile[link.source];
-    if (targetFile && sourceFile && targetFile !== sourceFile) {
+    if (targetFile && sourceFile && targetFile !== sourceFile && !isNonProdCaller(sourceFile)) {
       fileInDegree[targetFile] = (fileInDegree[targetFile] || 0) + 1;
     }
   }

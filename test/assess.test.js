@@ -262,19 +262,62 @@ test('assess: P1-3 regression - tampered risk-history.jsonl fails closed on read
   }
 });
 
-test('assess: Graphify AST god node centrality triggers L2 escalation for high fan-in modules', () => {
-  const repoRoot = process.cwd();
-  // src/lib/fs.js has > 100 inbound refs in Graphify AST
-  const rec = assess({
-    stage: 'impl',
-    changeId: 'god-node-test',
-    changedFiles: ['src/lib/fs.js'],
-    repoRoot,
-    persist: false
-  });
+function writeGraphFixture(repoRoot) {
+  const graphDir = path.join(repoRoot, 'graphify-out');
+  fs.mkdirSync(graphDir, { recursive: true });
+  const nodes = [
+    { id: 'fs_exists', label: 'exists()', source_file: 'src/lib/fs.js' },
+    { id: 'leaf_fn', label: 'leafFn()', source_file: 'src/lib/leaf.js' },
+    { id: 'tdd_check', label: 'checkTaskEvidence()', source_file: 'src/lib/tdd.js' }
+  ];
+  const links = [];
+  // 25 production callers -> src/lib/fs.js (true architectural god-node hub)
+  for (let i = 0; i < 25; i++) {
+    const callerId = `prod_caller_${i}`;
+    nodes.push({ id: callerId, label: `cmd${i}()`, source_file: `src/commands/cmd_${i}.js` });
+    links.push({ source: callerId, target: 'fs_exists' });
+  }
+  // 25 unit test callers + only 2 production callers -> src/lib/leaf.js (must NOT become a god node)
+  for (let i = 0; i < 25; i++) {
+    const testId = `test_caller_${i}`;
+    nodes.push({ id: testId, label: `test${i}()`, source_file: `test/leaf_${i}.test.js` });
+    links.push({ source: testId, target: 'leaf_fn' });
+  }
+  links.push({ source: 'prod_caller_0', target: 'leaf_fn' });
+  links.push({ source: 'prod_caller_1', target: 'leaf_fn' });
 
-  assert.equal(rec.risk.level, 'L2');
-  assert.ok(rec.vectors.v3_topology.evidence.some((e) => e.id === 'V3_GRAPHIFY_GOD_NODE'));
+  fs.writeFileSync(path.join(graphDir, 'graph.json'), JSON.stringify({ nodes, links }));
+}
+
+test('assess: Graphify AST god node centrality triggers L2 escalation for high fan-in modules and ignores test callers', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'asdlc-graph-hub-test-'));
+  try {
+    writeGraphFixture(tmp);
+
+    // 1. Touching true production hub (25 prod inbound edges) -> escalates to L2
+    const recHub = assess({
+      stage: 'impl',
+      changeId: 'god-node-test',
+      changedFiles: ['src/lib/fs.js'],
+      repoRoot: tmp,
+      persist: false
+    });
+    assert.equal(recHub.risk.level, 'L2');
+    assert.ok(recHub.vectors.v3_topology.evidence.some((e) => e.id === 'V3_GRAPHIFY_GOD_NODE'));
+
+    // 2. Touching leaf module imported heavily by test suites (25 test edges, 2 prod edges) -> stays L1
+    const recLeaf = assess({
+      stage: 'impl',
+      changeId: 'leaf-node-test',
+      changedFiles: ['src/lib/leaf.js'],
+      repoRoot: tmp,
+      persist: false
+    });
+    assert.equal(recLeaf.risk.level, 'L1');
+    assert.ok(!recLeaf.vectors.v3_topology.evidence.some((e) => e.id === 'V3_GRAPHIFY_GOD_NODE'));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 test('assess: agent-native semantic evaluation correctly escalates api_contract and respects invariants', () => {
@@ -323,21 +366,20 @@ test('assess: Invariant 3 - production source code files cannot be disguised as 
   assert.equal(check.override.classification, 'internal_code');
 });
 
-test('assess: explore.md query grounding only matches hits inside Query section, avoiding header false positives', () => {
+test('assess: explore.md query grounding matches 0-hop Start nodes and ignores header & 2-hop BFS neighbors', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'asdlc-explore-test-'));
   try {
+    writeGraphFixture(tmp);
     const changeId = 'explore-grounding-test';
     const cdir = path.join(tmp, 'openspec', 'changes', changeId);
     fs.mkdirSync(cdir, { recursive: true });
 
-    // 1. Explore.md with architectural hubs in header, but Query section has no matches
+    // 1. Explore.md with architectural hubs in header, but Query section has no matches -> strictly L1
     const noMatchExplore = `# Explore: ${changeId}
 
 ## Architectural hubs (god nodes)
 
-1. exists() - 70 edges
-2. readText() - 41 edges
-3. src/lib/fs.js - 70 edges
+1. exists() - 25 edges (src/lib/fs.js)
 
 ## Query: my-clean-change
 
@@ -352,35 +394,110 @@ _(no matches)_
       repoRoot: tmp,
       persist: false
     });
-    // Should NOT escalate to L2 just because src/lib/fs.js was in the architectural hubs header
     assert.equal(recClean.risk.level, 'L1');
 
-    // 2. Explore.md with actual hit in the Query section
-    const matchExplore = `# Explore: ${changeId}
+    // 2. Real Graphify BFS depth=2 output where Start hits leaf/tdd, and src/lib/fs.js is only a 2-hop neighbor -> strictly L1
+    const bfsNeighborExplore = `# Explore: ${changeId}
 
 ## Architectural hubs (god nodes)
 
-1. exists() - 70 edges
-2. readText() - 41 edges
+1. exists() - 25 edges
 
-## Query: fs-operations
+## Query: tdd checkTaskEvidence
 
-src/lib/fs.js: exists(), readText()
+Graph: 55 nodes, 52 edges | Traversal: BFS depth=2 | Start: ['checkTaskEvidence()', 'tdd.test.js'] | 12 nodes found
+NODE checkTaskEvidence() [src=src/lib/tdd.js community=5]
+NODE exists() [src=src/lib/fs.js community=1]
+EDGE cmd0() --calls--> exists()
 `;
-    fs.writeFileSync(path.join(cdir, 'explore.md'), matchExplore);
+    fs.writeFileSync(path.join(cdir, 'explore.md'), bfsNeighborExplore);
 
-    // Provide graphify metrics mock or point to current repo for graph metrics
-    const recHit = assess({
+    const recNeighbor = assess({
+      stage: 'new',
+      changeId,
+      requirement: 'refactor tdd helper logic',
+      repoRoot: tmp,
+      persist: false
+    });
+    assert.equal(recNeighbor.risk.level, 'L1');
+    assert.ok(!recNeighbor.vectors.v3_topology.evidence.some((e) => e.id === 'V3_GRAPHIFY_GOD_NODE'));
+
+    // 3. Real Graphify BFS output where Start directly targets exists() in src/lib/fs.js -> strictly L2
+    const bfsDirectHitExplore = `# Explore: ${changeId}
+
+## Architectural hubs (god nodes)
+
+1. exists() - 25 edges
+
+## Query: fs exists
+
+Graph: 55 nodes, 52 edges | Traversal: BFS depth=2 | Start: ['exists()'] | 26 nodes found
+NODE exists() [src=src/lib/fs.js community=1]
+`;
+    fs.writeFileSync(path.join(cdir, 'explore.md'), bfsDirectHitExplore);
+
+    const recDirectHit = assess({
       stage: 'new',
       changeId,
       requirement: 'refactor internal helper logic',
-      repoRoot: process.cwd(),
+      repoRoot: tmp,
       persist: false
     });
-    // Current repo has src/lib/fs.js with > 20 in-degree, but changeId in process.cwd() doesn't exist, so clean
-    assert.ok(['L1', 'L2'].includes(recHit.risk.level));
+    assert.equal(recDirectHit.risk.level, 'L2');
+    assert.ok(recDirectHit.vectors.v3_topology.evidence.some((e) => e.id === 'V3_GRAPHIFY_GOD_NODE'));
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test('assess: L0 purity and Invariant 3 ignore per-change openspec/changes/<id>/* metadata and persist evaluator_mode', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'asdlc-l0-meta-test-'));
+  try {
+    const changeId = 'unit-tests-branch';
+    const cdir = path.join(tmp, 'openspec', 'changes', changeId);
+    fs.mkdirSync(cdir, { recursive: true });
+    fs.writeFileSync(path.join(cdir, '.agent-assess.json'), JSON.stringify({
+      is_pure_test: true,
+      is_pure_doc: false,
+      classification: 'test_only',
+      rationale: 'Agent verified change only adds unit tests alongside SDLC metadata'
+    }));
+
+    const rec = assess({
+      stage: 'impl',
+      changeId,
+      requirement: 'add unit tests for math utility',
+      changedFiles: [
+        `openspec/changes/${changeId}/.openspec.yaml`,
+        `openspec/changes/${changeId}/risk-history.jsonl`,
+        `openspec/changes/${changeId}/risk-assessment.yaml`,
+        `openspec/changes/${changeId}/.agent-assess.json`,
+        'tests/math.test.js'
+      ],
+      repoRoot: tmp,
+      persist: true
+    });
+
+    assert.equal(rec.risk.level, 'L0');
+    assert.equal(rec.vectors.v1_intent.evaluator_mode, 'agent_native');
+
+    const history = loadRiskHistory(tmp, changeId);
+    assert.equal(history[0].vectors.v1_intent.evaluator_mode, 'agent_native');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('assess: heuristic_seed does not masquerade as V1_AI_* or false-positive on English word "rest"', () => {
+  const rec = assess({
+    stage: 'new',
+    changeId: 'readme-typo',
+    requirement: 'fix typo in rest of readme',
+    persist: false
+  });
+
+  assert.equal(rec.risk.level, 'L0');
+  assert.equal(rec.vectors.v1_intent.evaluator_mode, 'heuristic_seed');
+  assert.ok(!rec.vectors.v1_intent.evidence.some((e) => e.id === 'V1_AI_API_CONTRACT_INTENT'));
 });
 

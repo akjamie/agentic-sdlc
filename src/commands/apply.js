@@ -113,7 +113,7 @@ export function applyGuard(changeId, opts = {}) {
       });
     }
 
-    // 4. Content-level cryptographic zero-diff invariant:
+    // 4. Content-level Git-anchored zero-diff invariant:
     // The local spec content MUST match the approved version on the target branch
     const diff = (git(['diff', approvedSha, '--', ...locked], repoRoot, { allowFail: true }) ?? '').trim();
     if (diff) {

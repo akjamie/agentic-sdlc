@@ -84,6 +84,11 @@ export function validateRecordSchema(record) {
     errors.push('status defaulted requires non-null defaulted_cause');
   }
 
+  const evalMode = record.vectors?.v1_intent?.evaluator_mode;
+  if (evalMode !== undefined && !['agent_native', 'llm_classifier', 'heuristic_seed'].includes(evalMode)) {
+    errors.push(`Invalid v1_intent.evaluator_mode: ${evalMode}`);
+  }
+
   if (record.hash && computeRecordHash(record) !== record.hash) {
     errors.push(`Hash mismatch: computed ${computeRecordHash(record)} vs declared ${record.hash}`);
   }
@@ -115,7 +120,7 @@ export function validateChainInvariants(records = []) {
       errors.push(`Record at index ${i} has seq ${rec.seq}, expected ${expectedSeq}`);
     }
 
-    // Cryptographic content hash integrity (P1-3)
+    // SHA-256 content hash chain integrity (P1-3)
     const computed = computeRecordHash(rec);
     if (rec.hash && computed !== rec.hash) {
       errors.push(`Record ${rec.seq} hash mismatch: computed ${computed} vs declared ${rec.hash}`);

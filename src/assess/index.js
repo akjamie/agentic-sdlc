@@ -110,6 +110,7 @@ export function assess({
         v1_intent: {
           level: v1.level,
           confidence: v1.confidence,
+          evaluator_mode: v1.evaluator_mode || 'heuristic_seed',
           evidence: v1.evidence,
           unresolved: v1.unresolved,
           mandatory_human_review: v1.mandatory_human_review,
@@ -170,7 +171,7 @@ export function assess({
         confidence: 'low'
       },
       vectors: {
-        v1_intent: { level: 'L2', confidence: 'low', evidence: [], unresolved: [err.message], mandatory_human_review: true, no_signal: false },
+        v1_intent: { level: 'L2', confidence: 'low', evaluator_mode: 'heuristic_seed', evidence: [], unresolved: [err.message], mandatory_human_review: true, no_signal: false },
         v2_security: { level: 'L2', confidence: 'low', evidence: [], unresolved: [err.message], mandatory_human_review: true, no_signal: false },
         v3_topology: { level: 'L2', confidence: 'low', evidence: [], unresolved: [err.message], mandatory_human_review: true, no_signal: false }
       },

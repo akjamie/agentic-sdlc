@@ -25,7 +25,7 @@ Before editing any implementation or test code, run the apply guard:
 asdlc apply <CHANGE_ID> [--auto-pr] [--target-branch <ref>]
 ```
 
-`asdlc apply` deterministically verifies cryptographic preconditions:
+`asdlc apply` deterministically verifies Git-anchored preconditions:
 1. **Target Branch Approved Commit (`approvedSha`)**: Confirms that a commit touching the locked paths (`proposal.md` and `specs/**`) is physically merged into the target branch (`main` or `origin/main`).
 2. **Change State Machine (`ready_for_impl`)**: Confirms `.openspec.yaml` has been transitioned to `status: ready_for_impl` (via `asdlc approve <ID>`).
 3. **Spec Fingerprint Integrity (`specSha`)**: Verifies that the declared `specSha` in `.openspec.yaml` exactly matches the `approvedSha` on the protected branch.

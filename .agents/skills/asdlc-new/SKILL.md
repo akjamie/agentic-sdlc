@@ -134,7 +134,7 @@ Once `## Open questions` in `clarifications.md` is empty, author the change docu
 4. **Review Provenance (Player $\ne$ Referee)**:
    - The authoring agent MUST NOT approve its own spec.
    - Do NOT stamp `review.md` with self-approval.
-   - Independent AI review (`asdlc:spec-review`) is executed automatically on the Spec PR by CI.
+   - Independent AI review (`asdlc:spec-review`) is executed by an independent review agent (locally or via PR automation).
    - Formal approval is given by the human lead via PR merge or `asdlc approve <SLUG>`.
 
 ### Step 5: Transition to Lint

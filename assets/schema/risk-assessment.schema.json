@@ -199,6 +199,7 @@
       "properties": {
         "level": { "type": "string", "enum": ["L0", "L1", "L2", "L3"] },
         "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+        "evaluator_mode": { "type": "string", "enum": ["agent_native", "llm_classifier", "heuristic_seed"] },
         "evidence": {
           "type": "array",
           "items": {
@@ -207,7 +208,7 @@
             "additionalProperties": false,
             "properties": {
               "id": { "type": "string" },
-              "kind": { "type": "string", "enum": ["repository_fact", "task_statement", "scanner_result", "rule_hit", "reviewer_finding"] },
+              "kind": { "type": "string", "enum": ["repository_fact", "task_statement", "scanner_result", "rule_hit", "reviewer_finding", "semantic_intent", "topology_centrality"] },
               "signal": { "type": "string", "enum": ["hard", "soft"] },
               "summary": { "type": "string" },
               "source": { "type": "string" },
