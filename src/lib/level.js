@@ -1,7 +1,9 @@
 import path from 'node:path';
 import { exists, readText } from './fs.js';
 import { changeDir } from './paths.js';
-import { assess, loadMaxHistoryLevel } from '../assess/index.js';
+import { toChangeSlug } from './cliutil.js';
+import { git } from './git.js';
+import { assess, loadMaxHistoryLevel, loadRiskHistory } from '../assess/index.js';
 import { RISK_LEVELS, LEVEL_RANK } from '../assess/rules/builtin.js';
 import { fail } from './errors.js';
 
@@ -74,9 +76,46 @@ export function readChangeLevel(repoRoot, changeId) {
   return eff ? eff.effectiveLevel : null;
 }
 
-export function readEffectiveLevel(repoRoot, changeId) {
+function readBaseBranchHistoryInfo(repoRoot, slug, baseRef) {
+  if (!repoRoot || !slug || !baseRef) return { maxLevel: null, records: [] };
+  const candidates = [baseRef];
+  if (baseRef.startsWith('origin/')) candidates.push(baseRef.slice('origin/'.length));
+
+  for (const ref of candidates) {
+    const histOut = git(['show', `${ref}:openspec/changes/${slug}/risk-history.jsonl`], repoRoot, { allowFail: true });
+    const metaOut = git(['show', `${ref}:openspec/changes/${slug}/.openspec.yaml`], repoRoot, { allowFail: true });
+    if (!histOut && !metaOut) continue;
+
+    let maxLvl = null;
+    const records = [];
+    if (histOut) {
+      for (const line of histOut.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)) {
+        try {
+          const rec = JSON.parse(line);
+          records.push(rec);
+          const lvl = rec.risk?.level;
+          if (lvl && (!maxLvl || (LEVEL_RANK[lvl] ?? 0) > (LEVEL_RANK[maxLvl] ?? 0))) {
+            maxLvl = lvl;
+          }
+        } catch { /* ignore */ }
+      }
+    }
+    if (metaOut) {
+      const m = metaOut.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+      const decl = m ? m[1].toUpperCase() : null;
+      if (decl && (!maxLvl || (LEVEL_RANK[decl] ?? 0) > (LEVEL_RANK[maxLvl] ?? 0))) {
+        maxLvl = decl;
+      }
+    }
+    return { maxLevel: maxLvl, records };
+  }
+  return { maxLevel: null, records: [] };
+}
+
+export function readEffectiveLevel(repoRoot, changeId, opts = {}) {
   if (!repoRoot || !changeId) return null;
-  const cdir = changeDir(repoRoot, changeId);
+  const slug = toChangeSlug(changeId);
+  const cdir = changeDir(repoRoot, slug);
   const metaPath = path.join(cdir, '.openspec.yaml');
   let declaredLevel = null;
   if (exists(metaPath)) {
@@ -86,9 +125,11 @@ export function readEffectiveLevel(repoRoot, changeId) {
   }
 
   let maxHistory = null;
+  let localRecords = [];
   let chainCorrupt = false;
   try {
-    maxHistory = loadMaxHistoryLevel(repoRoot, changeId);
+    localRecords = loadRiskHistory(repoRoot, slug);
+    maxHistory = loadMaxHistoryLevel(repoRoot, slug);
   } catch (err) {
     if (err.code === 'TAMPER_DETECTED' || err.message?.includes('tamper')) {
       chainCorrupt = true;
@@ -97,20 +138,33 @@ export function readEffectiveLevel(repoRoot, changeId) {
     }
   }
 
-  if (!declaredLevel && !maxHistory && !chainCorrupt) {
+  // Anchor against target branch history if available (prevents local delete-and-regenerate attack)
+  const baseInfo = opts.baseRef ? readBaseBranchHistoryInfo(repoRoot, slug, opts.baseRef) : { maxLevel: null, records: [] };
+  if (baseInfo.records.length > 0) {
+    if (
+      localRecords.length < baseInfo.records.length ||
+      localRecords[0]?.hash !== baseInfo.records[0]?.hash
+    ) {
+      chainCorrupt = true;
+    }
+  }
+
+  if (!declaredLevel && !maxHistory && !baseInfo.maxLevel && !chainCorrupt) {
     return null;
   }
 
   const declaredRank = declaredLevel ? (LEVEL_RANK[declaredLevel] ?? 0) : 0;
   const historyRank = maxHistory ? (LEVEL_RANK[maxHistory] ?? 0) : 0;
+  const baseRank = baseInfo.maxLevel ? (LEVEL_RANK[baseInfo.maxLevel] ?? 0) : 0;
+  const requiredMinRank = Math.max(historyRank, baseRank);
 
-  const tampered = chainCorrupt || Boolean(maxHistory && declaredLevel && declaredRank < historyRank);
-  const effectiveRank = Math.max(declaredRank, historyRank);
-  const effectiveLevel = Object.keys(LEVEL_RANK).find((k) => LEVEL_RANK[k] === effectiveRank) || (declaredLevel || maxHistory || 'L1');
+  const tampered = chainCorrupt || Boolean(requiredMinRank > 0 && declaredLevel && declaredRank < requiredMinRank);
+  const effectiveRank = Math.max(declaredRank, historyRank, baseRank);
+  const effectiveLevel = Object.keys(LEVEL_RANK).find((k) => LEVEL_RANK[k] === effectiveRank) || (declaredLevel || maxHistory || baseInfo.maxLevel || 'L1');
 
   return {
     declaredLevel,
-    maxHistoryLevel: maxHistory,
+    maxHistoryLevel: maxHistory || baseInfo.maxLevel,
     effectiveLevel,
     tampered
   };

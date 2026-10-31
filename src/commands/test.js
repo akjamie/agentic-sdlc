@@ -80,7 +80,7 @@ export function runTests(changeId, opts = {}) {
     });
   }
 
-  if (!opts.json) {
+  if (!opts.json && !opts.silent) {
     log.info(`=== Running Acceptance Tests for ${slug} ===`);
     log.info(`Mapped ACs: ${allAcs.length} across ${uniqueTestPaths.length} test file(s):`);
     for (const ac of allAcs) {
@@ -98,26 +98,7 @@ export function runTests(changeId, opts = {}) {
     } catch { /* ignore config parse error */ }
   }
 
-  const defaultRunner = () => {
-    const allGo = uniqueTestPaths.every((p) => p.endsWith('.go'));
-    const allPy = uniqueTestPaths.every((p) => p.endsWith('.py'));
-    const allJava = uniqueTestPaths.every((p) => /\.(java|kt)$/i.test(p));
-    if (allGo) {
-      // In Go, package directory syntax './path/to/pkg' is required so intra-package symbols resolve
-      const goPkgs = [...new Set(uniqueTestPaths.map((p) => {
-        const dir = path.dirname(p).replace(/\\/g, '/');
-        return dir === '.' ? '.' : `./${dir}`;
-      }))];
-      return `go test ${goPkgs.join(' ')}`;
-    }
-    if (allPy) return `pytest ${uniqueTestPaths.join(' ')}`;
-    if (allJava) return 'mvn test';
-    return process.platform === 'win32'
-      ? `node --test ${uniqueTestPaths.map((p) => `"${p}"`).join(' ')}`
-      : `node --test ${uniqueTestPaths.join(' ')}`;
-  };
-
-  const runnerCmd = opts.runner ?? configuredRunner ?? defaultRunner();
+  const runnerCmd = opts.runner ?? configuredRunner ?? detectTestRunner(repoRoot, uniqueTestPaths);
 
   const res = runShell(runnerCmd, repoRoot, {
     env: { NODE_TEST_CONTEXT: undefined },
@@ -125,11 +106,16 @@ export function runTests(changeId, opts = {}) {
   });
   const passed = res.status === 0;
 
+  if (opts.silent) {
+    return passed ? 0 : 1;
+  }
+
   if (opts.json) {
     const output = {
       changeId: slug,
       pass: passed,
       status: passed ? 'pass' : 'fail',
+      runner: runnerCmd,
       acCount: allAcs.length,
       testFiles: uniqueTestPaths,
       acs: allAcs,
@@ -149,6 +135,89 @@ export function runTests(changeId, opts = {}) {
   }
 
   return passed ? 0 : 1;
+}
+
+export function detectTestRunner(repoRoot, uniqueTestPaths = []) {
+  const quotePath = (p) => (process.platform === 'win32' || /\s/.test(p) ? `"${p}"` : p);
+  const quotedPaths = uniqueTestPaths.map(quotePath).join(' ');
+
+  const allGo = uniqueTestPaths.length > 0 && uniqueTestPaths.every((p) => p.endsWith('.go'));
+  const allPy = uniqueTestPaths.length > 0 && uniqueTestPaths.every((p) => p.endsWith('.py'));
+  const allRs = uniqueTestPaths.length > 0 && uniqueTestPaths.every((p) => p.endsWith('.rs'));
+  const allJvm = uniqueTestPaths.length > 0 && uniqueTestPaths.every((p) => /\.(java|kt|scala)$/i.test(p));
+
+  if (allGo) {
+    const goPkgs = [...new Set(uniqueTestPaths.map((p) => {
+      const dir = path.dirname(p).replace(/\\/g, '/');
+      return dir === '.' ? '.' : `./${dir}`;
+    }))];
+    return `go test ${goPkgs.join(' ')}`;
+  }
+
+  if (allPy) {
+    return `pytest ${quotedPaths}`;
+  }
+
+  if (allRs) {
+    return 'cargo test';
+  }
+
+  if (allJvm) {
+    const classNames = [...new Set(uniqueTestPaths.map((p) => path.basename(p).replace(/\.(java|kt|scala)$/i, '')))];
+    const hasGradle = exists(path.join(repoRoot, 'build.gradle'))
+      || exists(path.join(repoRoot, 'build.gradle.kts'))
+      || exists(path.join(repoRoot, 'gradlew'));
+    if (hasGradle) {
+      const gradleBin = exists(path.join(repoRoot, 'gradlew'))
+        ? (process.platform === 'win32' && exists(path.join(repoRoot, 'gradlew.bat')) ? 'gradlew.bat' : './gradlew')
+        : 'gradle';
+      const testsArgs = classNames.map((c) => `--tests ${c}`).join(' ');
+      return `${gradleBin} test ${testsArgs}`.trim();
+    }
+    const mvnBin = exists(path.join(repoRoot, 'mvnw'))
+      ? (process.platform === 'win32' && exists(path.join(repoRoot, 'mvnw.cmd')) ? 'mvnw.cmd' : './mvnw')
+      : 'mvn';
+    return classNames.length > 0
+      ? `${mvnBin} test -Dtest=${classNames.join(',')}`
+      : `${mvnBin} test`;
+  }
+
+  // JS / TS ecosystem inspection via package.json & config files
+  const pkgPath = path.join(repoRoot, 'package.json');
+  let pkg = {};
+  if (exists(pkgPath)) {
+    try { pkg = JSON.parse(readText(pkgPath)); } catch { pkg = {}; }
+  }
+  const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+  const testScript = String(pkg.scripts?.test || '');
+
+  const hasVitest = Boolean(
+    deps.vitest ||
+    /\bvitest\b/.test(testScript) ||
+    ['vitest.config.ts', 'vitest.config.js', 'vitest.config.mts', 'vitest.config.mjs'].some((f) => exists(path.join(repoRoot, f)))
+  );
+  if (hasVitest) {
+    return `npx vitest run ${quotedPaths}`;
+  }
+
+  const hasJest = Boolean(
+    deps.jest ||
+    /\bjest\b/.test(testScript) ||
+    ['jest.config.ts', 'jest.config.js', 'jest.config.cjs', 'jest.config.mjs'].some((f) => exists(path.join(repoRoot, f)))
+  );
+  if (hasJest) {
+    return `npx jest ${quotedPaths}`;
+  }
+
+  const hasTsFiles = uniqueTestPaths.some((p) => /\.(ts|tsx|mts|cts)$/i.test(p));
+  if (hasTsFiles) {
+    if (deps.tsx || /\btsx\b/.test(testScript)) {
+      return `npx tsx --test ${quotedPaths}`;
+    }
+    return `node --experimental-strip-types --test ${quotedPaths}`;
+  }
+
+  return `node --test ${quotedPaths}`;
 }
 
 export function register(program) {

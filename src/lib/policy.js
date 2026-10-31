@@ -11,6 +11,10 @@ export const DEFAULT_POLICY = {
   fast_path: { allow_paths: ['docs/**'], allow_kinds: [] },
   reviewers: { spec: null, design: null },
   ai_review: { trigger: 'on-ready-and-push', debounce_seconds: 120 },
+  staging: {
+    max_file_size_mb: 50,
+    ignore_patterns: [],
+  },
   rollout_mode: {},
   web_search: 'allow',
 };

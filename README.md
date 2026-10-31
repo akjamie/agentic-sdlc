@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@akjamie/agentic-sdlc?color=6366f1&label=npm)](https://www.npmjs.com/package/@akjamie/agentic-sdlc)
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-10b981.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20.19.0-38bdf8.svg)](https://nodejs.org/)
-[![tests](https://img.shields.io/badge/tests-151%20passing-10b981.svg)](#development--verification)
+[![tests](https://img.shields.io/badge/tests-164%20passing-10b981.svg)](#development--verification)
 [![architecture](https://img.shields.io/badge/governance-L0--L3%20Adaptive%20Dual--Track-f59e0b.svg)](#adaptive-risk-tiered-governance-l0l3)
 
 > **The Intelligent Governance Engine for Autonomous AI Coding.**
@@ -43,7 +43,7 @@ AI coding agents (Claude Code, Cursor, OpenCode, Codex) write hundreds of lines 
 `agentic-sdlc` bridges these bottlenecks with a **practical, Git-native governance plane**:
 - 🚀 **Frictionless Agility for Routine Work (L0 / L1)**: Pure test additions, documentation updates, and bounded local refactors run in a streamlined **Single-PR** mode with automated validation and zero red tape.
 - 🛡️ **Structured Rigor for High-Impact Changes (L2 / L3)**: Cross-boundary APIs (Spring Boot, FastAPI, Go, NestJS), database schemas, security tokens, and constitutional rules enforce **Dual-PR Spec-First** contracts with human sign-off on intent.
-- 🔍 **Player ≠ Referee Verification**: Automated CI gates evaluate implementations against locked specifications using an independent model instance, eliminating shared-context verification bias.
+- 🔍 **Player ≠ Referee Verification**: Independent Review Agent Sessions (`asdlc-spec-review`, `asdlc-impl-review`) evaluate specifications and implementations against locked contracts in isolated reasoning sessions, eliminating shared-context verification bias.
 - 🤝 **Humane In-Place Scope Escalation**: If scope expands or crosses boundaries during implementation, the system **never punishes the engineer** by tearing branches apart. It preserves the single PR in-place, revokes auto-merge, and routes to a Tech Lead for approval.
 
 ---
@@ -121,7 +121,7 @@ Enterprise teams rely on deterministic code, not agent compliance or prompt enth
 | **4** | **AI Classifier Invariant Defense** | AI semantic classifier output is validated against hard mathematical expectations. | 🚫 **Evasion Shield** — Prompts claiming a `DROP TABLE` is "just a test" are vetoed to L3. |
 | **5** | **Zero Untested Code (`test-presence`)** | Any change touching production source code (`src/**`, `app/**`) requires test diffs. | 🚫 **Rejection** — Stops AI "code dumps" without corresponding test coverage. |
 | **6** | **Deterministic AC Assertions (`asdlc test`)** | Parses `- [ ] ACn: (test: <path>)` annotations and runs native test suites. | 🚫 **Fake Claim Gate** — Unimplemented acceptance criteria immediately fail CI. |
-| **7** | **Player ≠ Referee Isolation** | CI runs independent verification with a fresh LLM instance outside the author agent context. | 🚫 **Audit Integrity** — Authoring agents can never grade their own exam. |
+| **7** | **Player ≠ Referee Isolation** | Independent review agent sessions (`asdlc-spec-review`, `asdlc-impl-review`) evaluate contracts and diffs in fresh sessions. | 🚫 **Audit Integrity** — Authoring agents can never grade their own exam. |
 | **8** | **Humane In-Place Scope Escalation** | If an L1 change touches an API during implementation, single PR is preserved with mandatory human sign-off. |  **Safe Convergence** — No messy branch rebases; human stays in control. |
 
 ---
@@ -152,6 +152,25 @@ Enterprise teams rely on deterministic code, not agent compliance or prompt enth
 │ └─ verify/    12 deterministic & structural quality gates              │
 └────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 🏛️ Explicit Architectural Boundaries & Non-Goals
+
+To maintain high engineering discipline and avoid platform over-engineering, `agentic-sdlc` establishes three explicit architectural boundaries:
+
+1. **Strict Spec Immutability on L2/L3 (`spec-tamper` — Why We Explicitly Reject `asdlc amend`)**:
+   - In autonomous AI coding, allowing an in-flight spec amendment (`asdlc amend`) inside an active implementation loop opens the door to **Agent Reward Hacking**: an agent failing a difficult contract test could quietly modify the specification to match its buggy code rather than fixing the implementation.
+   - For routine changes (L0/L1), engineers and agents already iterate freely within Single-PR mode.
+   - For high-impact contracts (L2/L3), once a spec is approved and its Git commit hash locked (`specSha`), **the specification is immutable law**. If implementation reveals a genuine architectural flaw or contract gap, the change must be closed and re-scaffolded via `asdlc new`. A bad spec is never mutated in-place.
+
+2. **Single-Repository Sovereign AST & Git Boundary (Why We Do Not Orchestrate Multi-Repo State Machines)**:
+   - `1 Repository = 1 AST Knowledge Graph + 1 Git History + 1 Autonomous Verification Boundary`.
+   - Cross-repository orchestration across microservices introduces distributed state-machine split-brain risks, partial rollouts, and brittle inter-repo lockups. Cross-service contract alignment belongs in upstream System Design RFCs / Architecture Epics (`proposal.md ## System Design refs`), while each repository sovereignly governs and independently verifies its own contracts, tests, and blast radius.
+
+3. **Session-Isolated Agent Review & Platform-Native RBAC (Player ≠ Referee)**:
+   - Review is not a cosmetic echo stub in CI. `asdlc` provides dedicated, independent review skills (`asdlc-spec-review`, `asdlc-impl-review`) designed to run in fresh, isolated agent sessions outside the authoring agent's context.
+   - We do not reinvent bespoke user RBAC or token auth engines inside the CLI. Enterprise access control and merge permissions are delegated to platform-native, battle-tested Git forge controls (GitHub/GitLab `CODEOWNERS`, protected branch rules, and signed commits).
 
 ---
 
@@ -287,15 +306,15 @@ flowchart TD
 ## 🛠️ CLI Reference
 
 ```bash
-asdlc init [--ci jenkins|github]   # Scaffold repository with OpenSpec, Graphify, and skills
+asdlc init                         # Scaffold repository with OpenSpec, Graphify, and skills
 asdlc new "<intent>"               # Scaffold change with AST explore + grill-me interview
 asdlc lint <ID>                    # Validate BDD scenarios, AC rules, and coverage (docs/spec-format.md)
-asdlc pr <ID> <target-branch>      # Smart PR creator (auto-handles Spec PR vs Impl PR)
+asdlc pr <ID> <target-branch>      # Smart PR creator (auto-handles Spec PR vs Impl PR + smart staging)
 asdlc approve <ID>                 # Record approvedSha and transition to ready_for_impl
 asdlc apply <ID>                   # Guarded implementation launcher (checks approvedSha)
 asdlc test <ID> [--json]           # Execute real test runners mapped to AC annotations
 asdlc verify <ID>                  # Audit diff against all 12 quality gates
-asdlc archive <ID>                 # Sync delta to living specs and refresh code graph
+asdlc archive [<ID> | --merged]    # Post-merge compaction: sync living specs & refresh code graph
 asdlc doctor [--fix]               # 12-point toolchain & governance health check
 asdlc status [<ID>]                # Change progress orientation or portfolio dashboard
 asdlc upgrade [--global]           # Seamless upgrade of CLI, engine, and schemas
@@ -312,7 +331,7 @@ git clone https://github.com/akjamie/agentic-sdlc.git
 cd agentic-sdlc
 npm install
 
-# Run complete test suite (128 tests passing, 100% pass rate)
+# Run complete test suite (164 tests passing, 100% pass rate)
 npm test
 
 # Run end-to-end multi-language simulation tests

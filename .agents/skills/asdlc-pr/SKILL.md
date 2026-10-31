@@ -1,11 +1,11 @@
 ---
 name: asdlc-pr
-description: "Open a Spec or Implementation PR: pre-flight checks (lint vs verify), git pushing, auto-extract title/body, and attach labels (asdlc:spec-review vs asdlc:impl-review) for CI AI review."
+description: "Open a Spec or Implementation PR: pre-flight checks (lint vs verify), smart staging, auto-extract title/body, and attach labels (asdlc:spec-review vs asdlc:impl-review) for independent review agents."
 ---
 
 # /asdlc:pr - Automated Pull Request Engine (Spec & Implementation)
 
-This skill opens a **Spec PR** (Stage 3) or an **Implementation PR** (Stage 6.5) with deterministic pre-flight quality gates and distinct labels for CI AI review triggers.
+This skill opens a **Spec PR** (Stage 3) or an **Implementation PR** (Stage 6.5) with deterministic pre-flight quality gates, smart staging guards, and distinct labels routing to independent review agent sessions.
 
 ---
 
@@ -22,10 +22,10 @@ asdlc pr <CHANGE_ID> <targetBranch>
 
 ## Dual-PR Lifecycle & Pre-flight Gates
 
-| PR Type | Phase & Moment | Pre-Flight Guard | Auto Labels | CI Automation Trigger |
+| PR Type | Phase & Moment | Pre-Flight Guard | Auto Labels | Review Automation Trigger |
 | :--- | :--- | :--- | :--- | :--- |
-| **Spec PR** | Stage 3 (After drafting proposal & specs) | **`asdlc lint <ID>`**<br>(0 blocking BDD/AC issues) | `asdlc:spec-review`<br>`spec` | Runs `asdlc lint` + triggers **Spec AI Review** |
-| **Impl PR** | Stage 6.5 (After TDD apply & tasks complete) | **`asdlc verify <ID>`**<br>(12 deterministic gates pass) | `asdlc:impl-review`<br>`impl` | Runs `asdlc verify` + triggers **Code AI Review** |
+| **Spec PR** | Stage 3 (After drafting proposal & specs) | **`asdlc lint <ID>`**<br>(0 blocking BDD/AC issues) | `asdlc:spec-review`<br>`spec` | Runs `asdlc lint` + routes to **Independent Spec AI Review** (`asdlc-spec-review`) |
+| **Impl PR** | Stage 6.5 (After TDD apply & tasks complete) | **`asdlc verify <ID>`**<br>(12 deterministic gates pass) | `asdlc:impl-review`<br>`impl` | Runs `asdlc verify` + routes to **Independent Impl AI Review** (`asdlc-impl-review`) |
 
 ---
 
@@ -49,11 +49,16 @@ asdlc pr <CHANGE_ID> <targetBranch>
    - **Spec PR**: derives clean title (`spec(<slug>): <title>`) and embeds proposal intent.
    - **Impl PR**: derives title (`impl(<slug>): <title>`) and embeds completed tasks, TDD evidence, and spec intent.
 
-4. **Commit & Push**: Stages changes, commits with standard prefix, and pushes branch to origin.
+4. **Smart Staging & Commit**:
+   - Instead of a blind `git add -A`, `asdlc pr` applies a deterministic safety filter:
+     - Automatically skips untracked sensitive credentials (`.env*`, `*.pem`, `*.key`, `*.p12`, secrets).
+     - Automatically skips crash dumps and logs (`*.hprof`, `*.dmp`, `core.*`, `*.log`).
+     - Automatically skips oversized untracked binaries (`> 50MB`).
+     - Emits visible `[WARN]` diagnostics without breaking unattended automation.
+     - Safely stages legitimate tracked edits and untracked code/spec files, commits with standard prefix, and pushes branch to origin.
 
 5. **Creation Strategy & Self-Healing Label Guarantee**:
-   - **JIT Label Provisioning**: Before creating or editing the PR, `asdlc pr` provisions required governance labels on remote (`asdlc:spec-review` + `spec` or `asdlc:impl-review` + `impl`). This prevents GitHub from dropping labels or failing PR creation.
+   - **JIT Label Provisioning**: Before creating or editing the PR, `asdlc pr` provisions required governance labels on remote (`asdlc:spec-review` + `spec` or `asdlc:impl-review` + `impl`).
    - **Tier 1 (CLI)**: Executes `gh pr create` with both labels (`--label asdlc:spec-review,spec`). If a PR for the branch already exists, detects it and runs `gh pr edit --add-label` to ensure labels are attached.
    - **Tier 2 (Direct REST API)**: Pre-creates labels via GitHub API and attaches them to the PR issue.
    - **Tier 3 (Browser Fallback)**: Generates a 1-click comparison URL pre-filled with branch and label query parameters.
-

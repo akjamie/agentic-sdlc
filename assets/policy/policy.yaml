@@ -39,6 +39,12 @@ rollout_mode: {}
 # allow: agent may search (default); deny: offline/air-gapped mode, agent skips search silently.
 web_search: allow
 
+# Smart staging hygiene for `asdlc pr`: skips untracked secrets, crash dumps, and
+# oversized blobs (> max_file_size_mb) with a warning without halting automation.
+staging:
+  max_file_size_mb: 50
+  ignore_patterns: []
+
 # Issue tracker integration (optional). Set required: true to enforce a ticket link in verify.
 # type: jira | github | linear | none
 issue_tracker:

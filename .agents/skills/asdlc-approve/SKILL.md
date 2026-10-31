@@ -52,7 +52,7 @@ From this moment on, **Stage 5 (`asdlc apply`) is unlocked**, and **Stage 6 (`as
 
 ### 2. Spec-First Staged PR Flow (Multi-tier Enterprise Pipelines)
 - Spec is submitted as an isolated Spec-only PR into `staging` or `main`.
-- When the Spec PR merges, the `post-merge` hook or CI automatically runs `asdlc approve <ID>`.
+- When the Spec PR merges, the target-branch merge commit SHA is recognized by `asdlc apply` and `asdlc verify`, or stamped via `asdlc approve <ID>`.
 - The implementation is then performed on an implementation branch branching from the approved merge commit.
 
 ### 3. Local / In-Place Fast Loop (Agile Squads)

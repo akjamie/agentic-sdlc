@@ -1,22 +1,22 @@
 ---
 name: asdlc-review
-description: "[DORMANT / CI-MANAGED] Spec review is executed automatically by CI on PRs (leaving comments and summary directly on GitHub/GitLab). Local review.md generation is dormant."
+description: "Independent fresh-context spec review helper. Primary reviews run via asdlc-spec-review and asdlc-impl-review agent sessions."
 ---
 
-# /asdlc:review - Independent Spec Review (Dormant / CI-Managed)
+# /asdlc:review - Independent Spec Review Helper
 
 > [!NOTE]
-> **Workflow Update**: Local generation of `review.md` is **dormant**. 
-> Spec quality and 6-dimension reviews are executed automatically by the **CI AI Reviewer Action** on Spec PRs. 
-> Feedback and ratings are posted directly as PR comments/summaries to facilitate Human TL Review.
+> **Independent Agent Session Review**: 
+> Spec and implementation reviews are executed by dedicated **Independent Review Agent Sessions** (`asdlc-spec-review` and `asdlc-impl-review`) adhering to the **Player ≠ Referee** principle.
+> This skill (`asdlc-review`) is retained as a local fresh-context dry-run helper to inspect changes and generate or preview `review.md`.
 
-This skill is retained for reference or manual pre-PR dry runs if requested. When invoked, it switches into the **Independent Reviewer** role (Player ≠ Referee). The reviewer MUST NOT be the authoring agent.
+When invoked, it switches into the **Independent Reviewer** role (Player ≠ Referee). The reviewer MUST NOT be the authoring agent of the change.
 
 ---
 
 ## Review Dimensions
 
-Every change is evaluated along six dimensions:
+Every change is evaluated along six core dimensions:
 
 1. **Completeness**: Are all user journeys covered? Are edge cases, error conditions, and nil/empty inputs handled?
 2. **Ambiguity**: Are requirements clear and unambiguous? Does each use strict normative language (`SHALL` / `MUST`) rather than passive voice?

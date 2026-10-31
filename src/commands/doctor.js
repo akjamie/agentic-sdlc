@@ -1,9 +1,9 @@
 import path from 'node:path';
-import { exists, readText, writeText, copyTree, ensureDir } from '../lib/fs.js';
-import { openspecDir, resolveRepoRoot, policyAssetFile, githooksAssetDir } from '../lib/paths.js';
+import { exists, readText, writeText } from '../lib/fs.js';
+import { openspecDir, resolveRepoRoot } from '../lib/paths.js';
 import { openspecVersion, OPENSPEC_PINNED, findOpenspec } from '../lib/openspec.js';
 import { graphifyAvailable, graphStatus, GITIGNORE_LINE, ensureGraphify } from '../lib/graphify.js';
-import { readInstalledVersion, builtinSchemaVersion, localOverride, installSchema } from '../lib/schema.js';
+import { checkSchema, builtinSchemaVersion, localOverride, installSchema } from '../lib/schema.js';
 import { refreshAgents } from '../lib/agents.js';
 import { readYaml } from '../lib/yaml.js';
 import { git } from '../lib/git.js';
@@ -32,12 +32,13 @@ export function doctor(opts = {}) {
 
   add('Graphify', graphifyAvailable() ? 'pass' : 'warn', graphifyAvailable() ? 'installed' : 'not found (install via uv tool install graphifyy or pip)');
 
-  const schemaV = readInstalledVersion();
-  add('managed schema', schemaV ? 'pass' : 'fail', schemaV ? `v${schemaV} (bundled v${builtinSchemaVersion()})` : 'not installed (run `asdlc init` or `asdlc upgrade`)');
+  const schemaCheck = checkSchema(repoRoot || process.cwd(), { stateless: true });
+  add('managed schema', schemaCheck.ok ? 'pass' : 'fail',
+    schemaCheck.ok ? `v${schemaCheck.installed || builtinSchemaVersion()} (stateless bundled)` : schemaCheck.reason);
 
   let gi = null;
   let ignored = false;
-  let hooksPath = null;
+  let staleHooksPath = false;
   let hasRouting = false;
   let detectedTools = [];
 
@@ -59,8 +60,13 @@ export function doctor(opts = {}) {
     if (exists(cfgPath)) { try { cfgSchema = (readYaml(cfgPath) ?? {}).schema ?? null; } catch { /* ignore */ } }
     add('repo config schema', cfgSchema === 'agentic-repo-change' ? 'pass' : 'warn', cfgSchema ?? 'unset');
 
-    try { hooksPath = git(['config', '--get', 'core.hooksPath'], repoRoot, { allowFail: true }); } catch { /* ignore */ }
-    add('.githooks', hooksPath === '.githooks' ? 'pass' : 'warn', hooksPath === '.githooks' ? 'core.hooksPath=.githooks' : `core.hooksPath=${hooksPath ?? 'unset'}`);
+    try {
+      const hooksPath = (git(['config', '--get', 'core.hooksPath'], repoRoot, { allowFail: true }) ?? '').trim();
+      if (hooksPath === '.githooks' && !exists(path.join(repoRoot, '.githooks'))) {
+        staleHooksPath = true;
+        add('git hooks hygiene', 'warn', 'stale core.hooksPath=.githooks (run `asdlc doctor --fix` to unset)');
+      }
+    } catch { /* ignore */ }
 
     const agents = path.join(repoRoot, 'AGENTS.md');
     hasRouting = exists(agents) && readText(agents).includes('<!-- asdlc:routing -->');
@@ -101,12 +107,12 @@ export function doctor(opts = {}) {
     log.step('attempting automated remediation (--fix)...');
 
     // 1. Managed schema
-    if (!schemaV) {
-      try { installSchema(); log.ok('fixed: installed managed schema'); } catch (e) { log.warn(`fix failed for schema: ${e.message}`); }
+    if (!schemaCheck.ok) {
+      try { installSchema(); log.ok('fixed: synced managed schema'); } catch (e) { log.warn(`fix failed for schema: ${e.message}`); }
     }
 
     // 2. .gitignore graphify-out
-    if (!ignored) {
+    if (gi && !ignored) {
       try {
         const text = exists(gi) ? readText(gi) : '';
         writeText(gi, `${text.trimEnd()}\n${GITIGNORE_LINE}\n`);
@@ -114,15 +120,12 @@ export function doctor(opts = {}) {
       } catch (e) { log.warn(`fix failed for .gitignore: ${e.message}`); }
     }
 
-    // 3. .githooks
-    if (hooksPath !== '.githooks') {
+    // 3. Clean up stale .githooks config if present
+    if (staleHooksPath && repoRoot) {
       try {
-        if (exists(githooksAssetDir)) {
-          copyTree(githooksAssetDir, path.join(repoRoot, '.githooks'));
-        }
-        git(['config', 'core.hooksPath', '.githooks'], repoRoot);
-        log.ok('fixed: configured git core.hooksPath -> .githooks');
-      } catch (e) { log.warn(`fix failed for githooks: ${e.message}`); }
+        git(['config', '--unset', 'core.hooksPath'], repoRoot, { allowFail: true });
+        log.ok('fixed: removed stale core.hooksPath=.githooks');
+      } catch (e) { log.warn(`fix failed for core.hooksPath: ${e.message}`); }
     }
 
     // 5. AGENTS.md routing

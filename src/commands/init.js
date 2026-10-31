@@ -1,10 +1,9 @@
 import path from 'node:path';
-import { exists, ensureDir, copyTree, readText, writeText, listDir } from '../lib/fs.js';
-import { openspecDir, configAssetFile, ciAssetDir, githooksAssetDir, schemaAssetDir, policyAssetFile, skillsAssetDir, SCHEMA_NAME } from '../lib/paths.js';
+import { exists, ensureDir, copyTree, readText, writeText } from '../lib/fs.js';
+import { openspecDir, configAssetFile, schemaAssetDir, SCHEMA_NAME } from '../lib/paths.js';
 import { installSchema, builtinSchemaVersion, localOverride } from '../lib/schema.js';
 import { log } from '../lib/log.js';
 import { runOpenspec, openspecVersion, ensureOpenspec } from '../lib/openspec.js';
-import { git } from '../lib/git.js';
 import { ensureGraphify, buildGraph, ensureGitignore } from '../lib/graphify.js';
 import { refreshAgents } from '../lib/agents.js';
 import { ensureRemoteLabels } from './pr.js';
@@ -16,16 +15,14 @@ export function initRepo(opts = {}) {
   const repoRoot = path.resolve(opts.repoRoot ?? process.cwd());
   const osDir = openspecDir(repoRoot);
 
-  // 1) Ensure the OpenSpec ENGINE is installed (pinned devDependency), then
-  //    REUSE it for setup: init the project + wire agent tooling. Re-running
-  //    is idempotent and never resets our governance config.
+  // 1) Resolve bundled OpenSpec engine (zero package.json / node_modules pollution in target repo),
+  //    then initialize OpenSpec project structure & wire agent tooling idempotently.
   const osInstall = opts.openspec === false
     ? { installed: openspecVersion(repoRoot) != null, action: 'skipped' }
     : ensureOpenspec(repoRoot);
   if (!osInstall.installed) {
-    log.warn('openspec CLI unavailable and could not be installed (need npm)');
+    log.warn('openspec CLI unavailable');
   } else {
-    if (osInstall.action === 'npm-install') log.ok(`installed openspec@${'1.13.2'} (devDependency)`);
     const tools = opts.tools ?? (detectTools(repoRoot).join(',') || 'none');
     const res = runOpenspec(['init', '--tools', tools, '--no-animation'], repoRoot);
     if (res.status === 0) log.ok(`openspec init --tools ${tools}`);
@@ -34,20 +31,22 @@ export function initRepo(opts = {}) {
   ensureDir(path.join(osDir, 'changes'));
   ensureDir(path.join(osDir, 'specs'));
 
-  // 1.5) BU-managed OpenSpec schema: install ONCE per machine (central), never
-  //      copied into the repo. This IS the OpenSpec customization layer - the
-  //      enterprise change flow (proposal -> specs -> review -> tasks).
+  // 1.5) Managed OpenSpec schema: bundled statelessly with asdlc and optionally cached in user data dir.
   const override = localOverride(repoRoot);
   if (override.tracked) {
     log.warn(`committed local schema copy found: ${override.path}`);
-    log.warn('the BU standard forbids per-repo schema overrides; remove it (the schema is installed centrally by `asdlc init`)');
+    log.warn('per-repo committed schema overrides are disallowed; remove it to use the bundled schema');
   }
-  const schemaDest = installSchema();
-  log.ok(`installed managed schema v${builtinSchemaVersion()} -> ${path.relative(repoRoot, schemaDest) || schemaDest}`);
+  try {
+    const schemaDest = installSchema();
+    log.ok(`synced managed schema v${builtinSchemaVersion()} -> ${path.relative(repoRoot, schemaDest) || schemaDest}`);
+  } catch {
+    log.info(`using stateless bundled schema v${builtinSchemaVersion()}`);
+  }
   if (opts.vendor) {
     const vendored = path.join(osDir, 'schemas', SCHEMA_NAME);
     copyTree(schemaAssetDir, vendored);
-    log.ok(`vendored schema -> openspec/schemas/${SCHEMA_NAME} (CI-only; do not commit)`);
+    log.ok(`vendored schema -> openspec/schemas/${SCHEMA_NAME} (do not commit)`);
   }
 
   // 2) Governance overlay: schema name + context + rules + lint + verify policy.
@@ -65,26 +64,17 @@ export function initRepo(opts = {}) {
     log.ok('wrote governance config (openspec/config.yaml)');
   }
 
-  // 3) CI + git hooks (governance glue, not OpenSpec's job).
-  if (opts.ci === 'jenkins') {
-    const dest = path.join(repoRoot, 'Jenkinsfile');
-    if (exists(dest) && !opts.force) log.step('Jenkinsfile exists (use --force)');
-    else { writeText(dest, readText(path.join(ciAssetDir, 'Jenkinsfile'))); log.ok('wrote Jenkinsfile'); }
-  }
-  if (opts.hooks !== false) installHooks(repoRoot);
-
-  // 3.6) Pre-provision remote governance labels if git remote & gh are available
+  // 3) Pre-provision remote governance labels if git remote & gh are available
   try {
     ensureRemoteLabels(repoRoot);
   } catch { /* ignore */ }
 
-  // 4) graphify (BU standard): a code-derived navigation graph for spec drafting.
-  //    Deterministic code-only AST (no LLM key), bound to HEAD, derived cache.
+  // 4) graphify: deterministic code-only AST navigation & topology graph (no LLM key), bound to HEAD.
   if (opts.graph !== false) {
     const g = ensureGraphify();
     if (!g.installed) {
-      log.warn('graphify not installed and could not be installed');
-      log.info('  install it (uv tool install graphifyy, or pip install graphifyy via your internal mirror)');
+      log.warn('graphify not installed and could not be auto-installed');
+      log.info('  install via internal mirror: pip install -i <mirror-url> graphifyy (or uv tool install graphifyy)');
     } else {
       if (g.action !== 'present') log.ok(`installed graphify (${g.action})`);
       const b = buildGraph(repoRoot);
@@ -94,15 +84,13 @@ export function initRepo(opts = {}) {
     }
   }
 
-  // 4.5) Bundled Agent Skills & Slash Commands: install out-of-the-box skills and
-  //      slash command parity into detected agent tools (.claude, .opencode, .pi, .agents, .github, etc.)
+  // 4.5) Bundled Agent Skills & Slash Commands
   const explicitTools = opts.tools ? opts.tools.split(',').map((s) => s.trim().toLowerCase()) : [];
   const allTools = [...new Set([...detectTools(repoRoot), ...explicitTools])];
   installSkills(repoRoot, allTools);
   installCommands(repoRoot, allTools);
 
-  // 5) AGENTS.md: the routing layer the agentic IDE reads (workflow + system
-  //    status derived from the graph). Written after the graph so status has nodes.
+  // 5) AGENTS.md: the routing layer the agentic IDE reads
   refreshAgents(repoRoot);
   log.ok('refreshed AGENTS.md (asdlc workflow + system status)');
 
@@ -110,33 +98,19 @@ export function initRepo(opts = {}) {
   log.info('Next:');
   log.info('  1. start a spec:       asdlc new "<requirement>"');
   log.info('  2. check the spec:     asdlc lint <CHANGE-ID>');
-  log.info('  3. after the spec PR merges: asdlc approve <CHANGE-ID>');
-  log.info('  4. implementation PR:  asdlc verify <CHANGE-ID> --repo <name>');
+  log.info('  3. open Spec PR:       asdlc pr <CHANGE-ID> <targetBranch>');
+  log.info('  4. verify & Impl PR:   asdlc verify <CHANGE-ID>');
   return repoRoot;
-}
-
-export function installHooks(repoRoot) {
-  if (!exists(githooksAssetDir)) return;
-  const dest = path.join(repoRoot, '.githooks');
-  copyTree(githooksAssetDir, dest);
-  try {
-    git(['config', 'core.hooksPath', '.githooks'], repoRoot);
-    log.ok('installed .githooks (pre-push, post-merge) + core.hooksPath');
-  } catch {
-    log.warn('could not set core.hooksPath (not a git repo?)');
-  }
 }
 
 export function register(program) {
   program
     .command('init')
-    .description('set up a repo: reuse `openspec init` + governance overlay + CI/hooks')
+    .description('set up a repo: OpenSpec project + governance overlay + Graphify AST + agent skills')
     .option('--repo-root <path>', 'repository root (default: cwd)')
     .option('--tools <list>', 'OpenSpec agent tools (default: auto-detect)')
-    .option('--ci <name>', 'scaffold a CI pipeline (supported: jenkins)')
-    .option('--no-hooks', 'skip installing .githooks')
     .option('--no-graph', 'skip graphify install/build')
     .option('--no-openspec', 'skip the openspec CLI step')
-    .option('--force', 'overwrite existing config / Jenkinsfile')
+    .option('--force', 'overwrite existing governance config')
     .action((opts) => initRepo(opts));
 }

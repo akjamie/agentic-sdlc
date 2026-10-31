@@ -11,7 +11,7 @@ context: |
     asdlc approve <ID>   after the spec PR merges: record the approved SHA
     asdlc apply <ID>     guard, then /opsx-apply
     asdlc verify <ID>    check the implementation
-    asdlc archive <ID>   finish (refresh the graph + AGENTS.md)
+    asdlc archive <ID>   post-merge compaction (sync living specs; refresh AGENTS.md only on constitutional changes)
   - The spec PR carries intent: proposal + spec delta + review.md (a change-dir
     convention). tasks.md is execution state, generated AFTER approval.
   - A code knowledge graph runs behind the scenes (graphify-out/); `asdlc new`

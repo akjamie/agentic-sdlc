@@ -41,7 +41,7 @@ export function applyGuard(changeId, opts = {}) {
 
   const locked = [`openspec/changes/${slug}/proposal.md`, `openspec/changes/${slug}/specs`];
 
-  const levelInfo = readEffectiveLevel(repoRoot, slug);
+  const levelInfo = readEffectiveLevel(repoRoot, slug, { baseRef: branch });
   if (levelInfo?.tampered) {
     fail(`cannot apply '${slug}': declared level in .openspec.yaml (${levelInfo.declaredLevel}) is lower than recorded history (${levelInfo.maxHistoryLevel}). Manual level downgrading is strictly forbidden.`, {
       code: 'LEVEL_TAMPERED',

@@ -166,28 +166,46 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
     }
   }
 
-  // 3. Check Requirement Semantics for Architecture / Schema / Infra
+  // 3. Check Requirement Semantics for Architecture / Schema / Infra (English + Chinese)
   const topoKeywords = [
     'api', 'endpoint', 'openapi', 'swagger', 'grpc', 'protobuf', 'graphql', 'webhook',
     'fastapi', 'springboot', 'spring boot', 'controller', 'rest api', 'router',
     'database', 'migration', 'schema', 'db table', 'database table', 'sql table', 'ddl', 'model', 'docker', 'k8s', 'helm'
   ];
 
+  const cjkTopoKeywords = [
+    '接口', '路由', '协议', '网关', '控制器', '出入参', '字段变更',
+    '数据库', '数据表', '表结构', '数据库迁移', '索引变更', '容器编排'
+  ];
+
+  let matchedTopoKw = null;
   for (const kw of topoKeywords) {
     const re = new RegExp(`\\b${kw.replace(/-/g, '[-\\s]')}\\b`, 'i');
     if (re.test(req)) {
-      no_signal = false;
-      if (level === 'L1') {
-        level = 'L2';
-      }
-      evidence.push({
-        id: 'V3_TOPOLOGY_KEYWORD',
-        kind: 'task_statement',
-        signal: 'soft',
-        summary: `Requirement touches cross-boundary architectural keyword: '${kw}'`
-      });
+      matchedTopoKw = kw;
       break;
     }
+  }
+  if (!matchedTopoKw) {
+    for (const cjkKw of cjkTopoKeywords) {
+      if (req.includes(cjkKw)) {
+        matchedTopoKw = cjkKw;
+        break;
+      }
+    }
+  }
+
+  if (matchedTopoKw) {
+    no_signal = false;
+    if (level === 'L1') {
+      level = 'L2';
+    }
+    evidence.push({
+      id: 'V3_TOPOLOGY_KEYWORD',
+      kind: 'task_statement',
+      signal: 'soft',
+      summary: `Requirement touches cross-boundary architectural keyword: '${matchedTopoKw}'`
+    });
   }
 
   return {

@@ -64,9 +64,23 @@ export function localOverride(repoRoot) {
   return { present, tracked: present ? isPathTracked(repoRoot, rel) : false, path: rel };
 }
 
-// The gate check: schema installed centrally, version matches the repo pin,
-// and NOT overridden by a committed local copy.
-export function checkSchema(repoRoot, { expectedVersion = null, ...opts } = {}) {
+export const SUPPORTED_SCHEMA_VERSIONS = new Set(['1']);
+
+// Lazily materializes a stateless XDG_DATA_HOME directory backed by bundled assets
+// so ephemeral containers and clean hosts never fail when ~/.local/share/openspec is absent.
+export function ensureRuntimeSchemaXdgDir() {
+  const xdgBase = path.join(os.tmpdir(), `asdlc-schema-v${builtinSchemaVersion() || '1'}`);
+  const dest = path.join(xdgBase, 'openspec', 'schemas', SCHEMA_NAME);
+  if (!exists(path.join(dest, 'schema.yaml')) && exists(schemaAssetDir)) {
+    ensureDir(path.dirname(dest));
+    copyTree(schemaAssetDir, dest);
+  }
+  return xdgBase;
+}
+
+// The gate check: schema version matches repo pin (either centrally installed or statelessly
+// bundled when opts.stateless is true), and NOT overridden by a committed local copy.
+export function checkSchema(repoRoot, { expectedVersion = null, stateless = false, ...opts } = {}) {
   const override = localOverride(repoRoot);
   if (override.tracked) {
     return {
@@ -75,16 +89,23 @@ export function checkSchema(repoRoot, { expectedVersion = null, ...opts } = {}) 
       hint: 'remove openspec/schemas/' + SCHEMA_NAME + ' and run `asdlc init`',
     };
   }
-  const installed = readInstalledVersion(opts);
+  const builtin = builtinSchemaVersion();
+  const installed = readInstalledVersion(opts) ?? (stateless ? builtin : null);
   if (!installed) {
     return { ok: false, reason: 'BU-managed schema not installed on this machine', hint: 'run `asdlc init`' };
   }
-  if (expectedVersion && installed !== String(expectedVersion)) {
-    return {
-      ok: false,
-      reason: `schema version mismatch: machine has v${installed}, repo pins v${expectedVersion}`,
-      hint: 'run `asdlc init`',
-    };
+  if (expectedVersion) {
+    const expStr = String(expectedVersion);
+    const compatible = stateless
+      ? (installed === expStr || builtin === expStr || SUPPORTED_SCHEMA_VERSIONS.has(expStr))
+      : installed === expStr;
+    if (!compatible) {
+      return {
+        ok: false,
+        reason: `schema version mismatch: machine has v${installed}, repo pins v${expectedVersion}`,
+        hint: 'run `asdlc init` or `asdlc upgrade`',
+      };
+    }
   }
-  return { ok: true, installed, builtin: builtinSchemaVersion(), override };
+  return { ok: true, installed, builtin, override };
 }

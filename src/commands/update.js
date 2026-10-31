@@ -2,7 +2,7 @@ import path from 'node:path';
 import { exists } from '../lib/fs.js';
 import { resolveRepoRoot, openspecDir, OPENSPEC_DIR } from '../lib/paths.js';
 import { log } from '../lib/log.js';
-import { detectTools, installSkills, installCommands, installHooks } from './init.js';
+import { detectTools, installSkills, installCommands } from './init.js';
 import { ensureGraphify, buildGraph, ensureGitignore } from '../lib/graphify.js';
 import { refreshAgents } from '../lib/agents.js';
 
@@ -76,15 +76,6 @@ export function updateRepo(opts = {}) {
     log.warn(`AGENTS.md refresh failed: ${err.message}`);
   }
 
-  // 4) Git governance hooks
-  if (opts.hooks !== false) {
-    try {
-      installHooks(repoRoot);
-    } catch (err) {
-      log.warn(`git hooks refresh failed: ${err.message}`);
-    }
-  }
-
   log.info('');
   log.ok('Repository SDLC state is fully up to date.');
   return 0;
@@ -97,7 +88,6 @@ export function register(program) {
     .option('--repo-root <path>', 'repository root (default: current repository)')
     .option('--no-skills', 'skip refreshing agent skills')
     .option('--no-graph', 'skip rebuilding codebase knowledge graph')
-    .option('--no-hooks', 'skip refreshing git hooks')
     .action((opts) => {
       process.exitCode = updateRepo(opts);
     });

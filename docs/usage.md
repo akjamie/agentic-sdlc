@@ -31,20 +31,18 @@ The engines (OpenSpec, Graphify) are installed by `asdlc init`, not by hand.
 
 ```bash
 cd your-repo
-asdlc init --ci jenkins
+asdlc init
 ```
 
 This one command:
 
-1. installs OpenSpec (a pinned devDependency) and Graphify (uv/pip)
-2. runs `openspec init` and wires your agentic IDE (auto-detected)
-3. installs the managed schema centrally — no per-repo copy
-4. installs bundled skills (`grilling`, `asdlc-apply`) and slash commands across all detected IDE tools
+1. provides bundled OpenSpec (zero-intrusion into non-Node repos; no rogue package.json/node_modules) and Graphify (uv/pip)
+2. runs OpenSpec initialization and wires your agentic IDE (auto-detected)
+3. provides the managed schema centrally or statelessly — no per-repo copy
+4. installs bundled skills (`grilling`, `asdlc-apply`, `asdlc-spec-review`, `asdlc-impl-review`) and slash commands across all detected IDE tools
 5. writes `openspec/config.yaml` (governance rules + lint policy)
 6. writes `.sdlc/policy.yaml` (platform-owned; protect with CODEOWNERS)
-7. installs `.githooks/` (pre-push, post-merge) + `core.hooksPath`
-8. writes a `Jenkinsfile` (CI gate pipeline)
-9. writes `AGENTS.md` routing (workflow + system status from the code graph)
+7. writes `AGENTS.md` routing (workflow + system status from the code graph)
 
 ---
 
@@ -159,13 +157,17 @@ asdlc verify TECH-1234 --repo your-repo
 
 Runs on the implementation PR in CI. Exit code non-zero = do not merge.
 
-### 7. Finish — `asdlc archive <ID>`
+### 7. Post-Merge Compaction — `asdlc archive <ID>` or `asdlc archive --merged`
 
 ```bash
+# Archive a specific merged change
 asdlc archive TECH-1234
+
+# Or compact all merged changes in batch
+asdlc archive --merged
 ```
 
-Archives the change, refreshes the knowledge graph, and updates `AGENTS.md`.
+Executed post-merge: syncs delta specs to `openspec/specs/` without mutating root `README.md` (eliminating merge-conflict hotspots), refreshes the AST code graph, and refreshes `AGENTS.md` only on constitutional governance changes.
 
 ## Navigation
 

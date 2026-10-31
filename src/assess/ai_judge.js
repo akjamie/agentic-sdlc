@@ -80,6 +80,23 @@ export function validateAIClassificationExpectation(aiOutput, { changedFiles = [
     };
   }
 
+  // Invariant 4 (Escalate-Only Ratchet): When no substantive files exist yet (stage new / spec),
+  // author-agent self-assessment CANNOT claim pure_doc / pure_test unless the requirement text
+  // itself deterministically indicates test or documentation work without code/API/security intent.
+  if (substantiveFiles.length === 0 && reqLower.trim() && (aiOutput.is_pure_test || aiOutput.is_pure_doc)) {
+    const hasDocOrTestSignal = /(?:\b(?:unit\s+tests?|integration\s+tests?|e2e\s+tests?|test\s+suites?|test\s+cases?|mock|fixture|docs?|documentation|readme|typo|typos|comments?|whitespace|changelog|markdown)\b|单元测试|集成测试|测试用例|文档|注释|错别字)/i.test(reqLower);
+    const hasCodeMutationSignal = /(?:\b(?:refactor|implement|endpoint|router|controller|service|engine|state\s+machine|retry|database|migration|schema|auth|payment|settlement|ledger)\b|重构|接口|路由|状态机|清结算|支付|账务|鉴权|密钥|数据库|迁移)/i.test(reqLower)
+      && !/(?:\b(?:add|write|update|fix|format|clean)\s+(?:unit\s+|integration\s+|e2e\s+)?tests?\b|\b(?:doc|docs|documentation|readme|typo|typos|comments?|whitespace|changelog|markdown)\b|单元测试|测试用例|文档|注释|错别字)/i.test(reqLower);
+
+    if (!hasDocOrTestSignal || hasCodeMutationSignal) {
+      return {
+        ok: false,
+        error: 'Invariant violation: agent assessment cannot downgrade non-doc/non-test requirement to L0',
+        override: { is_pure_test: false, is_pure_doc: false, classification: 'internal_code' }
+      };
+    }
+  }
+
   return { ok: true, validated: aiOutput };
 }
 
