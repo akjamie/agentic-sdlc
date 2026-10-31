@@ -377,7 +377,7 @@ test('WS-5: runVerify executes mapped acceptance tests by default when skipExter
 // Post-Review Hardening: 4 PE-Identified Verification Tests
 // ============================================================================
 
-test('PE Finding 1: verify CLI registers --approved, --emergency, --ci, --required, --repo-root', () => {
+test('PE Finding 1: verify CLI registers --approved, --emergency, --required, --repo-root and does not expose broken --ci', () => {
   const cli = buildCli();
   const verifyCmd = cli.commands.find((c) => c.name() === 'verify');
   assert.ok(verifyCmd, 'verify command must exist in CLI');
@@ -385,10 +385,10 @@ test('PE Finding 1: verify CLI registers --approved, --emergency, --ci, --requir
   const registeredOpts = verifyCmd.options.map((o) => o.long);
   assert.ok(registeredOpts.includes('--approved'), '--approved must be registered in verify CLI');
   assert.ok(registeredOpts.includes('--emergency'), '--emergency must be registered in verify CLI');
-  assert.ok(registeredOpts.includes('--ci'), '--ci must be registered in verify CLI');
   assert.ok(registeredOpts.includes('--required'), '--required must be registered in verify CLI');
   assert.ok(registeredOpts.includes('--repo-root'), '--repo-root must be registered in verify CLI');
   assert.ok(registeredOpts.includes('--json'), '--json must be registered in verify CLI');
+  assert.ok(!registeredOpts.includes('--ci'), 'verify must NOT expose --ci flag (Agentic SDLC is CI-agnostic and agent-driven)');
 });
 
 test('PE Finding 2: asdlc pr stages uncommitted working tree before pre-flight runVerify, catching unstaged spec-tamper', async () => {

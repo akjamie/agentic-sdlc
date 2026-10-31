@@ -245,7 +245,7 @@ export function runVerify(changeId, opts = {}) {
 
   const isCI = opts.ci !== undefined
     ? Boolean(opts.ci)
-    : (opts.openingPr ? false : Boolean(process.env.CI || process.env.GITHUB_ACTIONS || process.env.GITLAB_CI || process.env.JENKINS_URL));
+    : (opts.openingPr ? false : Boolean(process.env.CI || process.env.GITHUB_ACTIONS || process.env.GITLAB_CI));
 
   const assessment = assess({
     stage: 'impl',
@@ -406,7 +406,6 @@ export function register(program) {
     .option('--head <ref>', 'head ref (default: HEAD)')
     .option('--approved', 'flag indicating human lead approval is verified on PR / platform')
     .option('--emergency', 'emergency mode bypassing standard branch checks')
-    .option('--ci', 'force CI mode behavior')
     .option('--required', 'require AI verification gate to pass')
     .option('--skip-openspec', 'skip openspec validation')
     .option('--skip-external', 'skip external checks from config')
