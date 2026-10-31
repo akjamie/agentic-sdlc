@@ -505,3 +505,86 @@ test('PE Finding 4: mixed Chinese-English slugs combine domain tokens, and Invar
   assert.equal(docAssess.risk.level, 'L0', 'Pure Chinese doc/typo fix must be evaluated as L0 in offline heuristic baseline');
 });
 
+test('PE P2 Nits: verify --json rendering, truth-table bypass prevention, and target branch tasks isolation', () => {
+  // Nit 1: verify --json outputs parseable JSON with verdict, pass, results
+  const repo = tmpGitRepo('asdlc-p2-verify-json-');
+  try {
+    const slug = 'test-json-verify';
+    const cdir = path.join(repo, 'openspec', 'changes', slug);
+    fs.mkdirSync(path.join(cdir, 'specs', slug), { recursive: true });
+    fs.mkdirSync(path.join(repo, 'test'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'test', 'x.test.js'), '// test\n');
+    fs.writeFileSync(path.join(cdir, 'proposal.md'), '# Proposal\n');
+    fs.writeFileSync(path.join(cdir, 'specs', slug, 'spec.md'),
+      '# Spec Delta\n\n## Purpose\nThis capability provides verifiable JSON output for verification suites.\n\n## ADDED Requirements\n\n### Requirement: Demo\nThe system SHALL work.\n\n#### Scenario: Work\n- **GIVEN** a\n- **WHEN** b\n- **THEN** c\n\n**Acceptance criteria**\n- [ ] AC1: works (test: test/x.test.js)\n\n## Constraints & NFRs\n\n## Out of Scope\n\n## Test Strategy\nUnit test verifies JSON output.\n');
+    fs.writeFileSync(path.join(cdir, 'tasks.md'), '- [x] 1.1 Done (AC1) verify: test/x.test.js\n');
+    fs.writeFileSync(path.join(cdir, '.openspec.yaml'), 'schema: agentic-repo-change\nlevel: "L0"\nstatus: "ready_for_impl"\n');
+
+    let printed = '';
+    const origWrite = process.stdout.write;
+    process.stdout.write = (chunk) => {
+      printed += chunk;
+      return true;
+    };
+    try {
+      const code = runVerify(slug, { repoRoot: repo, base: 'HEAD', head: 'HEAD', json: true, skipOpenspec: true });
+      assert.equal(code, 0, 'verify --json should exit with 0 when checks pass');
+      const parsed = JSON.parse(printed.trim());
+      assert.equal(parsed.verdict, 'PASS');
+      assert.equal(parsed.pass, true);
+      assert.ok(Array.isArray(parsed.results));
+      assert.ok(parsed.results.length > 0);
+    } finally {
+      process.stdout.write = origWrite;
+    }
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+
+  // Nit 2: Adversarial bypass where both is_pure_doc AND is_pure_test are set to true
+  const doubleClaimAssess = assess({
+    stage: 'new',
+    requirement: '重构订单状态机并补充注释',
+    agentContext: {
+      is_pure_doc: true,
+      is_pure_test: true,
+      classification: 'doc_only',
+      rationale: 'Adversarial attempt to evade checks by setting both doc and test to true'
+    },
+    persist: false
+  });
+  assert.notEqual(doubleClaimAssess.risk.level, 'L0', 'Truth-table bypass: Setting both pure_doc and pure_test must still reject code refactoring');
+
+  // Nit 3: Cross-branch isolation in isChangeMergedAndComplete
+  const repo2 = tmpGitRepo('asdlc-p2-target-iso-');
+  try {
+    const slug = 'feature-in-flight';
+    const cdir = path.join(repo2, 'openspec', 'changes', slug);
+    fs.mkdirSync(path.join(cdir, 'specs', 'api'), { recursive: true });
+    fs.writeFileSync(path.join(cdir, '.openspec.yaml'), 'schema: agentic-repo-change\nlevel: "L2"\nstatus: "ready_for_impl"\n');
+    fs.writeFileSync(path.join(cdir, 'proposal.md'), '# Proposal\n');
+    fs.writeFileSync(path.join(cdir, 'specs', 'api', 'spec.md'), '# Spec\n');
+
+    // Commit only the Spec PR to main (tasks.md does NOT exist on main!)
+    execFileSync('git', ['add', '-A'], { cwd: repo2 });
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'merge spec to main'], { cwd: repo2 });
+
+    // Now developer checks out a feature branch and creates tasks.md locally
+    execFileSync('git', ['checkout', '-b', 'feat/impl'], { cwd: repo2 });
+    fs.writeFileSync(path.join(cdir, 'tasks.md'), '- [x] 1.1 Local checked task (AC1)\n');
+
+    // On main, tasks.md does NOT exist. Local working-tree tasks MUST NOT leak into main check!
+    const isCompleteOnMain = archiveMod.isChangeMergedAndComplete(repo2, slug, 'main');
+    assert.equal(isCompleteOnMain, false, 'Working tree tasks.md must not leak into target branch check');
+
+    // But on the feature branch (HEAD), it is complete once committed
+    execFileSync('git', ['add', path.join(cdir, 'tasks.md')], { cwd: repo2 });
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'add tasks on feat'], { cwd: repo2 });
+    const isCompleteOnFeat = archiveMod.isChangeMergedAndComplete(repo2, slug, 'HEAD');
+    assert.equal(isCompleteOnFeat, true, 'Tasks committed on current branch should be recognized on HEAD');
+  } finally {
+    fs.rmSync(repo2, { recursive: true, force: true });
+  }
+});
+
+

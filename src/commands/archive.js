@@ -114,21 +114,21 @@ export function archiveChange(changeId, opts = {}) {
   return 0;
 }
 
-function isChangeMergedAndComplete(repoRoot, slug, targetRef = 'HEAD') {
-  const cdir = changeDir(repoRoot, slug);
-  const tasksPath = path.join(cdir, 'tasks.md');
-  // A change is only completed if implementation tasks were generated, completed, and checked off.
-  // Newly merged Spec PRs on targetRef only contain proposal.md/specs without tasks.md;
-  // they must NOT be treated as complete.
-  if (!exists(tasksPath)) return false;
-
-  const tasksText = readText(tasksPath);
-  const checked = (tasksText.match(/^\s*-\s+\[x\]/gim) ?? []).length;
-  const unchecked = (tasksText.match(/^\s*-\s+\[\s\]/gm) ?? []).length;
-  if (checked === 0 || unchecked > 0) return false;
-
+export function isChangeMergedAndComplete(repoRoot, slug, targetRef = 'HEAD') {
+  // First ensure targetRef has tracked files for this change
   const trackedOnTarget = git(['ls-tree', '-r', '--name-only', targetRef, `openspec/changes/${slug}`], repoRoot, { allowFail: true }) ?? '';
-  return Boolean(trackedOnTarget.trim());
+  if (!trackedOnTarget.trim()) return false;
+
+  // A change is only completed if implementation tasks were generated, completed, and checked off on targetRef.
+  // We read tasks.md directly from targetRef (via git show) to isolate against local working-tree leakage
+  // (e.g. running archive --merged while checked out on a dirty or unmerged feature branch).
+  const tasksGitPath = `${targetRef}:openspec/changes/${slug}/tasks.md`;
+  const tasksTextOnTarget = git(['show', tasksGitPath], repoRoot, { allowFail: true });
+  if (!tasksTextOnTarget) return false;
+
+  const checked = (tasksTextOnTarget.match(/^\s*-\s+\[x\]/gim) ?? []).length;
+  const unchecked = (tasksTextOnTarget.match(/^\s*-\s+\[\s\]/gm) ?? []).length;
+  return checked > 0 && unchecked === 0;
 }
 
 /**

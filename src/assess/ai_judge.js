@@ -93,11 +93,8 @@ export function validateAIClassificationExpectation(aiOutput, { changedFiles = [
       /(?:实现|开发|创建|新增)\b.*(?:接口|服务|路由|数据表|表结构|控制器)/i.test(reqLower) ||
       CANONICAL_DESTRUCTIVE_PATTERN.test(reqLower);
 
-    const isDocOnlyClaim = aiOutput.is_pure_doc && !aiOutput.is_pure_test;
-    const isTestOnlyClaim = aiOutput.is_pure_test && !aiOutput.is_pure_doc;
-
-    // A doc claim is invalid if it has no doc signal, or if it contains substantive code refactoring/mutation
-    if (isDocOnlyClaim && (!hasDocSignal || hasCodeRefactorOrMutation)) {
+    // Evaluate doc claim independently (prevents truth table bypass if both is_pure_doc and is_pure_test are set)
+    if (aiOutput.is_pure_doc && (!hasDocSignal || hasCodeRefactorOrMutation)) {
       return {
         ok: false,
         error: 'Invariant violation: agent assessment cannot downgrade code/architecture requirement to L0 doc_only',
@@ -105,8 +102,8 @@ export function validateAIClassificationExpectation(aiOutput, { changedFiles = [
       };
     }
 
-    // A test claim is invalid if it has no test signal, or if it contains destructive operations or code refactoring
-    if (isTestOnlyClaim && (!hasTestSignal || CANONICAL_DESTRUCTIVE_PATTERN.test(reqLower) || /(?:\b(?:refactor|rewrite|redesign)\b|重构|重写)/i.test(reqLower))) {
+    // Evaluate test claim independently
+    if (aiOutput.is_pure_test && (!hasTestSignal || CANONICAL_DESTRUCTIVE_PATTERN.test(reqLower) || /(?:\b(?:refactor|rewrite|redesign)\b|重构|重写)/i.test(reqLower) || hasCodeRefactorOrMutation)) {
       return {
         ok: false,
         error: 'Invariant violation: agent assessment cannot downgrade destructive or refactoring requirement to L0 test_only',

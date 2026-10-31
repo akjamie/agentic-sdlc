@@ -2,7 +2,7 @@ import path from 'node:path';
 import { exists, readText, writeText, walkFiles } from '../lib/fs.js';
 import { readYaml } from '../lib/yaml.js';
 import { openspecDir, changeDir } from '../lib/paths.js';
-import { requireRepo, toChangeSlug, readLintConfig } from '../lib/cliutil.js';
+import { requireRepo, toChangeSlug, readLintConfig, jsonOut } from '../lib/cliutil.js';
 import { validateChange } from '../lib/openspec.js';
 import { runShell } from '../lib/exec.js';
 import { lastCommitTouching, changeOnRef, git } from '../lib/git.js';
@@ -62,13 +62,27 @@ function readExternalChecks(repoRoot) {
   return ext.filter((e) => e && typeof e.command === 'string').map((e) => ({ name: e.name ?? e.command, command: e.command }));
 }
 
-function finish(results, policy) {
+function finish(results, policy, opts = {}) {
   let failed = 0;
-  log.info('');
-  for (const r of results) {
+  const processed = results.map((r) => {
     const status = r.status === 'fail' && isAdvisory(policy, r.name) ? 'warn' : r.status;
-    const badge = { pass: 'PASS', fail: 'FAIL', warn: 'WARN', skip: 'SKIP' }[status];
     if (status === 'fail') failed += 1;
+    return { ...r, status };
+  });
+
+  if (opts.json) {
+    jsonOut({
+      verdict: failed === 0 ? 'PASS' : 'FAIL',
+      pass: failed === 0,
+      failed,
+      results: processed,
+    });
+    return failed ? 1 : 0;
+  }
+
+  log.info('');
+  for (const r of processed) {
+    const badge = { pass: 'PASS', fail: 'FAIL', warn: 'WARN', skip: 'SKIP' }[r.status];
     log.plain(`  [${badge}] ${r.name}`);
     if (r.detail) log.plain(`        ${dim(r.detail)}`);
   }
@@ -173,7 +187,7 @@ export function runVerify(changeId, opts = {}) {
   const cdir = changeDir(repoRoot, slug);
   if (!exists(cdir)) {
     add('change', 'fail', `change '${slug}' not found`);
-    return finish(results, policy);
+    return finish(results, policy, opts);
   }
   add('change', 'pass', slug);
   const effLevel = readEffectiveLevel(repoRoot, changeId, { baseRef: base });
@@ -392,7 +406,7 @@ export function runVerify(changeId, opts = {}) {
     add('AI verification', ok ? 'pass' : 'fail', String(report.summary ?? '').slice(0, 300));
   }
 
-  return finish(results, policy);
+  return finish(results, policy, opts);
 }
 
 export function register(program) {
