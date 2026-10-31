@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@akjamie/agentic-sdlc?color=6366f1&label=npm)](https://www.npmjs.com/package/@akjamie/agentic-sdlc)
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-10b981.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20.19.0-38bdf8.svg)](https://nodejs.org/)
-[![tests](https://img.shields.io/badge/tests-128%20passing-10b981.svg)](#development--verification)
+[![tests](https://img.shields.io/badge/tests-151%20passing-10b981.svg)](#development--verification)
 [![architecture](https://img.shields.io/badge/governance-L0--L3%20Adaptive%20Dual--Track-f59e0b.svg)](#adaptive-risk-tiered-governance-l0l3)
 
 > **The Intelligent Governance Engine for Autonomous AI Coding.**
@@ -43,7 +43,8 @@ AI coding agents (Claude Code, Cursor, OpenCode, Codex) write hundreds of lines 
 `agentic-sdlc` bridges these bottlenecks with a **practical, Git-native governance plane**:
 - 🚀 **Frictionless Agility for Routine Work (L0 / L1)**: Pure test additions, documentation updates, and bounded local refactors run in a streamlined **Single-PR** mode with automated validation and zero red tape.
 - 🛡️ **Structured Rigor for High-Impact Changes (L2 / L3)**: Cross-boundary APIs (Spring Boot, FastAPI, Go, NestJS), database schemas, security tokens, and constitutional rules enforce **Dual-PR Spec-First** contracts with human sign-off on intent.
-- 🤝 **Humane In-Place Scope Escalation**: If scope expands during implementation, the system **never punishes the engineer** by tearing branches apart. It preserves the single PR in-place, revokes auto-merge, and routes to a Tech Lead for approval.
+- 🔍 **Player ≠ Referee Verification**: Automated CI gates evaluate implementations against locked specifications using an independent model instance, eliminating shared-context verification bias.
+- 🤝 **Humane In-Place Scope Escalation**: If scope expands or crosses boundaries during implementation, the system **never punishes the engineer** by tearing branches apart. It preserves the single PR in-place, revokes auto-merge, and routes to a Tech Lead for approval.
 
 ---
 
