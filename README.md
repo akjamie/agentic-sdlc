@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@akjamie/agentic-sdlc?color=6366f1&label=npm)](https://www.npmjs.com/package/@akjamie/agentic-sdlc)
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-10b981.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20.19.0-38bdf8.svg)](https://nodejs.org/)
-[![tests](https://img.shields.io/badge/tests-128%20passing-10b981.svg)](#development--verification)
+[![tests](https://img.shields.io/badge/tests-151%20passing-10b981.svg)](#development--verification)
 [![architecture](https://img.shields.io/badge/governance-L0--L3%20Adaptive%20Dual--Track-f59e0b.svg)](#adaptive-risk-tiered-governance-l0l3)
 
 > **The Intelligent Governance Engine for Autonomous AI Coding.**
@@ -15,31 +15,36 @@
 
 ---
 
-## ⚡ The AI Software Engineering Bottleneck Shift
+## ⚡ The Practical Bottlenecks of Autonomous AI Coding
 
-AI coding agents (Claude Code, Cursor, OpenCode, Codex) write hundreds of lines of code in seconds. However, as code generation cost approaches zero, the engineering bottleneck shifts to **three predictable modes of failure in real-world codebases**:
+AI coding agents (Claude Code, Cursor, OpenCode, Codex) write hundreds of lines of code in seconds. However, as code generation velocity increases, enterprise engineering teams encounter **three practical bottlenecks in real-world delivery**:
 
 ```
-                       HOW AUTONOMOUS AI AGENTS DRIFT IN PRODUCTION
+                  THE PRACTICAL BOTTLENECKS OF AUTONOMOUS CODING
  ┌───────────────────────────┐  ┌───────────────────────────┐  ┌───────────────────────────┐
- │ 1. Guessing on Ambiguity  │  │ 2. Reward-Hacking Exams   │  │ 3. Review Fatigue Chaos   │
+ │ 1. Review Bandwidth       │  │ 2. Verification Bias      │  │ 3. Boundary & Assumptions │
  ├───────────────────────────┤  ├───────────────────────────┤  ├───────────────────────────┤
- │ Agents guess architecture │  │ When tests or edge cases  │  │ Tech Leads are flooded    │
- │ and schema assumptions    │  │ fail, agents weaken test  │  │ with 500-line AI diffs    │
- │ silently across 15 files  │  │ assertions or modify specs│  │ lacking verified intent,  │
- │ instead of clarifying.    │  │ to force green builds.    │  │ tests, or rationale.      │
+ │ Generation throughput has │  │ When the same agent writes│  │ Natural language leaves   │
+ │ outpaced human review     │  │ both code and tests, tests│  │ scope implicit. Agents may│
+ │ capacity, risking review  │  │ risk validating own bias  │  │ overstep boundaries and   │
+ │ depth dilution.           │  │ rather than actual specs. │  │ cause cascading breaks.   │
  └───────────────────────────┘  └───────────────────────────┘  └───────────────────────────┘
 ```
 
+1. **Review Bandwidth Asymmetry**: Code generation throughput has scaled by an order of magnitude, but human cognitive capacity for deep architectural comprehension remains constant. When teams are inundated with frequent multi-file PRs, line-by-line review becomes unsustainable, inadvertently diluting review depth on critical paths.
+2. **Shared-Context Verification Bias (The "Player == Referee" Dilemma)**: When an agent implements code and writes unit tests within the same reasoning context, tests naturally inherit the agent’s internal interpretations. Passing tests confirm that code aligns with the agent’s own understanding, which can mask divergence from actual system contracts.
+3. **Implicit Assumptions & Boundary Spillover**: Natural language prompts are inherently concise, stating localized intent while leaving architectural boundaries, blast-radius limits, and edge behaviors unspecified. Autonomous agents resolve these ambiguities independently and frequently modify high fan-in shared modules, common middleware, or public contracts to satisfy a localized prompt. Without early alignment on scope and contracts, unverified boundary crossovers trigger unintended cascading regressions across dependent components.
+
 > **Why prompts alone (`AGENTS.md`, `CLAUDE.md`) cannot fix this:**  
-> Prompts are **suggestions**, not gates. An autonomous agent under token pressure will prioritize getting code written over adherence to instructions. True governance requires **deterministic exit-coded gates and independent verification agents**.
+> Prompts are **guidelines**, not deterministic gates. Under complex task and token constraints, agents prioritize code completion over subtle governance boundaries. Robust governance requires **deterministic exit-coded gates, Git-anchored contracts, and independent verification**.
 
 ### The Solution: Adaptive Dual-Track SDLC (`asdlc`)
 
-`agentic-sdlc` bridges this gap with an **Intelligent, Adaptive Governance Plane**:
+`agentic-sdlc` bridges these bottlenecks with a **practical, Git-native governance plane**:
 - 🚀 **Frictionless Agility for Routine Work (L0 / L1)**: Pure test additions, documentation updates, and bounded local refactors run in a streamlined **Single-PR** mode with automated validation and zero red tape.
-- 🛡️ **Ironclad Rigor for High-Impact Changes (L2 / L3)**: Cross-boundary APIs (Spring Boot, FastAPI, Go, NestJS), database schemas, security tokens, and constitutional rules enforce **Dual-PR Spec-First** contracts with human sign-off.
-- 🤝 **Humane In-Place Scope Escalation**: If scope unexpectedly expands during implementation, the system **never punishes the engineer** by ripping their Git branch apart. It maintains the single PR in-place, revokes auto-merge, and routes to a Tech Lead for human review.
+- 🛡️ **Structured Rigor for High-Impact Changes (L2 / L3)**: Cross-boundary APIs (Spring Boot, FastAPI, Go, NestJS), database schemas, security tokens, and constitutional rules enforce **Dual-PR Spec-First** contracts with human sign-off on intent.
+- 🔍 **Player ≠ Referee Verification**: Automated CI gates evaluate implementations against locked specifications using an independent model instance, eliminating shared-context verification bias.
+- 🤝 **Humane In-Place Scope Escalation**: If scope expands or crosses boundaries during implementation, the system **never punishes the engineer** by tearing branches apart. It preserves the single PR in-place, revokes auto-merge, and routes to a Tech Lead for approval.
 
 ---
 
