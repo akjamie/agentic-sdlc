@@ -22,18 +22,18 @@ AI coding agents (Claude Code, Cursor, OpenCode, Codex) write hundreds of lines 
 ```
                   THE PRACTICAL BOTTLENECKS OF AUTONOMOUS CODING
  ┌───────────────────────────┐  ┌───────────────────────────┐  ┌───────────────────────────┐
- │ 1. Review Bandwidth       │  │ 2. Verification Bias      │  │ 3. Implicit Assumptions   │
+ │ 1. Review Bandwidth       │  │ 2. Verification Bias      │  │ 3. Boundary & Assumptions │
  ├───────────────────────────┤  ├───────────────────────────┤  ├───────────────────────────┤
- │ Generation throughput has │  │ When the same agent writes│  │ Natural language prompts  │
- │ outpaced human review     │  │ both code and tests, tests│  │ leave room for ambiguity. │
- │ capacity, risking review  │  │ risk validating the agent's│  │ Unverified design choices │
- │ depth dilution.           │  │ own bias rather than specs│  │ accumulate into rework.   │
+ │ Generation throughput has │  │ When the same agent writes│  │ Natural language leaves   │
+ │ outpaced human review     │  │ both code and tests, tests│  │ scope implicit. Agents may│
+ │ capacity, risking review  │  │ risk validating own bias  │  │ overstep boundaries and   │
+ │ depth dilution.           │  │ rather than actual specs. │  │ cause cascading breaks.   │
  └───────────────────────────┘  └───────────────────────────┘  └───────────────────────────┘
 ```
 
 1. **Review Bandwidth Asymmetry**: Code generation throughput has scaled by an order of magnitude, but human cognitive capacity for deep architectural comprehension remains constant. When teams are inundated with frequent multi-file PRs, line-by-line review becomes unsustainable, inadvertently diluting review depth on critical paths.
 2. **Shared-Context Verification Bias (The "Player == Referee" Dilemma)**: When an agent implements code and writes unit tests within the same reasoning context, tests naturally inherit the agent’s internal interpretations. Passing tests confirm that code aligns with the agent’s own understanding, which can mask divergence from actual system contracts.
-3. **Implicit Assumption Accumulation**: Natural language prompts are inherently concise, leaving many engineering decisions unspecified (e.g., error payloads, retry strategies, boundary fallbacks). Autonomous agents resolve these ambiguities on their own. Without early alignment on these forks, unverified assumptions surface late in the lifecycle, driving up rework costs.
+3. **Implicit Assumptions & Boundary Spillover**: Natural language prompts are inherently concise, stating localized intent while leaving architectural boundaries, blast-radius limits, and edge behaviors unspecified. Autonomous agents resolve these ambiguities independently and frequently modify high fan-in shared modules, common middleware, or public contracts to satisfy a localized prompt. Without early alignment on scope and contracts, unverified boundary crossovers trigger unintended cascading regressions across dependent components.
 
 > **Why prompts alone (`AGENTS.md`, `CLAUDE.md`) cannot fix this:**  
 > Prompts are **guidelines**, not deterministic gates. Under complex task and token constraints, agents prioritize code completion over subtle governance boundaries. Robust governance requires **deterministic exit-coded gates, Git-anchored contracts, and independent verification**.

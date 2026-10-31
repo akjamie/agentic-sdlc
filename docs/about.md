@@ -10,7 +10,7 @@
 
 **Agentic SDLC (ASDLC)** is an enterprise-grade, specification-driven software development lifecycle designed specifically for the era of AI coding agents. 
 
-While traditional software engineering relies on manual handoffs and post-facto code reviews, and unconstrained autonomous coding leads to review bandwidth exhaustion, shared-context verification bias, and unverified architectural drift, **Agentic SDLC introduces a deterministic 7-stage governance pipeline**. It binds AI agents to Git-locked specifications, strict TDD loops, and automated multi-gate verification.
+While traditional software engineering relies on manual handoffs and post-facto code reviews, and unconstrained autonomous coding leads to review bandwidth exhaustion, shared-context verification bias, and boundary spillover regressions, **Agentic SDLC introduces a deterministic 7-stage governance pipeline**. It binds AI agents to Git-locked specifications, strict TDD loops, and automated multi-gate verification.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -48,9 +48,9 @@ As autonomous coding agents scale across software engineering organizations, tec
 - **EN**: When the same agent writes both implementation code and unit tests within the same reasoning context, tests naturally share the agent's internal assumptions and biases. A passing test suite confirms that the code aligns with the agent's internal logic, which may diverge from the true enterprise specification. Passing CI tests can inadvertently mask contract discrepancies.
 - **ZH**: 当编写生产代码与编写单元测试完全由同一个上下文中的 Agent 完成时，两者共享了同一套归纳偏差与理解前提。当 Agent 对某项业务边界存在理解偏差时，其编写的测试往往会将该偏差固化为“预期行为”。此时测试全绿只能证明“代码符合 Agent 自身的理解”，无法代表“代码满足真实的系统契约”。
 
-### 3. Implicit Assumption Accumulation (隐式假设累积与意图留白)
-- **EN**: Natural language requirements are inherently concise, leaving technical ambiguities unspecified (e.g., error payloads, retry strategies, boundary fallbacks, persistence tradeoffs). Autonomous agents resolve these ambiguities on their own. Without early alignment on these forks, unverified assumptions surface late during code review or staging, driving up rework cycles.
-- **ZH**: 自然语言表达天然具有高度概括性与信息留白；而自主代理为了完成端到端任务，必须在多步推理中自行填补大量工程细节（如幂等策略、错误封套、降级行为与存储选型）。这些隐式假设若未经显式对齐，往往直到提测或评审阶段才被发现，造成较高的返工成本。
+### 3. Implicit Assumptions & Boundary Spillover (隐式假设累积与越界修改风险)
+- **EN**: Natural language prompts are inherently concise, stating localized intent while leaving architectural boundaries, blast-radius limits, and edge behaviors unspecified. To fulfill the prompt, autonomous agents resolve ambiguities independently and frequently modify high fan-in shared libraries, common interceptors, or public schemas. Without explicit boundary contracts and blast-radius awareness, these unverified assumptions and boundary crossovers trigger cascading regressions across dependent components.
+- **ZH**: 自然语言天然精炼且伴随大量留白，提示词往往只表达局部诉求，而省略了严格的系统边界约束与改动爆炸半径限制。全自主 Agent 在缺乏代码拓扑全景意识时，常自行推演并顺藤摸瓜修改公共高入度枢纽、共享拦截器或上下游协议，导致原本局部的微调击穿模块隔离界限，引发下游依赖的级联破坏（Cascading Regressions）与高昂的后期返工成本。
 
 ---
 
