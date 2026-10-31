@@ -2,7 +2,7 @@ import path from 'node:path';
 import { exists, readText, writeText, walkFiles } from '../lib/fs.js';
 import { readYaml } from '../lib/yaml.js';
 import { openspecDir, changeDir } from '../lib/paths.js';
-import { requireRepo, toChangeSlug, readLintConfig } from '../lib/cliutil.js';
+import { requireRepo, toChangeSlug, readLintConfig, jsonOut } from '../lib/cliutil.js';
 import { validateChange } from '../lib/openspec.js';
 import { runShell } from '../lib/exec.js';
 import { lastCommitTouching, changeOnRef, git } from '../lib/git.js';
@@ -13,6 +13,7 @@ import { classifyPR } from '../lib/prtype.js';
 import { isSinglePrLevel, requiresHumanReview, readChangeLevel, readEffectiveLevel } from '../lib/level.js';
 import { assess, renderCheckSummary, loadRiskHistory } from '../assess/index.js';
 import { checkTestPresence, checkTaskEvidence } from '../lib/tdd.js';
+import { runTests, parseSpecAcceptanceCriteria } from './test.js';
 import { log, dim } from '../lib/log.js';
 
 // THE implementation check (v10: gate absorbed verify). Deterministic checks
@@ -61,13 +62,27 @@ function readExternalChecks(repoRoot) {
   return ext.filter((e) => e && typeof e.command === 'string').map((e) => ({ name: e.name ?? e.command, command: e.command }));
 }
 
-function finish(results, policy) {
+function finish(results, policy, opts = {}) {
   let failed = 0;
-  log.info('');
-  for (const r of results) {
+  const processed = results.map((r) => {
     const status = r.status === 'fail' && isAdvisory(policy, r.name) ? 'warn' : r.status;
-    const badge = { pass: 'PASS', fail: 'FAIL', warn: 'WARN', skip: 'SKIP' }[status];
     if (status === 'fail') failed += 1;
+    return { ...r, status };
+  });
+
+  if (opts.json) {
+    jsonOut({
+      verdict: failed === 0 ? 'PASS' : 'FAIL',
+      pass: failed === 0,
+      failed,
+      results: processed,
+    });
+    return failed ? 1 : 0;
+  }
+
+  log.info('');
+  for (const r of processed) {
+    const badge = { pass: 'PASS', fail: 'FAIL', warn: 'WARN', skip: 'SKIP' }[r.status];
     log.plain(`  [${badge}] ${r.name}`);
     if (r.detail) log.plain(`        ${dim(r.detail)}`);
   }
@@ -92,7 +107,43 @@ function intent(cdir) {
   return parts.join('\n\n');
 }
 
-function buildPrompt(changeId, intentText, diff, base) {
+export const DEFAULT_MAX_DIFF_CHARS = 32000;
+
+export function buildVerifierDiffPayload(diff, { maxChars = DEFAULT_MAX_DIFF_CHARS } = {}) {
+  const raw = String(diff || '');
+  if (!raw) return '(empty diff)';
+  if (raw.length <= maxChars) return raw;
+
+  // Split unified diff by file and preserve file manifest + bounded per-file hunks
+  const sections = raw.split(/(?=^diff --git )/m).filter(Boolean);
+  const fileManifest = sections.map((sec) => {
+    const header = sec.match(/^diff --git a\/(.+?) b\/(.+?)$/m);
+    const file = header ? header[2] : 'unknown';
+    const adds = (sec.match(/^\+(?!\+\+)/gm) || []).length;
+    const dels = (sec.match(/^-(?!--)/gm) || []).length;
+    return `  - ${file} (+${adds} / -${dels})`;
+  });
+
+  const manifestBlock = `Changed files (${sections.length}):\n${fileManifest.join('\n')}\n\n`;
+  const notice = `\n\n[DIFF TRUNCATED: total ${raw.length} chars exceeded ${maxChars}-char stdin budget. Run the \`asdlc-impl-review\` skill in an independent agent session for multi-file deep review.]`;
+  const remainingBudget = Math.max(256, maxChars - manifestBlock.length - notice.length);
+  const perFileBudget = Math.max(160, Math.floor(remainingBudget / Math.max(1, sections.length)));
+
+  const excerpts = [];
+  let used = 0;
+  for (const sec of sections) {
+    if (used >= remainingBudget) break;
+    const allowance = Math.min(perFileBudget, remainingBudget - used);
+    const slice = sec.length > allowance ? `${sec.slice(0, allowance)}\n... (hunk truncated)` : sec;
+    excerpts.push(slice);
+    used += slice.length + 2;
+  }
+
+  return `${manifestBlock}${excerpts.join('\n\n')}${notice}`;
+}
+
+function buildPrompt(changeId, intentText, diff, base, opts = {}) {
+  const boundedDiff = buildVerifierDiffPayload(diff, { maxChars: opts.maxDiffChars ?? DEFAULT_MAX_DIFF_CHARS });
   return `You are an INDEPENDENT VERIFIER for change ${changeId}. You did NOT author it.
 Verify the IMPLEMENTATION satisfies the APPROVED INTENT. Be skeptical.
 - Decide PASS/FAIL for every requirement / acceptance criterion and every task.
@@ -103,7 +154,7 @@ Output ONLY strict JSON: {"verdict":"PASS|FAIL","summary":"...","requirements":[
 ${intentText}
 
 ===== IMPLEMENTATION DIFF (base ${base}) =====
-${diff || '(empty diff)'}
+${boundedDiff}
 `;
 }
 
@@ -136,10 +187,10 @@ export function runVerify(changeId, opts = {}) {
   const cdir = changeDir(repoRoot, slug);
   if (!exists(cdir)) {
     add('change', 'fail', `change '${slug}' not found`);
-    return finish(results, policy);
+    return finish(results, policy, opts);
   }
   add('change', 'pass', slug);
-  const effLevel = readEffectiveLevel(repoRoot, changeId);
+  const effLevel = readEffectiveLevel(repoRoot, changeId, { baseRef: base });
   if (effLevel?.tampered) {
     add('level-integrity', 'fail', `tampered: declared ${effLevel.declaredLevel} < recorded history ${effLevel.maxHistoryLevel}`);
   } else {
@@ -208,7 +259,7 @@ export function runVerify(changeId, opts = {}) {
 
   const isCI = opts.ci !== undefined
     ? Boolean(opts.ci)
-    : (opts.openingPr ? false : Boolean(process.env.CI || process.env.GITHUB_ACTIONS || process.env.GITLAB_CI || process.env.JENKINS_URL));
+    : (opts.openingPr ? false : Boolean(process.env.CI || process.env.GITHUB_ACTIONS || process.env.GITLAB_CI));
 
   const assessment = assess({
     stage: 'impl',
@@ -303,7 +354,10 @@ export function runVerify(changeId, opts = {}) {
     else add('openspec-validate', 'fail', `${res.stdout}${res.stderr}`.trim().slice(0, 600));
   }
 
-  const schema = checkSchema(repoRoot, { expectedVersion: readYamlConfig(repoRoot)?.schemaVersion ?? null });
+  const schema = checkSchema(repoRoot, {
+    expectedVersion: readYamlConfig(repoRoot)?.schemaVersion ?? null,
+    stateless: true,
+  });
   add('schema-managed', schema.ok ? 'pass' : 'fail',
     schema.ok ? `managed schema v${schema.installed}` : `${schema.reason}${schema.hint ? ` (${schema.hint})` : ''}`);
 
@@ -311,10 +365,27 @@ export function runVerify(changeId, opts = {}) {
     const SECRET = /TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|CREDENTIAL/i;
     const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !SECRET.test(k)));
     const env = { ...cleanEnv, ASDLC_CHANGE_ID: changeId, ASDLC_REPO: opts.repo ?? '', ASDLC_SPEC_SHA: specSha ?? '' };
-    for (const check of readExternalChecks(repoRoot)) {
+    const extChecks = readExternalChecks(repoRoot);
+    for (const check of extChecks) {
       const res = runShell(check.command, repoRoot, { env });
       if (res.status === 0) add(check.name, 'pass', '');
       else add(check.name, 'fail', `${res.stdout}${res.stderr}`.trim().slice(0, 600) || `exit ${res.status}`);
+    }
+
+    // Default mapped acceptance-test execution when specs declare AC test mappings
+    if (extChecks.length === 0 && specFiles.length > 0 && blockers === 0) {
+      const hasMappedAcs = specFiles.some((f) =>
+        parseSpecAcceptanceCriteria(readText(path.join(cdir, 'specs', f))).some((ac) => ac.testPath)
+      );
+      if (hasMappedAcs) {
+        try {
+          const testExit = runTests(slug, { repoRoot, silent: true });
+          add('acceptance-tests', testExit === 0 ? 'pass' : 'fail',
+            testExit === 0 ? 'all spec-mapped acceptance tests passed' : 'one or more spec-mapped acceptance tests failed');
+        } catch (err) {
+          add('acceptance-tests', 'fail', err.message);
+        }
+      }
     }
   }
 
@@ -325,13 +396,17 @@ export function runVerify(changeId, opts = {}) {
     add('AI verification', required2 ? 'fail' : 'skip', required2 ? 'no verifier configured (set ASDLC_VERIFY_COMMAND)' : 'no verifier configured');
   } else {
     const diff = git(['diff', `${base}...${head}`], repoRoot, { allowFail: true }) ?? '';
-    const res = runShell(command, repoRoot, { input: buildPrompt(changeId, intent(cdir), diff, base), timeout: 900000 });
+    const maxDiffChars = opts.maxDiffChars ?? vcfg.maxDiffChars ?? DEFAULT_MAX_DIFF_CHARS;
+    const res = runShell(command, repoRoot, {
+      input: buildPrompt(changeId, intent(cdir), diff, base, { maxDiffChars }),
+      timeout: 900000,
+    });
     const report = extractJson(res.stdout) ?? { verdict: 'FAIL', summary: 'verifier produced no parseable JSON' };
     const ok = String(report.verdict).toUpperCase() === 'PASS' && res.status === 0;
     add('AI verification', ok ? 'pass' : 'fail', String(report.summary ?? '').slice(0, 300));
   }
 
-  return finish(results, policy);
+  return finish(results, policy, opts);
 }
 
 export function register(program) {
@@ -339,11 +414,16 @@ export function register(program) {
     .command('verify <changeId>')
     .description('check the implementation: artifacts + approved SHA + tasks complete + lint + validate + AI verification')
     .option('--repo <name>', 'repository name')
+    .option('--repo-root <dir>', 'repository root path')
     .option('--protected-branch <ref>', 'branch the approved spec must be merged into', 'origin/main')
     .option('--base <ref>', 'base ref for the PR diff (default: protected branch)')
     .option('--head <ref>', 'head ref (default: HEAD)')
+    .option('--approved', 'flag indicating human lead approval is verified on PR / platform')
+    .option('--emergency', 'emergency mode bypassing standard branch checks')
+    .option('--required', 'require AI verification gate to pass')
     .option('--skip-openspec', 'skip openspec validation')
     .option('--skip-external', 'skip external checks from config')
+    .option('--json', 'print output in structured JSON')
     .action((changeId, opts) => {
       process.exitCode = runVerify(changeId, opts);
     });

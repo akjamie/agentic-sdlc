@@ -154,12 +154,12 @@ apply:
     Amendment - never absorb them here.
 
 archive:
-  description: Sync living specs, update README, and conditionally update AGENTS.md
+  description: Sync living specs into openspec/specs/ and conditionally update AGENTS.md
   instruction: |
     Archive the verified change:
     1. Living Specs (Knowledge Layer):
        Merge delta specs into `openspec/specs/` and record the capability in `README.md`.
-       Do NOT touch `AGENTS.md` for standard business or feature specs (zero prompt pollution).
+       Do NOT touch `AGENTS.md` for standard business or feature specs (zero merge-conflict hotspot & zero prompt pollution).
     2. Constitutional Changes (Governance Layer):
        Automatically detected when the change modifies governance policies, SDLC rules,
        or workflow contracts (`.sdlc/policy.yaml`, `openspec/config.yaml`, `AGENTS.md`, `governance/**`).

@@ -11,16 +11,64 @@ export function toChangeSlug(changeId) {
     .replace(/^-+|-+$/g, '');
 }
 
+// Bilingual domain lexicon bridging Chinese engineering requirements to canonical English
+// codebase symbols and readable change slugs (enabling Graphify AST queries on CJK inputs).
+const CJK_DOMAIN_LEXICON = [
+  [/重构/, 'refactor'],
+  [/修复|排障|缺陷/, 'fix'],
+  [/清结算|清算/, 'clearing-settlement'],
+  [/支付|打款|收单/, 'payment'],
+  [/结算/, 'settlement'],
+  [/退款/, 'refund'],
+  [/账务|账本|记账|对账/, 'ledger'],
+  [/计费|账单/, 'billing'],
+  [/钱包|资金/, 'wallet'],
+  [/删表|删除.*表|清空.*表|清理历史|物理删除/, 'purge-table'],
+  [/鉴权|认证|登录态|单点登录/, 'auth'],
+  [/权限|越权|角色/, 'rbac'],
+  [/密钥|私钥|令牌|加密|脱敏/, 'secret-crypto'],
+  [/接口|出入参|协议/, 'api'],
+  [/路由|网关|控制器/, 'router'],
+  [/数据库|数据表|表结构|迁移|索引/, 'schema-db'],
+  [/订单/, 'order'],
+  [/缓存/, 'cache'],
+  [/队列|消息/, 'queue'],
+  [/配置/, 'config'],
+  [/单元测试|集成测试|测试用例/, 'test'],
+  [/文档|注释/, 'docs'],
+  [/微信/, 'wechat'],
+  [/回调|通知/, 'callback'],
+  [/状态机/, 'state-machine'],
+  [/错别字/, 'typo'],
+];
+
+function extractCjkMappedTokens(text) {
+  const raw = String(text ?? '');
+  if (!/[\u4e00-\u9fff]/.test(raw)) return [];
+  const tokens = [];
+  for (const [pattern, mapped] of CJK_DOMAIN_LEXICON) {
+    if (pattern.test(raw)) {
+      for (const part of mapped.split('-')) {
+        if (!tokens.includes(part)) tokens.push(part);
+      }
+    }
+  }
+  return tokens;
+}
+
 export function extractRequirementTerms(text) {
-  const s = String(text ?? '')
+  const raw = String(text ?? '');
+  const s = raw
     .replace(/\b[A-Za-z]{2,10}-\d+\b[:\s-]*/g, '')
     .toLowerCase()
     .replace(/\b(i\s+want\s+to\s+build|i\s+want\s+to\s+add|i\s+want\s+to|we\s+need\s+to|please\s+add|build|create|add|implement)\b/gi, '')
     .replace(/\b(a|an|the|of|for|with|in|on|to|and|by)\b/gi, '')
     .replace(/[^a-z0-9\s]/g, ' ')
     .trim();
-  const words = s.split(/\s+/).filter(Boolean);
-  return words.slice(0, 5).join(' ');
+  const asciiWords = s.split(/\s+/).filter(Boolean);
+  const cjkWords = extractCjkMappedTokens(raw).filter((w) => !['refactor', 'fix'].includes(w));
+  const merged = [...new Set([...asciiWords, ...cjkWords])];
+  return merged.slice(0, 6).join(' ');
 }
 
 export function deriveChangeSlug(input, opts = {}) {
@@ -47,11 +95,13 @@ export function deriveChangeSlug(input, opts = {}) {
 
   if (!cleaned) cleaned = text.toLowerCase();
 
-  const words = cleaned
+  const asciiWords = cleaned
     .replace(/[^a-z0-9\s-]/g, ' ')
     .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 4);
+    .filter(Boolean);
+
+  const cjkTokens = extractCjkMappedTokens(text);
+  const words = [...new Set([...cjkTokens, ...asciiWords])].slice(0, 5);
 
   const keywords = words.join('-');
   if (ticket && keywords) return `${ticket}-${keywords}`.slice(0, 40).replace(/-+$/, '');
@@ -60,7 +110,7 @@ export function deriveChangeSlug(input, opts = {}) {
   const fallback = toChangeSlug(text).slice(0, 40);
   if (fallback) return fallback;
 
-  // Non-ASCII fallback (e.g. pure Chinese input): generate deterministic slug from content hash
+  // Non-ASCII fallback when no domain terms matched: generate deterministic slug from content hash
   const hash = Math.abs(text.split('').reduce((acc, c) => ((acc << 5) - acc) + c.charCodeAt(0), 0)).toString(36);
   return `change-${hash || Date.now().toString(36)}`;
 }

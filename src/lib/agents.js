@@ -24,14 +24,14 @@ raw escape hatch: the wrappers ARE the guards (graph refresh, approval, checks).
    (or **batch-grill-me** if \`--batch-grill\` was passed) with anti-fatigue guardrails (look facts up yourself,
    focus on material trade-offs, lead with recommendations, early-exit on agreement), and record settled decisions
    in \`clarifications.md\`. (If \`--no-grill\` was passed, self-settle context-inferred assumptions).
-   ▶ **CRITICAL**: ONLY AFTER \`clarifications.md\` is settled may you author **proposal.md -> specs/**\`. (AI Review is handled on PR by CI).
+   ▶ **CRITICAL**: ONLY AFTER \`clarifications.md\` is settled may you author **proposal.md -> specs/**\`. (Independent AI Review is executed in an isolated agent session via \`asdlc-spec-review\` / \`asdlc-impl-review\` skills).
 2. **grill** - (embedded in Stage 2) settle all design forks in \`clarifications.md\` BEFORE writing specs.
 3. **lint** - \`asdlc lint <ID>\`: artifacts + BDD/acceptance criteria. Open Spec PR via \`asdlc pr <ID> <targetBranch>\`.
 4. **approve** - human/TL approves (via PR merge, on PR, or in-place); \`asdlc approve <ID>\` records approved SHA + READY_FOR_IMPL.
 5. **apply** - \`asdlc apply <ID>\` (guard: the spec must be approved), then
    \`/opsx-apply\` with task-level TDD + task-level converge.
 6. **verify** - \`asdlc verify <ID>\`: approved SHA, artifacts, tasks complete, tests, AI.
-7. **archive** - \`asdlc archive <ID>\`: sync specs to openspec/specs/ + update README.md (updates AGENTS.md only for constitutional changes).
+7. **archive** - \`asdlc archive [<ID> | --merged]\`: post-merge compaction syncing specs to openspec/specs/ (updates AGENTS.md only on \`--agents\` or constitutional changes).
 
 Need orientation? \`asdlc status <ID>\` (where am I / next command) and \`asdlc doctor\`
 (environment health). A bad spec is never edited: close it and \`asdlc new\` again.`;

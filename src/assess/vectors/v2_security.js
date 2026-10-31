@@ -52,7 +52,7 @@ export function evaluateV2Security({ requirement = '', changedFiles = [], repoRo
     }
   }
 
-  // 2. Check Requirement Semantics for Security/Financial/Regulatory
+  // 2. Check Requirement Semantics for Security/Financial/Regulatory (English + Chinese)
   const highRiskCompounds = [
     'access token', 'refresh token', 'bearer token', 'session token', 'auth token', 'security token',
     'jwt', 'oauth', 'private key', 'secret key', 'password hash', 'password encryption',
@@ -60,9 +60,19 @@ export function evaluateV2Security({ requirement = '', changedFiles = [], repoRo
     'refund ledger', 'clearing settlement', 'credit card'
   ];
 
+  const cjkHighRiskCompounds = [
+    '清结算', '资金清算', '账务清算', '资金账本', '核心账务', '对账', '打款', '提现',
+    '私钥', '密钥轮换', '密码哈希', '密码加密', '鉴权绕过', '越权', '隐私合规', '实名认证', '数据脱敏'
+  ];
+
   const genericSecWords = [
     'auth', 'authentication', 'password', 'credential', 'crypto',
     'payment', 'payout', 'refund', 'billing', 'ledger', 'wallet', 'clearing'
+  ];
+
+  const cjkGenericSecWords = [
+    '支付', '结算', '账务', '账本', '钱包', '计费', '账单', '退款',
+    '鉴权', '认证', '权限', '密钥', '令牌', '加密', '登录态'
   ];
 
   let compoundHit = null;
@@ -73,12 +83,25 @@ export function evaluateV2Security({ requirement = '', changedFiles = [], repoRo
       break;
     }
   }
+  if (!compoundHit) {
+    for (const cjkCompound of cjkHighRiskCompounds) {
+      if (req.includes(cjkCompound)) {
+        compoundHit = cjkCompound;
+        break;
+      }
+    }
+  }
 
   const matchedGenerics = [];
   for (const word of genericSecWords) {
     const re = new RegExp(`\\b${word}\\b`, 'i');
     if (re.test(req)) {
       matchedGenerics.push(word);
+    }
+  }
+  for (const cjkWord of cjkGenericSecWords) {
+    if (req.includes(cjkWord)) {
+      matchedGenerics.push(cjkWord);
     }
   }
 

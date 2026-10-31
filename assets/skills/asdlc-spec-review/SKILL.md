@@ -27,7 +27,7 @@ This skill can be invoked:
 2. **Automatically on PRs** carrying the `asdlc:spec-review` label via PR automation workflows:
 
 ```yaml
-# GitHub Actions example
+# GitHub Actions / PR Automation example
 - name: AI Spec Review
   if: contains(github.event.pull_request.labels.*.name, 'asdlc:spec-review')
   env:
@@ -35,19 +35,7 @@ This skill can be invoked:
     PR_NUMBER: ${{ github.event.pull_request.number }}
     REPO: ${{ github.repository }}
   run: |
-    # Agent CLI / SDK invokes this skill with: /asdlc:spec-review $PR_NUMBER $REPO
-```
-
-```groovy
-// Jenkinsfile example
-stage('Spec AI Review') {
-  when { expression { env.IS_IMPL != 'true' } }
-  steps {
-    withCredentials([string(credentialsId: 'github-token', variable: 'GH_TOKEN')]) {
-      sh "${env.ASDLC} spec-review --pr ${env.PR_NUMBER} --repo ${env.REPO}"
-    }
-  }
-}
+    # Independent Review Agent session executes: /asdlc:spec-review $PR_NUMBER $REPO
 ```
 
 ---

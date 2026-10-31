@@ -1,15 +1,88 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { exists, readText, writeText } from '../lib/fs.js';
 import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
-import { git, isGitRepo, changeOnRef, lastCommitTouching } from '../lib/git.js';
+import { git, isGitRepo, changeOnRef, lastCommitTouching, safeCommit } from '../lib/git.js';
+import { loadPolicy, matchesAny } from '../lib/policy.js';
 import { runLint } from './lint.js';
 import { runVerify } from './verify.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
 import { assess, renderLabels, renderPRComment } from '../assess/index.js';
 import { readEffectiveLevel } from '../lib/level.js';
+
+const SAFE_ENV_TEMPLATE_RE = /(^|\/)\.env\.(example|sample|template|defaults|schema)$/i;
+const SENSITIVE_OR_DUMP_PATTERNS = [
+  { re: /(^|\/)\.env(\..+)?$/i, reason: 'dotenv file' },
+  { re: /\.(pem|key|p12|pfx|jks|keystore)$/i, reason: 'cryptographic key/certificate' },
+  { re: /(^|\/)id_(rsa|ed25519|ecdsa|dsa)(\.pub)?$/i, reason: 'SSH key' },
+  { re: /(^|\/)(credentials|service-account[^/]*)\.(json|ya?ml)$/i, reason: 'credentials file' },
+  { re: /(^|\/)\.?secrets?(\.(json|ya?ml|env|txt|toml))?$/i, reason: 'secrets file' },
+  { re: /\.(hprof|dmp|core|heapdump)$/i, reason: 'crash/memory dump' },
+  { re: /(^|\/)core\.\d+$/i, reason: 'core dump' },
+  { re: /\.log(\.\d+)?$/i, reason: 'log artifact' },
+];
+
+/**
+ * Smart controlled staging for Implementation PRs:
+ * Stages modified/deleted tracked files and legitimate untracked source/assets,
+ * while skipping untracked secrets, crash dumps, logs, and oversized blobs (> 50MB default)
+ * with a warning so unattended automation never halts or leaks credentials.
+ */
+export function stageImplementationChanges(repoRoot, opts = {}) {
+  const policy = opts.policy ?? loadPolicy(repoRoot);
+  const maxMb = Number(opts.maxFileSizeMb ?? policy?.staging?.max_file_size_mb ?? 50);
+  const maxBytes = maxMb * 1024 * 1024;
+  const extraIgnoreGlobs = Array.isArray(policy?.staging?.ignore_patterns) ? policy.staging.ignore_patterns : [];
+
+  // 1. Stage all tracked file modifications & deletions
+  git(['add', '-u'], repoRoot, { allowFail: true });
+
+  // 2. Inspect untracked files respecting .gitignore
+  const untrackedOut = git(['ls-files', '--others', '--exclude-standard'], repoRoot, { allowFail: true }) ?? '';
+  const untracked = untrackedOut.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+
+  const staged = [];
+  const skipped = [];
+
+  for (const rel of untracked) {
+    const norm = rel.replace(/\\/g, '/');
+
+    if (extraIgnoreGlobs.length > 0 && matchesAny(norm, extraIgnoreGlobs)) {
+      const reason = 'matched policy.staging.ignore_patterns';
+      skipped.push({ file: norm, reason });
+      log.warn(`[WARN] Skipped untracked sensitive/artifact file: ${norm} (${reason})`);
+      continue;
+    }
+
+    if (!SAFE_ENV_TEMPLATE_RE.test(norm)) {
+      const matchedRule = SENSITIVE_OR_DUMP_PATTERNS.find((r) => r.re.test(norm));
+      if (matchedRule) {
+        skipped.push({ file: norm, reason: matchedRule.reason });
+        log.warn(`[WARN] Skipped untracked sensitive/artifact file: ${norm} (${matchedRule.reason})`);
+        continue;
+      }
+    }
+
+    try {
+      const stat = fs.statSync(path.join(repoRoot, rel));
+      if (stat.isFile() && stat.size > maxBytes) {
+        const sizeMb = (stat.size / (1024 * 1024)).toFixed(1);
+        const reason = `size ${sizeMb}MB exceeds ${maxMb}MB limit`;
+        skipped.push({ file: norm, reason });
+        log.warn(`[WARN] Skipped untracked sensitive/artifact file: ${norm} (${reason})`);
+        continue;
+      }
+    } catch { /* ignore stat race */ }
+
+    git(['add', '--', rel], repoRoot, { allowFail: true });
+    staged.push(norm);
+  }
+
+  return { staged, skipped };
+}
 
 export const ASDLC_LABELS = {
   'asdlc:spec-review': {
@@ -85,10 +158,14 @@ export async function createPR(changeId, targetBranch, opts = {}) {
     || changeOnRef(repoRoot, `origin/${targetBranch}`, slug)
     || Boolean(lastCommitTouching(repoRoot, targetBranch, [`openspec/changes/${slug}/proposal.md`]));
 
-  // Check git diff or status for source code changes outside openspec/changes/<slug>
-  const diffFiles = (git(['diff', '--name-only', `${targetBranch}...HEAD`], repoRoot, { allowFail: true }) ?? '')
+  // Inspect both committed diff and uncommitted working-tree changes to correctly detect source modifications
+  const diffFilesPre = (git(['diff', '--name-only', `${targetBranch}...HEAD`], repoRoot, { allowFail: true }) ?? '')
     .split(/\r?\n/).filter(Boolean);
-  const hasSourceChanges = diffFiles.some((f) => !f.startsWith(`openspec/changes/${slug}/`));
+  const statusLines = (git(['status', '--porcelain', '-uall'], repoRoot, { allowFail: true }) ?? '')
+    .split(/\r?\n/).filter(Boolean);
+  const uncommittedFiles = statusLines.map((l) => l.replace(/^\s*\S+\s+/, '').trim()).filter(Boolean);
+  const allPotentialFiles = [...diffFilesPre, ...uncommittedFiles];
+  const hasSourceChanges = allPotentialFiles.some((f) => !f.startsWith(`openspec/changes/${slug}/`));
 
   const lvlMatch = metaText.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
   const changeLevel = lvlMatch ? lvlMatch[1].toUpperCase() : null;
@@ -115,7 +192,30 @@ export async function createPR(changeId, targetBranch, opts = {}) {
   const secondaryLabel = isSpec ? 'spec' : 'impl';
   const prTypeName = isSpec ? 'Spec PR' : 'Implementation PR';
 
-  // 1. Pre-flight self-check
+  // 1. Stage & commit any unstaged changes BEFORE running pre-flight gates,
+  // ensuring runVerify and runLint evaluate the true, complete state being pushed.
+  try {
+    if (isSpec) {
+      git(['add', `openspec/changes/${slug}`], repoRoot);
+      const status = git(['status', '--porcelain', `openspec/changes/${slug}`], repoRoot);
+      if (status) {
+        safeCommit(repoRoot, `spec(${slug}): specify feature intent`);
+        log.ok('committed latest spec changes');
+      }
+    } else {
+      stageImplementationChanges(repoRoot);
+      const diffCached = git(['diff', '--cached', '--name-only'], repoRoot, { allowFail: true });
+      if (diffCached && diffCached.trim()) {
+        safeCommit(repoRoot, `impl(${slug}): implement verified changes`);
+        log.ok('committed latest implementation changes');
+      }
+    }
+  } catch { /* ignore */ }
+
+  const diffFiles = (git(['diff', '--name-only', `${targetBranch}...HEAD`], repoRoot, { allowFail: true }) ?? '')
+    .split(/\r?\n/).filter(Boolean);
+
+  // 2. Pre-flight self-check (evaluates committed HEAD vs targetBranch)
   if (isSpec) {
     log.step(`running spec lint pre-flight for ${slug}...`);
     const lintExit = runLint(slug, { repoRoot, json: true });
@@ -138,7 +238,7 @@ export async function createPR(changeId, targetBranch, opts = {}) {
     log.ok('implementation verify passed (all 12 gates passed)');
   }
 
-  // 2. Extract Title and Description from proposal.md
+  // 3. Extract Title and Description from proposal.md
   const proposalPath = path.join(cdir, 'proposal.md');
   if (!exists(proposalPath)) fail(`proposal.md missing for ${slug}`);
   const proposalText = readText(proposalPath);
@@ -149,25 +249,6 @@ export async function createPR(changeId, targetBranch, opts = {}) {
     const raw = titleMatch[1].replace(/<!--[\s\S]*?-->/g, '').trim();
     if (raw) title = `${isSpec ? 'spec' : 'impl'}(${slug}): ${raw}`;
   }
-
-  // 3. Stage & commit any unstaged changes
-  try {
-    if (isSpec) {
-      git(['add', `openspec/changes/${slug}`], repoRoot);
-      const status = git(['status', '--porcelain', `openspec/changes/${slug}`], repoRoot);
-      if (status) {
-        execFileSync('git', ['commit', '-m', `spec(${slug}): specify feature intent`], { cwd: repoRoot, stdio: 'ignore' });
-        log.ok('committed latest spec changes');
-      }
-    } else {
-      git(['add', '-A'], repoRoot);
-      const status = git(['status', '--porcelain'], repoRoot);
-      if (status) {
-        execFileSync('git', ['commit', '-m', `impl(${slug}): implement verified changes`], { cwd: repoRoot, stdio: 'ignore' });
-        log.ok('committed latest implementation changes');
-      }
-    }
-  } catch { /* ignore */ }
 
   // 4. Push to remote
   log.step(`pushing branch '${currentBranch}' to origin...`);

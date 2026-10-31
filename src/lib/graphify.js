@@ -14,29 +14,40 @@ const GRAPH_REL = 'graphify-out/graph.json';
 const REF_REL = 'graphify-out/.asdlc_ref';
 export const GITIGNORE_LINE = 'graphify-out/';
 
-function which(name) {
+function which(name, env = process.env) {
   const finder = process.platform === 'win32' ? 'where' : 'which';
-  const r = spawnSync(finder, [name], { encoding: 'utf8' });
+  const r = spawnSync(finder, [name], { encoding: 'utf8', env });
   if (r.status !== 0) return null;
   return r.stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)[0] ?? null;
 }
 
-export function graphifyAvailable() {
-  return Boolean(which('graphify'));
+export function graphifyAvailable(env = process.env) {
+  return Boolean(which('graphify', env));
 }
 
-// Default-install per the BU standard (uv preferred, else pip). Never throws.
-export function ensureGraphify({ autoInstall = true } = {}) {
-  if (graphifyAvailable()) return { installed: true, action: 'present' };
+// Default-install per the BU standard (uv preferred, else pip), honoring internal mirror
+// env vars (PIP_INDEX_URL, UV_INDEX_URL, ASDLC_PIP_INDEX_URL) and offline air-gapped guards. Never throws.
+export function ensureGraphify({ autoInstall = true, env = process.env } = {}) {
+  if (graphifyAvailable(env)) return { installed: true, action: 'present' };
   if (!autoInstall) return { installed: false, action: 'missing' };
-  const viaUv = Boolean(which('uv'));
-  const cmd = viaUv ? ['uv', 'tool', 'install', '--upgrade', 'graphifyy'] : ['pip', 'install', 'graphifyy'];
+  if (env.ASDLC_OFFLINE === '1' || env.ASDLC_OFFLINE === 'true') {
+    return { installed: false, action: 'offline-skipped' };
+  }
+
+  const mirrorUrl = env.ASDLC_PIP_INDEX_URL || env.PIP_INDEX_URL || env.UV_INDEX_URL || null;
+  const viaUv = Boolean(which('uv', env));
+  const viaPip = Boolean(which('pip', env));
+  if (!viaUv && !viaPip) return { installed: false, action: 'missing-installer' };
+
+  const cmd = viaUv
+    ? ['uv', 'tool', 'install', '--upgrade', ...(mirrorUrl ? ['--index-url', mirrorUrl] : []), 'graphifyy']
+    : ['pip', 'install', ...(mirrorUrl ? ['--index-url', mirrorUrl] : []), 'graphifyy'];
   try {
-    execFileSync(cmd[0], cmd.slice(1), { encoding: 'utf8', stdio: 'pipe' });
+    execFileSync(cmd[0], cmd.slice(1), { encoding: 'utf8', stdio: 'pipe', env, timeout: 45000 });
   } catch {
     /* fall through to the availability check */
   }
-  return { installed: graphifyAvailable(), action: viaUv ? 'uv-install' : 'pip-install' };
+  return { installed: graphifyAvailable(env), action: viaUv ? 'uv-install' : 'pip-install' };
 }
 
 function run(args, cwd) {

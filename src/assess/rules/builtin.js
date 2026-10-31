@@ -28,7 +28,7 @@ export const DEFAULT_GOVERNANCE = {
   auto_approval: 'disabled'
 };
 
-export const CANONICAL_DESTRUCTIVE_PATTERN = /\b(drop\s+(table|column|database|index|schema)|truncate\s+(table|database)?|purge\s+(data|table|database)|hard\s+delete|clean\s+database|destroy\s+database)\b/i;
+export const CANONICAL_DESTRUCTIVE_PATTERN = /(?:\b(?:drop\s+(?:table|column|database|index|schema)|truncate\s+(?:table|database)?|purge\s+(?:data|table|database)|hard\s+delete|clean\s+database|destroy\s+database)\b|删表|删除[^\n，。；]{0,12}(?:表|库|数据库)|清空[^\n，。；]{0,10}表|清理历史[^\n，。；]{0,12}(?:表|数据|账务|记录)|物理删除|销毁[^\n，。；]{0,10}(?:库|数据库|表)|截断[^\n，。；]{0,8}表|抹除[^\n，。；]{0,10}数据)/i;
 
 /**
  * Hard Signal Rules (§5.2):
