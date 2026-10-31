@@ -10,7 +10,7 @@
 
 **Agentic SDLC (ASDLC)** is an enterprise-grade, specification-driven software development lifecycle designed specifically for the era of AI coding agents. 
 
-While traditional software engineering relies on manual handoffs and post-facto code reviews, and raw "vibe coding" leads to architectural erosion and hallucination drift, **Agentic SDLC introduces an unbreakable 7-stage governance pipeline**. It binds AI agents to Git-locked specifications, strict TDD loops, and automated multi-gate verification.
+While traditional software engineering relies on manual handoffs and post-facto code reviews, and unconstrained autonomous coding leads to review bandwidth exhaustion, shared-context verification bias, and unverified architectural drift, **Agentic SDLC introduces a deterministic 7-stage governance pipeline**. It binds AI agents to Git-locked specifications, strict TDD loops, and automated multi-gate verification.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -34,20 +34,23 @@ While traditional software engineering relies on manual handoffs and post-facto 
 
 ---
 
-## 2. Why Agentic SDLC? The Enterprise AI Coding Dilemma
-## 为什么需要 Agentic SDLC？企业级 AI 编程的核心困境
+## 2. Why Agentic SDLC? The Enterprise AI Coding Bottlenecks
+## 为什么需要 Agentic SDLC？企业级 AI 编程的核心挑战
 
-The rapid adoption of Large Language Models in software development has created three systemic challenges for engineering teams:
+As autonomous coding agents scale across software engineering organizations, technical leaders encounter three systemic engineering bottlenecks:  
+随着自主编程代理在研发组织中规模化普及，工程团队正面临三项关键的系统性瓶颈：
 
-### 1. The "Vibe Coding" Trap (氛围编程陷阱)
-- Developers prompt an LLM to generate 500 lines of code across 10 files.
-- The code appears to work on the surface, but edge cases are untested, interfaces drift from existing architecture, and technical debt compounds invisibly.
+### 1. Review Bandwidth Asymmetry (审查吞吐量不对称)
+- **EN**: Code production throughput has scaled by an order of magnitude, but human cognitive capacity for deep architectural comprehension remains constant. When teams face frequent, multi-file AI pull requests, line-by-line review becomes unsustainable. Review depth is inadvertently diluted, risking the entry of latent defects and architectural drift into trunk branches.
+- **ZH**: AI 辅助将代码编写的速度提升了数倍，但人类梳理调用链、推演边界条件与架构一致性的认知带宽并未发生本质变化。当每日 PR 数量和单次 Diff 规模显著上升时，审查者难以长期保持高强度细粒度推演，审查深度容易被稀释，增加了技术负债流入主干的概率。
 
-### 2. Specification Drift & Hallucination (需求漂移与幻觉)
-- When agents encounter difficult edge cases during coding, unconstrained agents silently "rewrite the goalposts" or weaken validation logic to make their generated tests pass.
+### 2. Shared-Context Verification Bias (同源验证偏差 · Player == Referee)
+- **EN**: When the same agent writes both implementation code and unit tests within the same reasoning context, tests naturally share the agent's internal assumptions and biases. A passing test suite confirms that the code aligns with the agent's internal logic, which may diverge from the true enterprise specification. Passing CI tests can inadvertently mask contract discrepancies.
+- **ZH**: 当编写生产代码与编写单元测试完全由同一个上下文中的 Agent 完成时，两者共享了同一套归纳偏差与理解前提。当 Agent 对某项业务边界存在理解偏差时，其编写的测试往往会将该偏差固化为“预期行为”。此时测试全绿只能证明“代码符合 Agent 自身的理解”，无法代表“代码满足真实的系统契约”。
 
-### 3. Review Fatigue (评审疲劳与失控)
-- Senior engineers and Tech Leads are overwhelmed by massive AI-generated pull requests without clear architectural rationale, test evidence, or verifiable intent.
+### 3. Implicit Assumption Accumulation (隐式假设累积与意图留白)
+- **EN**: Natural language requirements are inherently concise, leaving technical ambiguities unspecified (e.g., error payloads, retry strategies, boundary fallbacks, persistence tradeoffs). Autonomous agents resolve these ambiguities on their own. Without early alignment on these forks, unverified assumptions surface late during code review or staging, driving up rework cycles.
+- **ZH**: 自然语言表达天然具有高度概括性与信息留白；而自主代理为了完成端到端任务，必须在多步推理中自行填补大量工程细节（如幂等策略、错误封套、降级行为与存储选型）。这些隐式假设若未经显式对齐，往往直到提测或评审阶段才被发现，造成较高的返工成本。
 
 ---
 
