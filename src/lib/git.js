@@ -23,12 +23,18 @@ export function currentBranch(cwd) {
   return git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd, { allowFail: true });
 }
 
+export function safeCommit(cwd, message) {
+  const userName = git(['config', 'user.name'], cwd, { allowFail: true });
+  const userEmail = git(['config', 'user.email'], cwd, { allowFail: true });
+  const authorArgs = [];
+  if (!userName) authorArgs.push('-c', 'user.name=asdlc-bot');
+  if (!userEmail) authorArgs.push('-c', 'user.email=asdlc-bot@example.invalid');
+  return git([...authorArgs, 'commit', '-m', message], cwd);
+}
+
 export function commitAll(cwd, message) {
   git(['add', '-A'], cwd);
-  git(
-    ['-c', 'user.name=asdlc-bot', '-c', 'user.email=asdlc-bot@example.invalid', 'commit', '-m', message],
-    cwd,
-  );
+  safeCommit(cwd, message);
   return headSha(cwd);
 }
 

@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { exists, readText, writeText } from '../lib/fs.js';
 import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
-import { git, isGitRepo, changeOnRef, lastCommitTouching } from '../lib/git.js';
+import { git, isGitRepo, changeOnRef, lastCommitTouching, safeCommit } from '../lib/git.js';
 import { loadPolicy, matchesAny } from '../lib/policy.js';
 import { runLint } from './lint.js';
 import { runVerify } from './verify.js';
@@ -199,14 +199,14 @@ export async function createPR(changeId, targetBranch, opts = {}) {
       git(['add', `openspec/changes/${slug}`], repoRoot);
       const status = git(['status', '--porcelain', `openspec/changes/${slug}`], repoRoot);
       if (status) {
-        execFileSync('git', ['commit', '-m', `spec(${slug}): specify feature intent`], { cwd: repoRoot, stdio: 'ignore' });
+        safeCommit(repoRoot, `spec(${slug}): specify feature intent`);
         log.ok('committed latest spec changes');
       }
     } else {
       stageImplementationChanges(repoRoot);
       const diffCached = git(['diff', '--cached', '--name-only'], repoRoot, { allowFail: true });
       if (diffCached && diffCached.trim()) {
-        execFileSync('git', ['commit', '-m', `impl(${slug}): implement verified changes`], { cwd: repoRoot, stdio: 'ignore' });
+        safeCommit(repoRoot, `impl(${slug}): implement verified changes`);
         log.ok('committed latest implementation changes');
       }
     }

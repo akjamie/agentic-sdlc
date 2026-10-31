@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { exists, readText, writeText } from '../lib/fs.js';
 import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
-import { headSha, git, isGitRepo, lastCommitTouching, changeOnRef } from '../lib/git.js';
+import { headSha, git, isGitRepo, lastCommitTouching, changeOnRef, safeCommit } from '../lib/git.js';
 import { loadPolicy } from '../lib/policy.js';
 import { classifyPR } from '../lib/prtype.js';
 import { fail } from '../lib/errors.js';
@@ -126,8 +126,7 @@ export function mergeChange(changeId, opts = {}) {
   if (opts.commit !== false) {
     try {
       execFileSync('git', ['add', `openspec/changes/${slug}/.openspec.yaml`, `openspec/changes/${slug}/review.md`], { cwd: repoRoot, stdio: 'ignore' });
-      execFileSync('git', ['-c', 'user.name=asdlc-bot', '-c', 'user.email=asdlc-bot@example.invalid',
-        'commit', '-m', `chore(approve): spec approved @ ${approvedSha.slice(0, 8)} (${slug})`], { cwd: repoRoot, stdio: 'ignore' });
+      safeCommit(repoRoot, `chore(approve): spec approved @ ${approvedSha.slice(0, 8)} (${slug})`);
       log.ok('committed approval stamp');
     } catch {
       log.warn('nothing to commit (already stamped)');
