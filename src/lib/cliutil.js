@@ -36,6 +36,10 @@ const CJK_DOMAIN_LEXICON = [
   [/配置/, 'config'],
   [/单元测试|集成测试|测试用例/, 'test'],
   [/文档|注释/, 'docs'],
+  [/微信/, 'wechat'],
+  [/回调|通知/, 'callback'],
+  [/状态机/, 'state-machine'],
+  [/错别字/, 'typo'],
 ];
 
 function extractCjkMappedTokens(text) {
@@ -94,11 +98,10 @@ export function deriveChangeSlug(input, opts = {}) {
   const asciiWords = cleaned
     .replace(/[^a-z0-9\s-]/g, ' ')
     .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 4);
+    .filter(Boolean);
 
-  const cjkTokens = asciiWords.length === 0 ? extractCjkMappedTokens(text).slice(0, 5) : [];
-  const words = asciiWords.length > 0 ? asciiWords : cjkTokens;
+  const cjkTokens = extractCjkMappedTokens(text);
+  const words = [...new Set([...cjkTokens, ...asciiWords])].slice(0, 5);
 
   const keywords = words.join('-');
   if (ticket && keywords) return `${ticket}-${keywords}`.slice(0, 40).replace(/-+$/, '');

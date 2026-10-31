@@ -158,10 +158,14 @@ export async function createPR(changeId, targetBranch, opts = {}) {
     || changeOnRef(repoRoot, `origin/${targetBranch}`, slug)
     || Boolean(lastCommitTouching(repoRoot, targetBranch, [`openspec/changes/${slug}/proposal.md`]));
 
-  // Check git diff or status for source code changes outside openspec/changes/<slug>
-  const diffFiles = (git(['diff', '--name-only', `${targetBranch}...HEAD`], repoRoot, { allowFail: true }) ?? '')
+  // Inspect both committed diff and uncommitted working-tree changes to correctly detect source modifications
+  const diffFilesPre = (git(['diff', '--name-only', `${targetBranch}...HEAD`], repoRoot, { allowFail: true }) ?? '')
     .split(/\r?\n/).filter(Boolean);
-  const hasSourceChanges = diffFiles.some((f) => !f.startsWith(`openspec/changes/${slug}/`));
+  const statusLines = (git(['status', '--porcelain', '-uall'], repoRoot, { allowFail: true }) ?? '')
+    .split(/\r?\n/).filter(Boolean);
+  const uncommittedFiles = statusLines.map((l) => l.replace(/^\s*\S+\s+/, '').trim()).filter(Boolean);
+  const allPotentialFiles = [...diffFilesPre, ...uncommittedFiles];
+  const hasSourceChanges = allPotentialFiles.some((f) => !f.startsWith(`openspec/changes/${slug}/`));
 
   const lvlMatch = metaText.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
   const changeLevel = lvlMatch ? lvlMatch[1].toUpperCase() : null;
@@ -188,7 +192,30 @@ export async function createPR(changeId, targetBranch, opts = {}) {
   const secondaryLabel = isSpec ? 'spec' : 'impl';
   const prTypeName = isSpec ? 'Spec PR' : 'Implementation PR';
 
-  // 1. Pre-flight self-check
+  // 1. Stage & commit any unstaged changes BEFORE running pre-flight gates,
+  // ensuring runVerify and runLint evaluate the true, complete state being pushed.
+  try {
+    if (isSpec) {
+      git(['add', `openspec/changes/${slug}`], repoRoot);
+      const status = git(['status', '--porcelain', `openspec/changes/${slug}`], repoRoot);
+      if (status) {
+        execFileSync('git', ['commit', '-m', `spec(${slug}): specify feature intent`], { cwd: repoRoot, stdio: 'ignore' });
+        log.ok('committed latest spec changes');
+      }
+    } else {
+      stageImplementationChanges(repoRoot);
+      const diffCached = git(['diff', '--cached', '--name-only'], repoRoot, { allowFail: true });
+      if (diffCached && diffCached.trim()) {
+        execFileSync('git', ['commit', '-m', `impl(${slug}): implement verified changes`], { cwd: repoRoot, stdio: 'ignore' });
+        log.ok('committed latest implementation changes');
+      }
+    }
+  } catch { /* ignore */ }
+
+  const diffFiles = (git(['diff', '--name-only', `${targetBranch}...HEAD`], repoRoot, { allowFail: true }) ?? '')
+    .split(/\r?\n/).filter(Boolean);
+
+  // 2. Pre-flight self-check (evaluates committed HEAD vs targetBranch)
   if (isSpec) {
     log.step(`running spec lint pre-flight for ${slug}...`);
     const lintExit = runLint(slug, { repoRoot, json: true });
@@ -211,7 +238,7 @@ export async function createPR(changeId, targetBranch, opts = {}) {
     log.ok('implementation verify passed (all 12 gates passed)');
   }
 
-  // 2. Extract Title and Description from proposal.md
+  // 3. Extract Title and Description from proposal.md
   const proposalPath = path.join(cdir, 'proposal.md');
   if (!exists(proposalPath)) fail(`proposal.md missing for ${slug}`);
   const proposalText = readText(proposalPath);
@@ -222,25 +249,6 @@ export async function createPR(changeId, targetBranch, opts = {}) {
     const raw = titleMatch[1].replace(/<!--[\s\S]*?-->/g, '').trim();
     if (raw) title = `${isSpec ? 'spec' : 'impl'}(${slug}): ${raw}`;
   }
-
-  // 3. Stage & commit any unstaged changes
-  try {
-    if (isSpec) {
-      git(['add', `openspec/changes/${slug}`], repoRoot);
-      const status = git(['status', '--porcelain', `openspec/changes/${slug}`], repoRoot);
-      if (status) {
-        execFileSync('git', ['commit', '-m', `spec(${slug}): specify feature intent`], { cwd: repoRoot, stdio: 'ignore' });
-        log.ok('committed latest spec changes');
-      }
-    } else {
-      stageImplementationChanges(repoRoot);
-      const diffCached = git(['diff', '--cached', '--name-only'], repoRoot, { allowFail: true });
-      if (diffCached && diffCached.trim()) {
-        execFileSync('git', ['commit', '-m', `impl(${slug}): implement verified changes`], { cwd: repoRoot, stdio: 'ignore' });
-        log.ok('committed latest implementation changes');
-      }
-    }
-  } catch { /* ignore */ }
 
   // 4. Push to remote
   log.step(`pushing branch '${currentBranch}' to origin...`);

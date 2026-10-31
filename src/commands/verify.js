@@ -400,11 +400,17 @@ export function register(program) {
     .command('verify <changeId>')
     .description('check the implementation: artifacts + approved SHA + tasks complete + lint + validate + AI verification')
     .option('--repo <name>', 'repository name')
+    .option('--repo-root <dir>', 'repository root path')
     .option('--protected-branch <ref>', 'branch the approved spec must be merged into', 'origin/main')
     .option('--base <ref>', 'base ref for the PR diff (default: protected branch)')
     .option('--head <ref>', 'head ref (default: HEAD)')
+    .option('--approved', 'flag indicating human lead approval is verified on PR / platform')
+    .option('--emergency', 'emergency mode bypassing standard branch checks')
+    .option('--ci', 'force CI mode behavior')
+    .option('--required', 'require AI verification gate to pass')
     .option('--skip-openspec', 'skip openspec validation')
     .option('--skip-external', 'skip external checks from config')
+    .option('--json', 'print output in structured JSON')
     .action((changeId, opts) => {
       process.exitCode = runVerify(changeId, opts);
     });

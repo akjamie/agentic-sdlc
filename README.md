@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@akjamie/agentic-sdlc?color=6366f1&label=npm)](https://www.npmjs.com/package/@akjamie/agentic-sdlc)
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-10b981.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20.19.0-38bdf8.svg)](https://nodejs.org/)
-[![tests](https://img.shields.io/badge/tests-164%20passing-10b981.svg)](#development--verification)
+[![tests](https://img.shields.io/badge/tests-168%20passing-10b981.svg)](#development--verification)
 [![architecture](https://img.shields.io/badge/governance-L0--L3%20Adaptive%20Dual--Track-f59e0b.svg)](#adaptive-risk-tiered-governance-l0l3)
 
 > **The Intelligent Governance Engine for Autonomous AI Coding.**
@@ -331,7 +331,7 @@ git clone https://github.com/akjamie/agentic-sdlc.git
 cd agentic-sdlc
 npm install
 
-# Run complete test suite (164 tests passing, 100% pass rate)
+# Run complete test suite (168 tests passing, 100% pass rate)
 npm test
 
 # Run end-to-end multi-language simulation tests

@@ -84,14 +84,32 @@ export function validateAIClassificationExpectation(aiOutput, { changedFiles = [
   // author-agent self-assessment CANNOT claim pure_doc / pure_test unless the requirement text
   // itself deterministically indicates test or documentation work without code/API/security intent.
   if (substantiveFiles.length === 0 && reqLower.trim() && (aiOutput.is_pure_test || aiOutput.is_pure_doc)) {
-    const hasDocOrTestSignal = /(?:\b(?:unit\s+tests?|integration\s+tests?|e2e\s+tests?|test\s+suites?|test\s+cases?|mock|fixture|docs?|documentation|readme|typo|typos|comments?|whitespace|changelog|markdown)\b|单元测试|集成测试|测试用例|文档|注释|错别字)/i.test(reqLower);
-    const hasCodeMutationSignal = /(?:\b(?:refactor|implement|endpoint|router|controller|service|engine|state\s+machine|retry|database|migration|schema|auth|payment|settlement|ledger)\b|重构|接口|路由|状态机|清结算|支付|账务|鉴权|密钥|数据库|迁移)/i.test(reqLower)
-      && !/(?:\b(?:add|write|update|fix|format|clean)\s+(?:unit\s+|integration\s+|e2e\s+)?tests?\b|\b(?:doc|docs|documentation|readme|typo|typos|comments?|whitespace|changelog|markdown)\b|单元测试|测试用例|文档|注释|错别字)/i.test(reqLower);
+    const hasDocSignal = /(?:\b(?:docs?|documentation|readme|typo|typos|comments?|whitespace|changelog|markdown|license)\b|文档|注释|错别字|说明文档)/i.test(reqLower);
+    const hasTestSignal = /(?:\b(?:unit\s+tests?|integration\s+tests?|e2e\s+tests?|test\s+suites?|test\s+cases?|tests?|testing|mocks?|fixtures?)\b|单元测试|集成测试|测试用例)/i.test(reqLower);
 
-    if (!hasDocOrTestSignal || hasCodeMutationSignal) {
+    // Substantive code refactoring or implementation cannot be claimed as pure doc (e.g. "重构订单状态机并补充注释" is code, not doc)
+    const hasCodeRefactorOrMutation = /(?:\b(?:refactor|rewrite|redesign|state\s+machine)\b|重构|重写|状态机)/i.test(reqLower) ||
+      /\b(?:implement|build|create)\b.*\b(?:api|endpoint|service|controller|router|table|database|schema|handler)\b/i.test(reqLower) ||
+      /(?:实现|开发|创建|新增)\b.*(?:接口|服务|路由|数据表|表结构|控制器)/i.test(reqLower) ||
+      CANONICAL_DESTRUCTIVE_PATTERN.test(reqLower);
+
+    const isDocOnlyClaim = aiOutput.is_pure_doc && !aiOutput.is_pure_test;
+    const isTestOnlyClaim = aiOutput.is_pure_test && !aiOutput.is_pure_doc;
+
+    // A doc claim is invalid if it has no doc signal, or if it contains substantive code refactoring/mutation
+    if (isDocOnlyClaim && (!hasDocSignal || hasCodeRefactorOrMutation)) {
       return {
         ok: false,
-        error: 'Invariant violation: agent assessment cannot downgrade non-doc/non-test requirement to L0',
+        error: 'Invariant violation: agent assessment cannot downgrade code/architecture requirement to L0 doc_only',
+        override: { is_pure_test: false, is_pure_doc: false, classification: 'internal_code' }
+      };
+    }
+
+    // A test claim is invalid if it has no test signal, or if it contains destructive operations or code refactoring
+    if (isTestOnlyClaim && (!hasTestSignal || CANONICAL_DESTRUCTIVE_PATTERN.test(reqLower) || /(?:\b(?:refactor|rewrite|redesign)\b|重构|重写)/i.test(reqLower))) {
+      return {
+        ok: false,
+        error: 'Invariant violation: agent assessment cannot downgrade destructive or refactoring requirement to L0 test_only',
         override: { is_pure_test: false, is_pure_doc: false, classification: 'internal_code' }
       };
     }
@@ -149,13 +167,14 @@ export function judgeChangeSemantics({ requirement = '', changedFiles = [], repo
 
   // 3. Validated baseline heuristic seed (deterministic fallback for standalone CLI execution)
   if (!rawAiOutput) {
-    const hasProductionTarget = /\b(create|add|implement|build)\b.*\b(api|endpoint|service|table|database|schema|handler|router)\b/i.test(req);
+    const hasProductionTarget = /\b(create|add|implement|build)\b.*\b(api|endpoint|service|table|database|schema|handler|router)\b/i.test(req) ||
+      /(?:创建|新增|实现|开发)\b.*(?:接口|服务|路由|数据表|表结构|控制器)/i.test(req);
     const hasDestructiveAction = CANONICAL_DESTRUCTIVE_PATTERN.test(req);
 
-    const isDocIntent = /\b(typo|readme|docs?|documentation|comments?|whitespace)\b/i.test(req) &&
+    const isDocIntent = /(?:\b(?:typo|typos|readme|docs?|documentation|comments?|whitespace|markdown|license|changelog)\b|错别字|文档|注释|说明文档)/i.test(req) &&
       !hasProductionTarget && !hasDestructiveAction;
 
-    const isTestIntent = /\b(tests?|testing|mocks?|fixtures?|suites?|unittests?|integrationtests?)\b/i.test(req) &&
+    const isTestIntent = /(?:\b(?:tests?|testing|mocks?|fixtures?|suites?|unittests?|integrationtests?)\b|单元测试|集成测试|测试用例)/i.test(req) &&
       !hasProductionTarget && !hasDestructiveAction;
 
     // Few-shot file pattern seeds (illustrative samples)

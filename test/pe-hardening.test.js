@@ -373,3 +373,135 @@ test('WS-5: runVerify executes mapped acceptance tests by default when skipExter
   }
 });
 
+// ============================================================================
+// Post-Review Hardening: 4 PE-Identified Verification Tests
+// ============================================================================
+
+test('PE Finding 1: verify CLI registers --approved, --emergency, --ci, --required, --repo-root', () => {
+  const cli = buildCli();
+  const verifyCmd = cli.commands.find((c) => c.name() === 'verify');
+  assert.ok(verifyCmd, 'verify command must exist in CLI');
+
+  const registeredOpts = verifyCmd.options.map((o) => o.long);
+  assert.ok(registeredOpts.includes('--approved'), '--approved must be registered in verify CLI');
+  assert.ok(registeredOpts.includes('--emergency'), '--emergency must be registered in verify CLI');
+  assert.ok(registeredOpts.includes('--ci'), '--ci must be registered in verify CLI');
+  assert.ok(registeredOpts.includes('--required'), '--required must be registered in verify CLI');
+  assert.ok(registeredOpts.includes('--repo-root'), '--repo-root must be registered in verify CLI');
+  assert.ok(registeredOpts.includes('--json'), '--json must be registered in verify CLI');
+});
+
+test('PE Finding 2: asdlc pr stages uncommitted working tree before pre-flight runVerify, catching unstaged spec-tamper', async () => {
+  const repo = tmpGitRepo('asdlc-pr-stage-order-');
+  try {
+    const slug = 'tamper-in-working-tree';
+    const cdir = path.join(repo, 'openspec', 'changes', slug);
+    fs.mkdirSync(path.join(cdir, 'specs', 'api'), { recursive: true });
+    fs.writeFileSync(path.join(cdir, '.openspec.yaml'), 'schema: agentic-repo-change\nlevel: "L2"\nstatus: "ready_for_impl"\nspecSha: "INITIAL_SHA"\n');
+    fs.writeFileSync(path.join(cdir, 'proposal.md'), '# Proposal: Initial\n');
+    fs.writeFileSync(path.join(cdir, 'tasks.md'), '# Tasks\n- [x] 1.1 [TEST] verify: ok\n- [x] 1.2 [IMPL] evidence: ok\n');
+    fs.writeFileSync(path.join(cdir, 'specs', 'api', 'spec.md'), '# Spec\n');
+
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'approved spec commit'], { cwd: repo });
+    const approvedSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+
+    // Update specSha to match approved commit
+    fs.writeFileSync(path.join(cdir, '.openspec.yaml'), `schema: agentic-repo-change\nlevel: "L2"\nstatus: "ready_for_impl"\nspecSha: "${approvedSha}"\n`);
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'record specSha'], { cwd: repo });
+
+    // Switch to impl branch
+    execFileSync('git', ['checkout', '-b', `impl/${slug}`], { cwd: repo });
+
+    // Add source code and legitimate test
+    fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+    fs.mkdirSync(path.join(repo, 'test'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'src', 'api.js'), 'export const api = true;\n');
+    fs.writeFileSync(path.join(repo, 'test', 'api.test.js'), 'export const testApi = true;\n');
+
+    // SNEAKY TAMPER: Author modifies locked proposal.md in working tree WITHOUT running git commit!
+    fs.writeFileSync(path.join(cdir, 'proposal.md'), '# Proposal: Tampered Requirements in Working Tree!\n');
+
+    // Run asdlc pr -- staging must commit working tree changes FIRST, causing runVerify to detect spec-tamper!
+    await assert.rejects(async () => {
+      await prMod.createPR(slug, 'main', { repoRoot: repo, skipOpenspec: true, skipExternal: true });
+    }, /implementation verification failed/i);
+
+    // Verify that the branch commit log includes the auto-staged changes
+    const lastCommitMsg = execFileSync('git', ['log', '-1', '--pretty=%B'], { cwd: repo, encoding: 'utf8' }).trim();
+    assert.match(lastCommitMsg, /impl\(tamper-in-working-tree\): implement verified changes/);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('PE Finding 3: asdlc archive --merged protects newly merged Spec PRs without tasks.md from premature deletion', () => {
+  const repo = tmpGitRepo('asdlc-archive-protect-');
+  try {
+    const slugInFlight = 'l2-spec-only-merged';
+    const cdirInFlight = path.join(repo, 'openspec', 'changes', slugInFlight);
+    fs.mkdirSync(path.join(cdirInFlight, 'specs', 'auth'), { recursive: true });
+    fs.writeFileSync(path.join(cdirInFlight, '.openspec.yaml'), 'schema: agentic-repo-change\nlevel: "L2"\nstatus: "ready_for_impl"\n');
+    fs.writeFileSync(path.join(cdirInFlight, 'proposal.md'), '# Proposal\n');
+    fs.writeFileSync(path.join(cdirInFlight, 'specs', 'auth', 'spec.md'), '# Spec\n');
+    // Notice: tasks.md does NOT exist on main yet!
+
+    const slugComplete = 'l1-feature-fully-done';
+    const cdirComplete = path.join(repo, 'openspec', 'changes', slugComplete);
+    fs.mkdirSync(path.join(cdirComplete, 'specs', 'util'), { recursive: true });
+    fs.writeFileSync(path.join(cdirComplete, '.openspec.yaml'), 'schema: agentic-repo-change\nlevel: "L1"\nstatus: "ready_for_impl"\n');
+    fs.writeFileSync(path.join(cdirComplete, 'proposal.md'), '# Proposal\n');
+    fs.writeFileSync(path.join(cdirComplete, 'specs', 'util', 'spec.md'), '# Spec\n');
+    fs.writeFileSync(path.join(cdirComplete, 'tasks.md'), '# Tasks\n- [x] 1.1 Done (AC1) verify: test/util.test.js\n');
+
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'merge both changes to main'], { cwd: repo });
+
+    const exitCode = archiveMod.archiveMergedChanges({ repoRoot: repo, targetBranch: 'main' });
+    assert.equal(exitCode, 0, 'archiveMergedChanges should exit with code 0 on success');
+
+    // In-flight spec MUST be preserved!
+    assert.ok(fs.existsSync(cdirInFlight), 'In-flight L2 spec PR without tasks.md MUST NOT be deleted by archive --merged');
+    // Completed feature must be moved to archive
+    assert.ok(!fs.existsSync(cdirComplete), 'Fully completed change must be archived');
+    const archiveFiles = fs.readdirSync(path.join(repo, 'openspec', 'changes', 'archive'));
+    assert.ok(archiveFiles.some((f) => f.includes(slugComplete)), 'Archived directory must exist under archive/');
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('PE Finding 4: mixed Chinese-English slugs combine domain tokens, and Invariant 4 blocks code mutations masked with doc words', () => {
+  // 1. Mixed Chinese-English slug generation
+  const slug1 = deriveChangeSlug('修复微信支付 V3 回调逻辑');
+  assert.ok(slug1.includes('wechat') && slug1.includes('payment') && slug1.includes('callback') && slug1.includes('v3'),
+    `Slug1 expected rich mixed tokens, got: ${slug1}`);
+
+  const slug2 = deriveChangeSlug('重构清结算 RPC 接口');
+  assert.ok(slug2.includes('settlement') && slug2.includes('rpc') && slug2.includes('api'),
+    `Slug2 expected rich mixed tokens, got: ${slug2}`);
+
+  // 2. Invariant 4: "重构订单状态机并补充注释" cannot be downgraded to L0 by claiming is_pure_doc
+  const assessed = assess({
+    stage: 'new',
+    requirement: '重构订单状态机并补充注释',
+    agentContext: {
+      is_pure_doc: true,
+      is_pure_test: false,
+      classification: 'doc_only',
+      rationale: 'Agent claims doc only because of comments'
+    },
+    persist: false
+  });
+  assert.notEqual(assessed.risk.level, 'L0', 'Substantive code refactoring cannot be downgraded to L0 even if doc words are present');
+
+  // 3. Offline heuristic baseline recognizes Chinese pure doc intent as L0
+  const docAssess = assess({
+    stage: 'new',
+    requirement: '修复 README 错别字与说明文档',
+    persist: false
+  });
+  assert.equal(docAssess.risk.level, 'L0', 'Pure Chinese doc/typo fix must be evaluated as L0 in offline heuristic baseline');
+});
+

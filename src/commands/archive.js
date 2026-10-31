@@ -117,11 +117,16 @@ export function archiveChange(changeId, opts = {}) {
 function isChangeMergedAndComplete(repoRoot, slug, targetRef = 'HEAD') {
   const cdir = changeDir(repoRoot, slug);
   const tasksPath = path.join(cdir, 'tasks.md');
-  if (exists(tasksPath)) {
-    const tasksText = readText(tasksPath);
-    const unchecked = (tasksText.match(/^\s*-\s+\[\s\]/gm) ?? []).length;
-    if (unchecked > 0) return false;
-  }
+  // A change is only completed if implementation tasks were generated, completed, and checked off.
+  // Newly merged Spec PRs on targetRef only contain proposal.md/specs without tasks.md;
+  // they must NOT be treated as complete.
+  if (!exists(tasksPath)) return false;
+
+  const tasksText = readText(tasksPath);
+  const checked = (tasksText.match(/^\s*-\s+\[x\]/gim) ?? []).length;
+  const unchecked = (tasksText.match(/^\s*-\s+\[\s\]/gm) ?? []).length;
+  if (checked === 0 || unchecked > 0) return false;
+
   const trackedOnTarget = git(['ls-tree', '-r', '--name-only', targetRef, `openspec/changes/${slug}`], repoRoot, { allowFail: true }) ?? '';
   return Boolean(trackedOnTarget.trim());
 }
