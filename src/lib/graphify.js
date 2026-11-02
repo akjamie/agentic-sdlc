@@ -40,7 +40,7 @@ export function ensureGraphify({ autoInstall = true, env = process.env } = {}) {
   if (!viaUv && !viaPip) return { installed: false, action: 'missing-installer' };
 
   const cmd = viaUv
-    ? ['uv', 'tool', 'install', '--upgrade', ...(mirrorUrl ? ['--index-url', mirrorUrl] : []), 'graphifyy']
+    ? ['uv', 'tool', 'install', '--upgrade', '--python', '<3.14', ...(mirrorUrl ? ['--index-url', mirrorUrl] : []), 'graphifyy']
     : ['pip', 'install', ...(mirrorUrl ? ['--index-url', mirrorUrl] : []), 'graphifyy'];
   try {
     execFileSync(cmd[0], cmd.slice(1), { encoding: 'utf8', stdio: 'pipe', env, timeout: 45000 });
