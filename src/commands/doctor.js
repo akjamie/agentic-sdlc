@@ -42,8 +42,8 @@ export function doctor(opts = {}) {
   let hasRouting = false;
   let detectedTools = [];
 
-  // If in global mode or not in a repository workspace, check global skills and skip repo-specific checks
-  if (isGlobal || (!isRepo && !hasProject)) {
+  // If in global mode or not in an actual git repository workspace, check global skills and skip repo-specific checks
+  if (isGlobal || !isRepo) {
     const globalSkills = path.join(process.env.HOME || process.env.USERPROFILE || '', '.agents', 'skills');
     const hasGlobalSkills = exists(globalSkills);
     add('global skills (~/.agents)', hasGlobalSkills ? 'pass' : 'warn', hasGlobalSkills ? 'installed' : 'run `asdlc skills install --global`');

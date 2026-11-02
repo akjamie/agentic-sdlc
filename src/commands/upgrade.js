@@ -20,9 +20,12 @@ export function upgradeAsdlc() {
   log.step('upgrading asdlc CLI...');
   try {
     const pkgSpec = process.env.ASDLC_PKG_SPEC || '@akjamie/agentic-sdlc@latest';
-    execFileSync('npm', ['install', '-g', pkgSpec], { stdio: 'inherit' });
-    log.ok('asdlc CLI upgraded to latest');
-    return true;
+    const res = spawnSync(`npm install -g ${pkgSpec}`, { shell: true, stdio: 'inherit' });
+    if (res.status === 0) {
+      log.ok('asdlc CLI upgraded to latest');
+      return true;
+    }
+    throw new Error(res.error ? res.error.message : `npm exited with status ${res.status}`);
   } catch (err) {
     log.warn(`asdlc upgrade via npm failed: ${err.message}`);
     log.info('💡 [FALLBACK] If automatic upgrade failed, run manually:');
@@ -47,12 +50,16 @@ export function upgradeSkills(repoRoot) {
 export function upgradeOpenspec() {
   log.step('upgrading openspec...');
   try {
-    execFileSync('npm', ['install', '-g', '@fission-ai/openspec@latest'], { stdio: 'inherit' });
-    log.ok('openspec upgraded to latest');
+    const res = spawnSync('npm install -g @fission-ai/openspec@latest', { shell: true, stdio: 'inherit' });
+    if (res.status === 0) {
+      log.ok('openspec upgraded to latest');
+      return true;
+    }
+    log.info(`note: global openspec install skipped (exit ${res.status}); asdlc bundles OpenSpec natively`);
     return true;
   } catch (err) {
-    log.warn(`openspec upgrade failed: ${err.message}`);
-    return false;
+    log.info(`note: global openspec install skipped (${err.message}); asdlc bundles OpenSpec natively`);
+    return true;
   }
 }
 
@@ -64,9 +71,17 @@ export function upgradeGraphify() {
 
   if (viaUv) {
     try {
-      execFileSync('uv', ['tool', 'install', '--upgrade', 'graphifyy'], { stdio: 'inherit' });
-      log.ok('graphify upgraded via uv');
-      return true;
+      // Prefer Python <3.14 to use pre-built wheels for tree-sitter, avoiding source compilation failure on experimental Pythons (e.g. 3.15)
+      const res = spawnSync('uv tool install --upgrade --python "<3.14" graphifyy', { shell: true, stdio: 'inherit' });
+      if (res.status === 0) {
+        log.ok('graphify upgraded via uv');
+        return true;
+      }
+      const resFallback = spawnSync('uv tool install --upgrade graphifyy', { shell: true, stdio: 'inherit' });
+      if (resFallback.status === 0) {
+        log.ok('graphify upgraded via uv');
+        return true;
+      }
     } catch {
       // fallback
     }
@@ -74,9 +89,11 @@ export function upgradeGraphify() {
 
   if (viaPipx) {
     try {
-      execFileSync('pipx', ['install', '--upgrade', 'graphifyy'], { stdio: 'inherit' });
-      log.ok('graphify upgraded via pipx');
-      return true;
+      const res = spawnSync('pipx install --upgrade graphifyy', { shell: true, stdio: 'inherit' });
+      if (res.status === 0) {
+        log.ok('graphify upgraded via pipx');
+        return true;
+      }
     } catch {
       // fallback
     }
@@ -84,19 +101,23 @@ export function upgradeGraphify() {
 
   if (viaPip) {
     try {
-      execFileSync('pip', ['install', '--upgrade', 'graphifyy'], { stdio: 'inherit' });
-      log.ok('graphify upgraded via pip');
-      return true;
-    } catch (err) {
+      const res = spawnSync('pip install --upgrade graphifyy', { shell: true, stdio: 'inherit' });
+      if (res.status === 0) {
+        log.ok('graphify upgraded via pip');
+        return true;
+      }
       // PEP 668 on Debian/Ubuntu externally-managed-environment: retry with --break-system-packages
-      try {
-        execFileSync('pip', ['install', '--upgrade', 'graphifyy', '--break-system-packages'], { stdio: 'inherit' });
+      const resBreak = spawnSync('pip install --upgrade graphifyy --break-system-packages', { shell: true, stdio: 'inherit' });
+      if (resBreak.status === 0) {
         log.ok('graphify upgraded via pip (--break-system-packages)');
         return true;
-      } catch (err2) {
-        log.warn(`graphify upgrade via pip failed: ${err2.message}`);
-        return false;
       }
+      throw new Error(`pip install exited with code ${resBreak.status}`);
+    } catch (err2) {
+      log.warn(`graphify upgrade via pip failed: ${err2.message}`);
+      log.info('💡 [HINT] If wheel build fails for tree-sitter on Python >=3.14, install with uv using Python 3.12:');
+      log.info('          uv tool install --python 3.12 graphifyy');
+      return false;
     }
   }
 
@@ -127,6 +148,7 @@ export function runUpgrade(opts = {}) {
   log.info('');
 
   const repoRoot = opts.global ? null : resolveRepoRoot(opts);
+  const isGit = repoRoot ? exists(path.join(repoRoot, '.git')) : false;
 
   if (opts.asdlc !== false) upgradeAsdlc();
   if (opts.openspec !== false) upgradeOpenspec();
@@ -134,9 +156,9 @@ export function runUpgrade(opts = {}) {
   if (opts.schema !== false) upgradeSchema();
 
   if (opts.skills !== false) {
-    if (opts.global) {
+    if (opts.global || !isGit) {
       installGlobalSkills(opts);
-    } else if (repoRoot) {
+    } else {
       if (exists(openspecDir(repoRoot))) {
         updateRepo({ repoRoot, ...opts });
       } else {
@@ -151,7 +173,7 @@ export function runUpgrade(opts = {}) {
   if (opts.doctor !== false) {
     log.info('');
     log.info('=== Post-upgrade Health Check (doctor) ===');
-    return doctor(repoRoot ? { repoRoot } : {});
+    return doctor(isGit && repoRoot ? { repoRoot } : { global: true });
   }
 
   return 0;
