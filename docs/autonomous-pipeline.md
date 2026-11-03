@@ -62,7 +62,7 @@ flowchart TD
 
   subgraph Container["Ephemeral Container (ubuntu:26.04, UID 10001:10001, --rm)"]
     WS["/workspace (Isolated Linux Git Clone)"]
-    INTAKE["openspec/changes/{id}/intake/ (File Snapshots + Skill-Fetched Issues)"]
+    INTAKE["openspec/changes/<id>/intake/ (File Snapshots + Skill-Fetched Issues)"]
     S1["Session 1: Author / Implementer (opencode run / claude -p)"]
     S2["Session 2: Fresh-Context Reviewer (Player != Referee)"]
     GATES["Deterministic Gates (asdlc lint / test / verify)"]
@@ -96,36 +96,36 @@ flowchart TD
 sequenceDiagram
   autonumber
   actor Dev as Developer / Tech Lead
-  participant Host as Host CLI (asdlc run)
-  participant Runner as Container Runner (UID 10001)
-  participant AgentA as Session A (Author / Impl)
+  participant Host as Host: asdlc run
+  participant Box as Container (UID 10001)
+  participant AgentA as Session A (Author/Impl)
   participant AgentR as Session B (Fresh Reviewer)
   participant GitPR as GitHub / GitLab PR
 
   Dev->>Host: asdlc run --from-issue JIRA-345 --from-file ./prd.md --container
-  Host->>Runner: Create non-root container + docker cp intake files, config.yaml, native AI config & skills
-  Runner->>AgentA: Resolve JIRA-345 via skill into intake/, run asdlc new --no-grill, draft spec
-  alt Unresolved business ambiguity or conflicting docs (OPEN questions)
-    AgentA->>GitPR: Open Draft Spec PR (asdlc:needs-clarification) + post Q1..Qn comment
-    Runner-->>Host: Exit cleanly (awaiting_clarification, zero idle container)
+  Host->>Box: Create non-root container + docker cp intake files, config.yaml, native AI config & skills
+  Box->>AgentA: Resolve JIRA-345 via skill -> intake/, run asdlc new --no-grill, draft spec
+  alt Unresolved business ambiguity or conflicting docs ([OPEN] questions)
+    AgentA->>GitPR: Open Draft Spec PR (label: asdlc:needs-clarification) + post Q1..Qn comment
+    Box-->>Host: Exit cleanly (status: awaiting_clarification, zero idle container)
     Dev->>GitPR: Reply to Q1..Qn directly in PR comments
-    Dev->>Host: asdlc run {changeId} --container
-    Host->>Runner: Pull PR branch + latest PR comments
-    Runner->>AgentA: Ingest human replies, clear OPEN items in clarifications.md, finalize Spec
+    Dev->>Host: asdlc run <changeId> --container
+    Host->>Box: Pull PR branch + latest PR comments
+    Box->>AgentA: Ingest human replies, clear [OPEN] in clarifications.md, finalize Spec
   end
-  Runner->>AgentR: Spawn fresh process for asdlc-spec-review (zero shared history)
-  Runner->>Runner: Run deterministic gate asdlc lint {changeId} (blocks if any OPEN remains)
-  Runner->>GitPR: Push & mark Ready Spec PR (asdlc:spec-review) + attach review summary
-  Runner-->>Host: Destroy container (--rm)
+  Box->>AgentR: Spawn fresh process for asdlc-spec-review (zero shared history)
+  Box->>Box: Run deterministic gate: asdlc lint <changeId> (blocks if any [OPEN] remains)
+  Box->>GitPR: Push & mark Ready Spec PR (label: asdlc:spec-review) + attach review summary
+  Box-->>Host: Destroy container (--rm)
 
   Dev->>GitPR: Review & Merge Spec PR into main (locks specSha)
-  Dev->>Host: asdlc run {changeId} --container
-  Host->>Runner: Clone branch, lock proposal.md & specs/** as 0:0 (0444 read-only)
-  Runner->>AgentA: Author tasks.md + execute task-level TDD loop
-  Runner->>AgentR: Spawn fresh process for asdlc-impl-review + asdlc test
-  Runner->>Runner: Run asdlc verify {changeId} (all deterministic gates incl. spec-tamper)
-  Runner->>GitPR: Open Implementation PR (asdlc:impl-review)
-  Runner-->>Host: Destroy container (--rm)
+  Dev->>Host: asdlc run <changeId> --container
+  Host->>Box: Clone branch, lock proposal.md & specs/** as 0:0 (0444 read-only)
+  Box->>AgentA: Author tasks.md + execute task-level TDD loop
+  Box->>AgentR: Spawn fresh process for asdlc-impl-review + asdlc test
+  Box->>Box: Run asdlc verify <changeId> (all deterministic gates incl. spec-tamper)
+  Box->>GitPR: Open Implementation PR (label: asdlc:impl-review)
+  Box-->>Host: Destroy container (--rm)
 ```
 
 ---
@@ -166,15 +166,43 @@ asdlc config unset env.JIRA_API_TOKEN
 **Precedence Chain (Highest → Lowest)**:
 `CLI Flags` > `Environment Variables (ASDLC_*)` > `Repo .sdlc/policy.yaml (optional override)` > **`Global ~/.asdlc/config.yaml`** > `Built-in Default`.
 
-### 3.2 Zero-Translation Native AI Vendor Configuration (75+ Providers)
-`~/.asdlc/config.yaml` is **never parsed by the built-in AI harness**. Instead:
-- **`opencode` (Default)** reads its official native `opencode.json` and `auth.json` (preserving full support for 75+ providers, AWS Bedrock IAM, GCP Vertex, Azure, Volcengine Ark, GitHub Copilot OAuth, custom gateway headers, etc.).
-- **`claude` (Pre-installed alternative)** reads its official native `~/.claude/settings.json`.
+### 3.2 Enterprise & User-Grade AI Configuration Strategy (Zero Schema Loss)
 
-Three native onboarding paths are supported (precedence: `~/.asdlc/agent/<harness>/` > host native global config):
-1. **Automatic Host Config Inheritance (Zero Setup)**: Cross-platform discovery of existing OpenCode configs on the host (Windows `%USERPROFILE%\.config\opencode` / `%LOCALAPPDATA%\opencode`, macOS/Linux `~/.config/opencode` and `~/.local/share/opencode/auth.json`) or Claude configs, staged via `docker cp` (`10001:10001`, `0600`).
-2. **Interactive Container Login (`asdlc config login`)**: Spins up an interactive non-root container running native `opencode auth login` (supporting OAuth device flows and all 75+ vendors) even when `opencode` is not installed on the host, persisting credentials back to `~/.asdlc/agent/opencode/`.
-3. **Team Config Import (`asdlc config agent --file ./team-opencode.json`)**: Imports a team-standardized `opencode.json` verbatim without field loss.
+`~/.asdlc/config.yaml` is **never parsed directly by the built-in AI harness**. Instead, the system treats AI configuration with an industry-grade **layered inheritance and override model**:
+
+1. **Host-Config Priority with Explicit Container Override (Dual-Plane Design)**:
+   - **Host Plane (`asdlc` CLI on developer laptop)**: Developers may already have OpenCode configured for interactive coding using a preferred local model (e.g. `anthropic/claude-sonnet-4-5` or local Ollama).
+   - **Runner Plane (Container)**: For automated pipelines, the team or user may want a different dedicated headless model (e.g. `openai/gpt-4o`, `doubao-seed-code`, or an internal high-throughput gateway).
+   - **Resolution Order (Container Execution)**:
+     ```
+     asdlc config set agent.model / review_model  (Explicit container override, highest)
+         ▲
+     ~/.asdlc/agent/opencode/opencode.json        (Container-specific team template/import)
+         ▲
+     Host Native OpenCode Config                  (Automatic fallback: %USERPROFILE%\.config\opencode or ~/.config/opencode)
+     ```
+     If the developer already has OpenCode configured on their host, `asdlc run --container` **automatically inherits it out-of-the-box (zero configuration needed)**. However, if the user or team sets `asdlc config set agent.model <model>`, that model override takes precedence inside the container without modifying the developer's host configuration!
+
+2. **Pure Data-Driven Staging via Standard Bridge Network (No `--net=host` Dependency)**:
+   - Corporate CIS benchmarks and container runtimes (such as Docker Desktop on Windows/macOS with WSL2/Hyper-V) restrict or disable `--net=host`.
+   - The orchestrator completely avoids running interactive browser-based login containers. All credential assembly happens locally in host Node.js process memory.
+   - Credentials (`auth.json`) and configuration (`opencode.json`) are injected via `docker cp` directly into the container's `/home/agent/.local/share/opencode/auth.json` and `/home/agent/.config/opencode/opencode.json` with strict mode `0600` and ownership `10001:10001`.
+   - The container operates on a standard isolated Docker bridge network, fully compliant with enterprise bastion and container security policies.
+
+3. **Supported Onboarding Modes**:
+   - **Mode A: Seamless Host Inheritance**: Automatically discovers host `%USERPROFILE%\.config\opencode\opencode.json` (Windows) or `~/.config/opencode/opencode.json` (macOS/Linux) and matching `auth.json`, copying them into the container without manual steps.
+   - **Mode B: Key-Based CLI Quickset**:
+     ```bash
+     asdlc config set agent.provider "anthropic"
+     asdlc config set agent.api_key "sk-ant-xxx"
+     asdlc config set agent.base_url "https://api.corp.com/v1" # optional private gateway
+     ```
+     Host `asdlc run` formats standard `opencode.json` and `auth.json` in memory and pushes them into the container.
+   - **Mode C: Enterprise Standard Template Import**:
+     ```bash
+     asdlc config agent --file ./enterprise-opencode.json
+     ```
+     Stores the team-vetted JSON verbatim under `~/.asdlc/agent/opencode/opencode.json`, overriding host local defaults for all container runs.
 
 ---
 
@@ -284,11 +312,42 @@ Enforced internally on every container launch without exposing CLI flags to weak
   - **`auto`（现有自适应分级）**：**100% 保持现有机制**。运行内置 L0–L3 风险评估与防降级校验，L0/L1 走单 PR（同时含 Spec 与代码），L2/L3 走双 PR。
 - **优先级链**：`CLI 参数` > `环境变量 ASDLC_*` > `单仓 .sdlc/policy.yaml（仅特例覆盖）` > **`全局 ~/.asdlc/config.yaml`** > `内置默认值`。
 
-### 3.2 AI 引擎配置彻底解耦（支持 75+ 模型供应商）
-`~/.asdlc/config.yaml` **不给内置 AI 读取**。容器内的 `opencode`（默认）直接读取官方原生 `opencode.json` + `auth.json`，`claude` 直接读取官方原生 `~/.claude/settings.json`，提供三条通路：
-1. **自动跨平台继承宿主机已有配置**：自动识别 Windows / macOS / Linux 上的宿主机 OpenCode 或 Claude 原生配置并 `docker cp` 注入容器。
-2. **交互式原生登录向导 `asdlc config login`**：即使宿主机未装 `opencode`，也可拉起临时非 Root 容器运行原生 `opencode auth login`（支持 OAuth 设备码与全部 75+ 厂商），结果持久化在宿主机 `~/.asdlc/agent/opencode/`。
-3. **团队配置一键导入 `asdlc config agent --file ./team-opencode.json`**：原样导入团队网关与模型配置，零字段丢失。
+### 3.2 行业级与用户级 AI 配置设计（双层继承、容器差异化与零网络侵入）
+
+`~/.asdlc/config.yaml` **不给内置 AI 直接解析**。系统站在行业级平台规范与实际用户习惯的角度，设计了**分层继承与差异化覆盖模型**：
+
+1. **宿主配置自动继承 + 容器专属模型差异化覆盖（双平面架构）**：
+   - **用户平面（宿主机开发环境）**：开发者本地很可能已装有 OpenCode / Claude，并在 IDE 日常交互中使用自己偏好的模型（如 `anthropic/claude-sonnet-4-5` 或本地测试模型）。
+   - **执行平面（容器无头环境）**：自动化批处理流水线往往需要不同的模型策略（例如使用企业高吞吐私网网关 `doubao-seed-code`，或配置独立审查异构模型）。
+   - **分层解析优先级链（容器执行时）**：
+     ```
+     asdlc config set agent.model / review_model  (容器专属参数覆盖，优先级最高)
+         ▲
+     ~/.asdlc/agent/opencode/opencode.json        (容器专属团队模板/导入，第二优先)
+         ▲
+     宿主机原生 OpenCode 全局配置                 (自动探测兜底：默认零配置开箱即用)
+     ```
+     - **零配置开箱即用**：如果宿主机已有 OpenCode 配置，`asdlc run --container` **自动直接复用宿主机配置**，开发者无需重复登录。
+     - **容器差异化解耦**：如果开发者希望容器跑不同模型，只需执行 `asdlc config set agent.model <model>`，此项只对容器生效，**绝不污染或篡改开发者宿主机的本地 OpenCode 配置文件**！
+
+2. **纯数据流注入（零 `--net=host` 依赖，适配企业合规）**：
+   - 彻底废弃在容器内跑交互式网页登录的设计，避免因 `--net=host` 在企业堡垒机被禁用、或在 Windows/macOS WSL2 虚拟机网络下无法回调宿主机浏览器而导致死锁。
+   - 认证数据全流程在宿主机内存组装，通过 `docker cp` 单向注入容器文件系统，权限锁定为 `10001:10001`、`0600`。容器运行在标准 Docker bridge 隔离网络下，完美符合企业 CIS 容器安全规范。
+
+3. **三种接入模式**：
+   - **模式 A（宿主机无缝继承）**：自动跨平台识别宿主机 `%USERPROFILE%\.config\opencode\opencode.json`（Windows）或 `~/.config/opencode/opencode.json`（macOS/Linux）及对应的 `auth.json`，直接注入容器使用。
+   - **模式 B（命令行快速配置）**：
+     ```bash
+     asdlc config set agent.provider "anthropic"
+     asdlc config set agent.api_key "sk-ant-xxx"
+     asdlc config set agent.base_url "https://api.corp.com/v1" # 可选内部网关
+     ```
+     宿主机在内存中组装标准合法 JSON 并注入容器。
+   - **模式 C（企业标准模板导入）**：
+     ```bash
+     asdlc config agent --file ./enterprise-opencode.json
+     ```
+     原封不动存入 `~/.asdlc/agent/opencode/opencode.json`，供所有容器流水线作为专属配置执行。
 
 ---
 
