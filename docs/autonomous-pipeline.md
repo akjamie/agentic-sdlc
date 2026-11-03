@@ -62,7 +62,7 @@ flowchart TD
 
   subgraph Container["Ephemeral Container (ubuntu:26.04, UID 10001:10001, --rm)"]
     WS["/workspace (Isolated Linux Git Clone)"]
-    INTAKE["openspec/changes/<id>/intake/ (File Snapshots + Skill-Fetched Issues)"]
+    INTAKE["openspec/changes/{id}/intake/ (File Snapshots + Skill-Fetched Issues)"]
     S1["Session 1: Author / Implementer (opencode run / claude -p)"]
     S2["Session 2: Fresh-Context Reviewer (Player != Referee)"]
     GATES["Deterministic Gates (asdlc lint / test / verify)"]
@@ -96,36 +96,36 @@ flowchart TD
 sequenceDiagram
   autonumber
   actor Dev as Developer / Tech Lead
-  participant Host as Host: asdlc run
-  participant Box as Container (UID 10001)
-  participant AgentA as Session A (Author/Impl)
+  participant Host as Host CLI (asdlc run)
+  participant Runner as Container Runner (UID 10001)
+  participant AgentA as Session A (Author / Impl)
   participant AgentR as Session B (Fresh Reviewer)
   participant GitPR as GitHub / GitLab PR
 
   Dev->>Host: asdlc run --from-issue JIRA-345 --from-file ./prd.md --container
-  Host->>Box: Create non-root container + docker cp intake files, config.yaml, native AI config & skills
-  Box->>AgentA: Resolve JIRA-345 via skill -> intake/, run asdlc new --no-grill, draft spec
-  alt Unresolved business ambiguity or conflicting docs ([OPEN] questions)
-    AgentA->>GitPR: Open Draft Spec PR (label: asdlc:needs-clarification) + post Q1..Qn comment
-    Box-->>Host: Exit cleanly (status: awaiting_clarification, zero idle container)
+  Host->>Runner: Create non-root container + docker cp intake files, config.yaml, native AI config & skills
+  Runner->>AgentA: Resolve JIRA-345 via skill into intake/, run asdlc new --no-grill, draft spec
+  alt Unresolved business ambiguity or conflicting docs (OPEN questions)
+    AgentA->>GitPR: Open Draft Spec PR (asdlc:needs-clarification) + post Q1..Qn comment
+    Runner-->>Host: Exit cleanly (awaiting_clarification, zero idle container)
     Dev->>GitPR: Reply to Q1..Qn directly in PR comments
-    Dev->>Host: asdlc run <changeId> --container
-    Host->>Box: Pull PR branch + latest PR comments
-    Box->>AgentA: Ingest human replies, clear [OPEN] in clarifications.md, finalize Spec
+    Dev->>Host: asdlc run {changeId} --container
+    Host->>Runner: Pull PR branch + latest PR comments
+    Runner->>AgentA: Ingest human replies, clear OPEN items in clarifications.md, finalize Spec
   end
-  Box->>AgentR: Spawn fresh process for asdlc-spec-review (zero shared history)
-  Box->>Box: Run deterministic gate: asdlc lint <changeId> (blocks if any [OPEN] remains)
-  Box->>GitPR: Push & mark Ready Spec PR (label: asdlc:spec-review) + attach review summary
-  Box-->>Host: Destroy container (--rm)
+  Runner->>AgentR: Spawn fresh process for asdlc-spec-review (zero shared history)
+  Runner->>Runner: Run deterministic gate asdlc lint {changeId} (blocks if any OPEN remains)
+  Runner->>GitPR: Push & mark Ready Spec PR (asdlc:spec-review) + attach review summary
+  Runner-->>Host: Destroy container (--rm)
 
   Dev->>GitPR: Review & Merge Spec PR into main (locks specSha)
-  Dev->>Host: asdlc run <changeId> --container
-  Host->>Box: Clone branch, lock proposal.md & specs/** as 0:0 (0444 read-only)
-  Box->>AgentA: Author tasks.md + execute task-level TDD loop
-  Box->>AgentR: Spawn fresh process for asdlc-impl-review + asdlc test
-  Box->>Box: Run asdlc verify <changeId> (all deterministic gates incl. spec-tamper)
-  Box->>GitPR: Open Implementation PR (label: asdlc:impl-review)
-  Box-->>Host: Destroy container (--rm)
+  Dev->>Host: asdlc run {changeId} --container
+  Host->>Runner: Clone branch, lock proposal.md & specs/** as 0:0 (0444 read-only)
+  Runner->>AgentA: Author tasks.md + execute task-level TDD loop
+  Runner->>AgentR: Spawn fresh process for asdlc-impl-review + asdlc test
+  Runner->>Runner: Run asdlc verify {changeId} (all deterministic gates incl. spec-tamper)
+  Runner->>GitPR: Open Implementation PR (asdlc:impl-review)
+  Runner-->>Host: Destroy container (--rm)
 ```
 
 ---
