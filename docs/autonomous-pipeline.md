@@ -132,8 +132,38 @@ sequenceDiagram
 
 ## 3. Global Control Plane & Two-Mode Workflow Switch (`asdlc config`)
 
-### 3.1 Machine-Global `~/.asdlc/config.yaml` & `workflow_mode`
-To avoid configuring `.sdlc/policy.yaml` per repository, all machine/runner settings and credentials are unified under `asdlc config` (`~/.asdlc/config.yaml`, written with `0600` permissions):
+### 3.1 Dual-Interface Control Plane: Interactive Wizard (`asdlc config`) + Scriptable CLI
+
+To avoid the cognitive burden of memorizing dozens of dot-paths while maintaining full CI/scripting compatibility, `asdlc config` provides two complementary interfaces:
+
+#### 1. Interactive Terminal Setup Wizard (`asdlc config` with zero arguments)
+Running `asdlc config` without arguments launches an interactive, modular terminal wizard with **early-exit support at every step** (`[Save & Exit]` or `Esc`):
+
+```text
+=== Agentic SDLC Global Configuration Wizard ===
+Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
+
+? What would you like to configure? (Use arrow keys)
+❯ 1. Workflow Mode (Current: spec-first)
+  2. AI Model & Harness (Current: Inherit Host OpenCode)
+  3. Git & Pull Request Auth (Current: GitHub via gh CLI)
+  4. Issue Tracker Integration (Jira / Confluence / Linear)
+  ---------------------------------------------------------
+  [ Save & Exit ]
+```
+
+- **Smart Auto-Detection**:
+  - Automatically checks if `gh` is installed and logged in -> Displays `✓ GitHub: Inherited from host 'gh' CLI (user: akjamie)`.
+  - Automatically checks if OpenCode is present on the host -> Displays `✓ AI: Found host OpenCode config (~/.config/opencode/opencode.json)`.
+- **Modular Sections & Easy Skip**:
+  - **Section 1: Workflow Mode** — Pick between `● spec-first (Recommended for new teams: Mandatory Spec PR -> Merge -> Impl PR)` and `○ auto (Adaptive: L0/L1 Single-PR, L2/L3 Dual-PR)`.
+  - **Section 2: AI Harness & Model Override** — Options to keep host OpenCode, specify a container-only model override (e.g. `doubao-seed-code`), enter an API key, or import a JSON file.
+  - **Section 3: Git & PR Credentials** — Option to inherit host `gh` or provide a custom PAT.
+  - **Section 4: External Issue Trackers (Optional)** — Prompt to enter Jira / Confluence base URLs and tokens, or choose `● Skip for now (Configure later or use local files only)`. Token inputs are masked on screen.
+- **Atomic Persistence**: On choosing `[Save & Exit]`, updates are written atomically to `~/.asdlc/config.yaml` with mode `0600`.
+
+#### 2. Non-Interactive Scriptable CLI (For CI/CD and Power Users)
+For headless automation, scripts, and granular inspection, standard subcommands remain fully available:
 
 ```bash
 # 1. Global workflow switch: strictly two supported modes
@@ -308,7 +338,39 @@ Enforced internally on every container launch without exposing CLI flags to weak
 
 ## 3. 全局配置控制面与双模式开关 (`asdlc config`)
 
-### 3.1 全局配置与两档 `workflow_mode`
+### 3.1 双模控制面：交互式配置向导 (`asdlc config`) + 脚本化 CLI
+
+为避免开发者记忆繁琐的命令行点分路径，同时保证 CI/CD 脚本的确定性调用，`asdlc config` 提供了两种互补交互模式：
+
+#### 1. 终端交互式引导向导（无参数执行 `asdlc config`）
+开发者直接输入 `asdlc config` 即启动交互式向导，支持**每一步随时按 `[Save & Exit]` 或 `Esc` 保存退出**：
+
+```text
+=== Agentic SDLC Global Configuration Wizard ===
+Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
+
+? What would you like to configure? (Use arrow keys)
+❯ 1. Workflow Mode (Current: spec-first)
+  2. AI Model & Harness (Current: Inherit Host OpenCode)
+  3. Git & Pull Request Auth (Current: GitHub via gh CLI)
+  4. Issue Tracker Integration (Jira / Confluence / Linear)
+  ---------------------------------------------------------
+  [ Save & Exit ]
+```
+
+- **宿主环境智能感知**：
+  - 自动检测本地 `gh` CLI 登录态 -> 提示 `✓ GitHub: Inherited from host 'gh' CLI (user: akjamie)`，回车直接复用。
+  - 自动检测本地 OpenCode 配置文件 -> 提示 `✓ AI: Found host OpenCode config (~/.config/opencode/opencode.json)`。
+- **模块化步骤，选填项随时跳过**：
+  - **模块 1：工作流模式** — 单选 `● spec-first (推荐新团队: 强制 Spec PR -> 人工合入 -> Impl PR)` 或 `○ auto (自适应分级)`。
+  - **模块 2：AI 引擎与容器模型覆盖** — 可选直接复用宿主配置、为容器设置专属模型（如 `doubao-seed-code`）、快捷录入 API Key，或导入团队标准 JSON。
+  - **模块 3：Git & PR 凭证** — 继承宿主 `gh` 或提供自定义 Token。
+  - **模块 4：外部需求单配置（选填）** — 支持录入 Jira / Confluence URL 与 Token，或直接选择 `● 暂不配置 (后续配置或仅使用本地文件)`。敏感 Token 输入全程掩码打码。
+- **原子化落盘**：随时选择 `[Save & Exit]`，配置以 `0600` 权限安全写入 `~/.asdlc/config.yaml`。
+
+#### 2. 非交互脚本化 CLI（面向自动化脚本与 CI/CD）
+针对无人值守部署与脚本编写，保留全部标准子命令：
+
 引入机器级全局配置 `~/.asdlc/config.yaml`（权限强制 `0600`），所有配置项统一收敛至 `asdlc config`（不单设 `asdlc auth`；命中 `*key/*token/*secret/*password` 在 `list` 时自动脱敏）：
 
 - **`workflow_mode` 仅保留两档**（不暴露单独的 `single-pr` 或 `risk_assessment`，风险分级是 `auto` 模式内生机制）：
