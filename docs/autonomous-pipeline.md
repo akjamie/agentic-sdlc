@@ -19,6 +19,10 @@
     - [5.2 Internal Non-Exposed Security Baseline](#52-internal-non-exposed-security-baseline)
     - [5.3 Tri-State Repository Lifecycle & Ingestion Matrix (Greenfield, Brownfield, Established)](#53-tri-state-repository-lifecycle--ingestion-matrix-greenfield-brownfield-established)
   - [6. State-Driven Orchestrator (`asdlc run`) & Async PR Grilling](#6-state-driven-orchestrator-asdlc-run--async-pr-grilling)
+    - [6.1 Dual Execution Modes: Local Directory vs Zero-Checkout Remote (`--repo`)](#61-dual-execution-modes-local-directory-vs-zero-checkout-remote---repo)
+    - [6.2 Human-Centric Change Identification & Zero-Friction Resume](#62-human-centric-change-identification--zero-friction-resume)
+    - [6.3 Declarative Finite State Machine: How the Container Deduces the Active Task](#63-declarative-finite-state-machine-how-the-container-deduces-the-active-task)
+    - [6.4 Governance Hardening](#64-governance-hardening)
   - [7. Phased Implementation Roadmap](#7-phased-implementation-roadmap)
 - [中文架构方案](#中文架构方案)
   - [1. 背景痛点与核心原则](#1-背景痛点与核心原则)
@@ -30,6 +34,10 @@
     - [5.2 内部硬编码安全基线](#52-内部硬编码安全基线)
     - [5.3 三种项目生命周期适配矩阵（Greenfield、Brownfield 与成熟项目）与双向同步闭环](#53-三种项目生命周期适配矩阵greenfieldbrownfield-与成熟项目与双向同步闭环)
   - [6. 状态驱动编排器 (`asdlc run`) 与 Draft PR 异步 Grill 闭环](#6-状态驱动编排器-asdlc-run-与-draft-pr-异步-grill-闭环)
+    - [6.1 双执行模式：本地就地执行与免 Clone 零检出执行 (`--repo`)](#61-双执行模式本地就地执行与免-clone-零检出执行---repo)
+    - [6.2 人性化变更定位与零摩擦续跑机制（智能推导、交互选择器、PR # / URL / Issue 解析）](#62-人性化变更定位与零摩擦续跑机制智能推导交互选择器pr---url--issue-解析)
+    - [6.3 声明式有限状态机：无头容器如何确定当前该执行什么](#63-声明式有限状态机无头容器如何确定当前该执行什么)
+    - [6.4 治理合规门禁补强](#64-治理合规门禁补强)
   - [7. 分阶段落地路线图](#7-分阶段落地路线图)
 
 ---
@@ -337,18 +345,103 @@ For repositories already managed by Agentic SDLC:
 
 ## 6. State-Driven Orchestrator (`asdlc run`) & Async PR Grilling
 
-### 6.1 Deterministic State Routing
-- New change: `asdlc run [requirement] [--from-issue <ref>...] [--from-file <path>...] --container`
-- Advance/resume change: `asdlc run <changeId> --container`
+### 6.1 Dual Execution Modes: Local Directory vs Zero-Checkout Remote (`--repo`)
+Requiring developers to always sit in a locally cloned repository root is an anti-pattern. `asdlc run` supports two first-class operational modes:
 
-| Detected State | `workflow_mode: spec-first` (Mandatory Dual-PR) | `workflow_mode: auto` (L0/L1 Single-PR) | `workflow_mode: auto` (L2/L3 Dual-PR) |
-| :--- | :--- | :--- | :--- |
-| **1. New Change** | Draft Spec → If `[OPEN]`: Draft PR + comment & exit; Else: fresh `spec-review` → `lint` → Ready Spec PR & stop for merge | Draft Spec + TDD Impl → fresh review → `lint` + `verify` → open 1 Single PR (Spec + Impl) | Same as `spec-first` |
-| **2. Draft Spec PR (`asdlc:needs-clarification`)** | Read human PR comment replies → clear `[OPEN]` → finalize Spec → fresh `spec-review` → `lint` → mark PR Ready | Read replies → finish Spec + Impl → `verify` → mark PR Ready | Same as `spec-first` |
-| **3. Open Spec PR missing review** | Spawn fresh session for `asdlc-spec-review` & post PR comment | N/A | Spawn fresh session for `asdlc-spec-review` |
-| **4. Spec Merged on Target Branch (`specSha` locked)** | Lock Spec `0444` → author `tasks.md` + TDD Impl → fresh `impl-review` + `asdlc test` → `verify` → open Impl PR | Completed in Single PR | Same as `spec-first` |
+1. **Contextual Local Mode (Default when in a repository folder)**:
+   ```bash
+   # Inferred from current working directory
+   asdlc run "Add payment refund webhook" --from-file ./prd.md --container
+   ```
+   - Ingests the local working tree snapshot (via 3-layer overlay) as detailed in §5.2.
+   - Synchronizes results back to local Git or remotes.
 
-### 6.2 Governance Hardening
+2. **Zero-Checkout Remote Mode (Run from any folder without local Git clone)**:
+   ```bash
+   # Run from home directory, automation server, or empty terminal:
+   asdlc run --repo akjamie/agentic-sdlc "Add payment refund webhook" --container
+   # Or with explicit git URL:
+   asdlc run --repo https://github.com/my-org/core-api.git --from-issue JIRA-345 --container
+   ```
+   - The developer's laptop does **not** need a local clone of the repository.
+   - Host CLI spins up the `asdlc-runner` container and injects the developer's credentials (`gh auth token` / `GH_TOKEN`).
+   - The container runner clones the repository directly into `/workspace`, checks out a feature branch, executes the autonomous pipeline, and pushes the Spec/Impl PR to GitHub/GitLab.
+   - Zero local disk clutter, zero checkout requirements, perfectly portable across dev laptops and CI runners.
+
+### 6.2 Human-Centric Change Identification & Zero-Friction Resume
+Forcing users to memorize or copy-paste synthetic internal change slugs across runs creates high cognitive friction. `asdlc run` resolves change context through a human-centric hierarchy:
+
+1. **First-Class Pull Request Reference (Most Natural for Devs)**:
+   ```bash
+   asdlc run #34 --container
+   # Or full PR URL directly copied from browser:
+   asdlc run https://github.com/akjamie/agentic-sdlc/pull/34 --container
+   ```
+   - Resolves the change slug directly from the PR's label metadata (`asdlc:change-id: <slug>`) or branch name (`change/<slug>`).
+2. **Issue Tracker Reference**:
+   ```bash
+   asdlc run --from-issue JIRA-345 --container
+   ```
+   - Automatically matches the existing change associated with `JIRA-345` in `openspec/changes/*/intake/index.yaml` and resumes it.
+3. **Smart Active-Branch Auto-Detection (Zero Arguments)**:
+   - When running `asdlc run` inside a repository without arguments:
+     - If the active branch is `change/<slug>`, it automatically resumes that specific change.
+     - If on `main` with a single active change, it resumes that change.
+4. **Interactive Terminal Picker (When Ambiguous)**:
+   - When multiple changes are active, running `asdlc run` launches an interactive selector:
+     ```text
+     ? Found 2 active changes. Select one to resume or start a new task:
+     ❯ [1] payment-refund     (Draft Spec PR #34: 2 open questions pending replies)
+       [2] token-encryption   (Spec PR #31 Merged: Ready for TDD Implementation)
+       [3] + Start a new change
+     ```
+5. **Actionable Pause Output**: Whenever a run pauses (e.g. awaiting human replies to questions), the CLI displays the exact copy-pasteable command to resume:
+   ```text
+   ⏸️ Paused: Awaiting human replies on Draft Spec PR #34.
+   👉 Reply directly in the PR comments on GitHub.
+   👉 Once replied, resume at any time:
+        asdlc run #34 --container
+   ```
+
+### 6.3 Declarative Finite State Machine: How the Container Deduces the Active Task
+The container is ephemeral (`--rm`). When a container is launched with `asdlc run [change-target]`, it has zero memory of previous container runs.
+Instead, the orchestrator evaluates a **100% Declarative, Self-Describing Finite State Machine (FSM)** derived purely from Git history, PR metadata, and disk artifacts:
+
+```mermaid
+flowchart TD
+  START(["Container Boots: asdlc run {target}"]) --> EVAL["State Evaluator: Inspect Git Branch, PR API, and openspec/"]
+  EVAL --> S1{"1. Proposal & Specs authored?"}
+  S1 -- "No" --> A1["Action: Ground in explore.md AST -> Draft Proposal & Specs"]
+  S1 -- "Yes" --> S2{"2. clarifications.md has [OPEN] items?"}
+  S2 -- "Yes" --> S2_PR{"Draft PR exists?"}
+  S2_PR -- "No" --> A2_1["Action: Open Draft PR (needs-clarification) + Post Qs & Pause"]
+  S2_PR -- "Yes" --> S2_REP{"Humans replied in PR comments?"}
+  S2_REP -- "No" --> A2_2["Action: Log 'Waiting for human replies' & Exit 0"]
+  S2_REP -- "Yes" --> A2_3["Action: Ingest replies -> Clear OPEN -> Finalize Specs"]
+  A2_3 --> S3
+  S2 -- "No" --> S3{"3. Spec reviewed & Spec PR ready?"}
+  S3 -- "No" --> A3["Action: Spawn Session 2 (spec-review) -> asdlc lint -> Open/Mark Ready Spec PR"]
+  S3 -- "Yes" --> S4{"4. Spec PR merged to main (specSha locked)?"}
+  S4 -- "No" --> A4["Action: Log 'Waiting for human TL to review & merge Spec PR' & Exit 0"]
+  S4 -- "Yes" --> S5{"5. tasks.md 100% completed?"}
+  S5 -- "No" --> A5["Action: Lock Specs 0444 -> Run task-level TDD loop (Red -> Green -> Refactor)"]
+  S5 -- "Yes" --> S6{"6. asdlc verify & impl-review pass?"}
+  S6 -- "No" --> A6["Action: Spawn Session 2 (impl-review) -> Fix regressions (max 3 rounds)"]
+  S6 -- "Yes" --> A7["Action: Open Implementation PR -> Mission Complete"]
+```
+
+| Evaluated Invariants (Disk & Git State) | Inferred State Machine Phase | Autonomous Container Action |
+| :--- | :--- | :--- |
+| `openspec/changes/<id>/proposal.md` is absent | **PHASE_DRAFT_SPEC** | Runs `asdlc new --no-grill`; grounds in Tree-sitter AST; writes initial proposal and specifications. |
+| `clarifications.md` has `[OPEN]` AND no PR exists | **PHASE_GRILL_PAUSE** | Pushes branch, opens Draft PR (`asdlc:needs-clarification`), posts structured questions in comments, exits cleanly. |
+| `clarifications.md` has `[OPEN]` AND Draft PR has human comments | **PHASE_GRILL_RESUME** | Pulls PR comments via GitHub API, resolves `[OPEN]` items with human answers, updates `clarifications.md`, finalizes specs. |
+| `specs/**` exists, 0 `[OPEN]`, but `review.md` is absent | **PHASE_SPEC_REVIEW** | Spawns fresh Session 2 for independent AI review (`asdlc-spec-review`), executes `asdlc lint` gate, marks PR Ready. |
+| Spec PR is open, not merged on target branch | **PHASE_AWAITING_SPEC_MERGE** | Logs waiting prompt for Human Tech Lead merge approval, exits cleanly (zero idle container compute). |
+| Target branch contains locked `specSha` AND tasks incomplete | **PHASE_TDD_IMPLEMENTATION** | Locks specs as `0:0` mode `0444` (OS kernel lock); authors `tasks.md`; executes task-level TDD Red-Green-Refactor loop. |
+| All tasks checked AND `verify.json` absent or failing | **PHASE_VERIFY_AND_IMPL_REVIEW** | Spawns fresh Session 2 for independent AI review (`asdlc-impl-review`); runs `asdlc verify` (deterministic security & test gates). |
+| All verification gates pass AND Impl PR absent | **PHASE_OPEN_IMPL_PR** | Opens Implementation PR (`asdlc:impl-review`), attaches verification report and test summary, mission complete. |
+
+### 6.4 Governance Hardening
 1. **`Player != Referee` Process Isolation**: Author/Implementer and Reviewer always execute as separate fresh processes with zero shared transcript, bounded by a **3-round** convergence cap.
 2. **Deterministic `[OPEN]` Clarification Gate**: `asdlc lint` blocks Ready Spec PRs whenever `clarifications.md` has non-empty `## Open questions` or `[OPEN]` markers.
 3. **Truthful Approval Provenance**: Updates `src/commands/approve.js` so `review.md` records actual merge SHA and approver provenance rather than synthetic six-dimension human PASS scores when no prior `review.md` exists.
@@ -532,15 +625,84 @@ Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
 
 ## 6. 状态驱动编排器 (`asdlc run`) 与 Draft PR 异步 Grill 闭环
 
-1. **简洁状态驱动入口**：
-   - 新需求启动：`asdlc run [requirement] [--from-issue <ref>...] [--from-file <path>...] --container`
-   - 已有变更推进/续跑：`asdlc run <changeId> --container`
-2. **Draft Spec PR 评论区异步问答闭环**：
-   - 无头容器遇到必须人工拍板的业务分叉或多文档矛盾时，在 `clarifications.md` 记录带推荐方案的 `[OPEN]` 问题，自动创建带 `asdlc:needs-clarification` 标签的 **Draft Spec PR** 并在评论区发出问题后立即退出。
-   - 人在 PR 评论区直接回复后，再次执行 `asdlc run <changeId> --container` 自动抓取评论清零 `[OPEN]`、执行独立会话 `spec-review` 与 `asdlc lint`（新增 `[OPEN]` 未清零强拦截门禁），并将 PR 转为 Ready for Review。
-3. **独立会话隔离与真实审批溯源**：
-   - 编写/实现与审查强制拆分为独立进程执行（`Player != Referee`），支持配置 `agent.review_model` 异构审查模型，修复循环上限 3 轮。
-   - 修复 `approve.js` 在无 `review.md` 时生成硬编码人工全 PASS 模板的问题，如实记录合入 SHA 与审批来源。
+### 6.1 双执行模式：本地就地执行与免 Clone 零检出执行 (`--repo`)
+强制要求开发者必须先在本地 `git clone` 代码仓、再 `cd` 到项目根目录执行命令，在自动化运维与多项目管理中属于反模式。`asdlc run` 原生支持双执行形态：
+
+1. **就地执行模式（Contextual Local Mode，默认）**：
+   ```bash
+   # 在本地代码仓目录中直接执行
+   asdlc run "Add payment refund webhook" --from-file ./prd.md --container
+   ```
+   - 自动采集宿主当前工作区现场（3 层高保真流式注入）；
+   - 执行完毕后按需回流至本地 Git 对象库或远端。
+
+2. **免 Clone 零检出执行模式（Zero-Checkout Remote Mode，从任意目录发起）**：
+   ```bash
+   # 在家目录、空终端、或自动化运维跳板机上直接指定远端仓库：
+   asdlc run --repo akjamie/agentic-sdlc "Add payment refund webhook" --container
+   # 或指定完整 Git 链接并关联工单：
+   asdlc run --repo https://github.com/my-org/core-api.git --from-issue JIRA-345 --container
+   ```
+   - 宿主机**完全不需要在本地检出或占用磁盘 Clone 该项目**；
+   - 宿主机 CLI 拉起 `asdlc-runner` 容器，直接透传短期认证 Token（`gh auth token` / `GH_TOKEN`）；
+   - 容器沙箱内部直接在 Linux 内存盘/workspace 中克隆、切分支、执行全套 SDLC 流水线并自动向 GitHub/GitLab 提 PR；
+   - 宿主机零代码残留、零磁盘污染，在 CI/CD 流水线与开发者多项目调度场景极具生产力。
+
+### 6.2 人性化变更定位与零摩擦续跑机制（智能推导、交互选择器、PR # / URL / Issue 解析）
+要求用户在多次执行中记忆并手敲合成的内部 Change ID（如 `rate-limiting-security-token-encryption`）会导致极大的操作心智负担。`asdlc run` 建立了一套以开发者习惯为中心的多级智能定位体系：
+
+1. **直传 PR 编号或完整 URL（最贴合人类习惯）**：
+   ```bash
+   asdlc run #34 --container
+   # 或直接从浏览器粘贴 PR 完整地址：
+   asdlc run https://github.com/akjamie/agentic-sdlc/pull/34 --container
+   ```
+   - 编排器通过 GitHub/GitLab API 直接读取 PR 标签元数据（`asdlc:change-id: <slug>`）或关联分支，自动定位到精确的变更上下文。
+2. **直传关联工单号（Issue-Driven Resume）**：
+   ```bash
+   asdlc run --from-issue JIRA-345 --container
+   ```
+   - 编排器自动比对 `openspec/changes/*/intake/index.yaml` 中绑定的 Issue 索引，命中后直接续跑已有变更。
+3. **零参数智能分支推导（Smart Active-Branch Auto-Detection）**：
+   - 在项目目录中直接运行 `asdlc run`：
+     - 若当前 Git 分支本身就是 `change/<slug>`，直接续跑当前变更；
+     - 若当前在 `main` 且本地只有一个活跃中的未归档变更，自动直接续跑。
+4. **终端交互式选择器（Terminal Interactive Selector，存在歧义时）**：
+   - 当仓库存在多个正在进行中的变更时，`asdlc run` 自动唤起终端交互菜单：
+     ```text
+     ? 检测到 2 个正在推进中的变更，请选择需要续跑的项或新建变更:
+     ❯ [1] payment-refund     (Draft Spec PR #34: 存在 2 个阻塞问题等待人工回复)
+       [2] token-encryption   (Spec PR #31 已合入: 等待推进 TDD 代码实现)
+       [3] + 发起全新变更
+     ```
+5. **挂起时输出明确的无脑回车指令**：每当容器由于等待人工反馈挂起退出时，终端明确打印下一阶段的可粘贴命令：
+   ```text
+   ⏸️ 已安全挂起: Draft Spec PR #34 正等待人工确认核心设计。
+   👉 请直接在 GitHub PR 评论区回复问题。
+   👉 回复完成后，随时通过以下命令一键恢复流水线:
+        asdlc run #34 --container
+   ```
+
+### 6.3 声明式有限状态机：无头容器如何确定当前该执行什么
+容器执行完全是无状态且临时销毁（`--rm`）的。当宿主机执行 `asdlc run [target] --container` 启动一个全新的容器沙箱时，**容器内部不依赖任何外部后台常驻守护进程或瞬态内存**。
+
+编排器内置了一套 **100% 声明式、自描述的有限状态机（Durable Finite State Machine）**，仅通过检视 Git 历史、PR API 状态与工作区规范制品，在毫秒级内准确推导当前所处的唯一合法阶段：
+
+| 磁盘与 Git 关键客观不变量（Evaluated Invariants） | 推导出的状态机阶段 | 容器本次执行的精准动作（Action） |
+| :--- | :--- | :--- |
+| `openspec/changes/<id>/proposal.md` 尚不存在 | **阶段 1: 草拟 Spec** | 运行 `asdlc new --no-grill`，基于 AST 图谱探索代码上下文，撰写提案与初始 Spec |
+| `clarifications.md` 存在 `[OPEN]` 且**尚未建 PR** | **阶段 2: 挂起发问** | 推送分支，打开带 `asdlc:needs-clarification` 的 Draft PR，在评论区发布结构化问题，干净退出 0 |
+| `clarifications.md` 存在 `[OPEN]` 且**PR 评论区有人工回复** | **阶段 3: 消化问答** | 通过 API 抓取评论回复，自动清空 `[OPEN]` 问题并更新决议，定稿 Spec |
+| `specs/**` 完整、0 个 `[OPEN]`，但**尚无 `review.md`** | **阶段 4: 独立评审** | 派生全新无历史的独立审查进程（`asdlc-spec-review`），执行 `asdlc lint` 门禁，将 PR 转为 Ready for Review |
+| Spec PR 处于开启状态，尚未在 Target 分支合入 | **阶段 5: 等待合入** | 输出等待人类 Tech Lead 评审合入的指引，干净退出 0（杜绝容器常驻空转产生费用） |
+| 目标主干已包含锁定的 `specSha`，且 `tasks.md` 存在未勾选项 | **阶段 6: TDD 实现** | 将规范置为 `0:0 0444` 内核级只读锁定；author `tasks.md`；进入严格 TDD 红绿重构循环 |
+| `tasks.md` 任务全部勾选，`verify.json` 不存在或未通过 | **阶段 7: 验收门禁** | 派生独立审查进程执行 `asdlc-impl-review` 与全套 `asdlc verify` 门禁（最多自愈循环 3 轮） |
+| 所有自动化验收门禁全部 PASS，且 Impl PR 尚未打开 | **阶段 8: 交付提单** | 开启 Implementation PR（带 `asdlc:impl-review` 标签），附带完整自动化验证报告与测试用例凭据，流程达成 |
+
+### 6.4 治理合规门禁补强
+1. **`Player != Referee` 裁判会话完全物理隔离**：编写/实现与审查强制拆分为独立进程执行，支持配置 `agent.review_model` 异构审查模型，修复循环上限 3 轮。
+2. **确定性 `[OPEN]` 决议阻塞门禁**：`asdlc lint` 在发现 `clarifications.md` 仍含有未解决的 `[OPEN]` 标记或非空开放式问题时强行阻断提单。
+3. **真实审批溯源**：更新 `src/commands/approve.js`，如实记录合入 SHA 与审批来源凭据。
 
 ---
 
