@@ -96,36 +96,36 @@ flowchart TD
 sequenceDiagram
   autonumber
   actor Dev as Developer / Tech Lead
-  participant Host as Host: asdlc run
-  participant Box as Container (UID 10001)
-  participant AgentA as Session A (Author/Impl)
+  participant Host as Host CLI (asdlc run)
+  participant Runner as Container Runner (UID 10001)
+  participant AgentA as Session A (Author / Impl)
   participant AgentR as Session B (Fresh Reviewer)
   participant GitPR as GitHub / GitLab PR
 
   Dev->>Host: asdlc run --from-issue JIRA-345 --from-file ./prd.md --container
-  Host->>Box: Create non-root container + docker cp intake files, config.yaml, native AI config & skills
-  Box->>AgentA: Resolve JIRA-345 via skill -> intake/, run asdlc new --no-grill, draft spec
-  alt Unresolved business ambiguity or conflicting docs ([OPEN] questions)
-    AgentA->>GitPR: Open Draft Spec PR (label: asdlc:needs-clarification) + post Q1..Qn comment
-    Box-->>Host: Exit cleanly (status: awaiting_clarification, zero idle container)
+  Host->>Runner: Create non-root container + docker cp workspace archive, config & skills
+  Runner->>AgentA: Resolve JIRA-345 via skill into intake/, run asdlc new --no-grill, draft spec
+  alt Unresolved business ambiguity or conflicting docs (OPEN questions)
+    AgentA->>GitPR: Open Draft Spec PR (asdlc:needs-clarification) + post Q1..Qn comment
+    Runner-->>Host: Exit cleanly (awaiting_clarification, zero idle container)
     Dev->>GitPR: Reply to Q1..Qn directly in PR comments
-    Dev->>Host: asdlc run <changeId> --container
-    Host->>Box: Pull PR branch + latest PR comments
-    Box->>AgentA: Ingest human replies, clear [OPEN] in clarifications.md, finalize Spec
+    Dev->>Host: asdlc run {changeId} --container
+    Host->>Runner: Pull PR branch + latest PR comments
+    Runner->>AgentA: Ingest human replies, clear OPEN items in clarifications.md, finalize Spec
   end
-  Box->>AgentR: Spawn fresh process for asdlc-spec-review (zero shared history)
-  Box->>Box: Run deterministic gate: asdlc lint <changeId> (blocks if any [OPEN] remains)
-  Box->>GitPR: Push & mark Ready Spec PR (label: asdlc:spec-review) + attach review summary
-  Box-->>Host: Destroy container (--rm)
+  Runner->>AgentR: Spawn fresh process for asdlc-spec-review (zero shared history)
+  Runner->>Runner: Run deterministic gate asdlc lint {changeId} (blocks if any OPEN remains)
+  Runner->>GitPR: Push & mark Ready Spec PR (asdlc:spec-review) + attach review summary
+  Runner-->>Host: Destroy container (--rm)
 
   Dev->>GitPR: Review & Merge Spec PR into main (locks specSha)
-  Dev->>Host: asdlc run <changeId> --container
-  Host->>Box: Clone branch, lock proposal.md & specs/** as 0:0 (0444 read-only)
-  Box->>AgentA: Author tasks.md + execute task-level TDD loop
-  Box->>AgentR: Spawn fresh process for asdlc-impl-review + asdlc test
-  Box->>Box: Run asdlc verify <changeId> (all deterministic gates incl. spec-tamper)
-  Box->>GitPR: Open Implementation PR (label: asdlc:impl-review)
-  Box-->>Host: Destroy container (--rm)
+  Dev->>Host: asdlc run {changeId} --container
+  Host->>Runner: Clone branch, lock proposal.md & specs/** as 0:0 (0444 read-only)
+  Runner->>AgentA: Author tasks.md + execute task-level TDD loop
+  Runner->>AgentR: Spawn fresh process for asdlc-impl-review + asdlc test
+  Runner->>Runner: Run asdlc verify {changeId} (all deterministic gates incl. spec-tamper)
+  Runner->>GitPR: Open Implementation PR (asdlc:impl-review)
+  Runner-->>Host: Destroy container (--rm)
 ```
 
 ---
@@ -273,7 +273,15 @@ asdlc run --from-issue JIRA-345 --from-issue JIRA-346 --from-file ~/Downloads/pr
 ### 5.2 Internal Non-Exposed Security Baseline
 Enforced internally on every container launch without exposing CLI flags to weaken them:
 - **Strict Non-Root Execution**: Dedicated unprivileged user `agent` (`UID 10001:10001`, no `sudo`), `--user 10001:10001`, `--cap-drop=ALL`, `--security-opt=no-new-privileges:true`, `--pids-limit=512`, and `--rm` (also satisfying `claude -p --dangerously-skip-permissions`, which rejects `UID 0`).
-- **Isolated `/workspace` Clone (No Host Repo `-v` Mount)**: Clones into container-native Linux `/workspace` to avoid host workspace pollution, Windows NTFS mount slowdowns, and CRLF issues; Git/PR auth uses ephemeral `gh auth token` extraction from the host + `gh auth setup-git`.
+- **Workspace Ingestion & Zero Host Bind-Mount (`git archive` Pipeline)**:
+  - How the repository is provided to the container is a critical security and portability boundary:
+    1. **Why Direct `git clone` Inside Container Fails**: Private enterprise repositories, private submodules, and corporate VPN boundaries require SSH keys or tokens that should not be permanently cloned from within a sandbox. Furthermore, `git clone` inside the container would miss the developer's local uncommitted baseline, staged work, or active branch state.
+    2. **Why Host `-v` Bind-Mount Is Prohibited**: Bind-mounting the host project root directly exposes the host filesystem to arbitrary container scripts, creates Windows NTFS volume latency (10x slowdown on `node_modules`), causes CRLF line-ending mismatches, and risks UID permission pollution.
+    3. **Production Standard: Ephemeral Streamed Ingestion (`git archive | docker cp`)**:
+       - Host `asdlc run` streams the current branch snapshot into the created container's `/workspace` via `git archive HEAD | tar -x` (or `docker cp`).
+       - Local untracked files (such as local `.env.example` or staged changes) are explicitly filtered via `.gitignore` and copied into `/workspace`.
+       - Container `/workspace` initializes an isolated Git tree targeting the remote origin with ownership strictly set to `10001:10001`.
+       - Git push operations execute using the ephemeral `gh auth token` / `GH_TOKEN` injected into the process memory, completely eliminating host workspace bind-mount hazards.
 - **Kernel-Level Read-Only Spec Lock (`0444`)**: During Phase 2 (`READY_FOR_IMPL`), `proposal.md` and `specs/**` are owned by `0:0` with mode `0444`, blocking unauthorized writes at the OS filesystem layer alongside `asdlc verify`'s `spec-tamper` check.
 
 ---
@@ -434,9 +442,13 @@ Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
 1. **双层镜像与版本强绑定**：
    - **底层 `asdlc-base:2026.xx`**：基于最新 **`ubuntu:26.04` LTS**（`linux/amd64` + `linux/arm64`），预装 Node 22、Python 3.12 + `uv`（含预编译 `tree-sitter`）、JDK 21 (`maven`/`gradle`)、Go、Rust、C/C++ 编译链及 `git`/`gh`/`glab`/`ripgrep`/`jq`。
    - **上层 `asdlc-runner:<pkg.version>`**：预装同版本 `asdlc`、`openspec`、`graphifyy`、全局 `.agents/skills` 以及 **`opencode`（默认）** 和 **`claude`**。在 `.github/workflows/release.yml` 中随 npm 发版同步构建推送，默认精确锁定 `${pkg.version}` 标签（不用裸 `:latest`），`asdlc upgrade` 自动联动拉取。
-2. **内部硬编码安全基线（不暴露降级开关）**：
+2. **内部硬编码安全基线与代码注入机制（不暴露降级开关）**：
    - 固定非特权用户 `agent`（`UID 10001:10001`，无 `sudo`），内部默认附加 `--user 10001:10001`、`--cap-drop=ALL`、`--security-opt=no-new-privileges:true`、`--pids-limit=512`、`--rm`。
-   - 不 `-v` 挂载宿主机工作区或 `~/.ssh`；实现阶段将容器内 `proposal.md` 与 `specs/**` 置为 `0:0`（`0444` 只读），从内核层物理封锁篡改。
+   - **零宿主卷挂载（`git archive` 流式快照）**：
+     - 不在容器内执行私有 `git clone`（避免私网凭证/VPN 泄入沙箱，且能完整携带宿主当前分支未提交改动）；
+     - 不 `-v` 挂载宿主机目录（杜绝容器脚本破坏宿主机、规避 Windows NTFS 卷性能雪崩与 CRLF 换行冲突）；
+     - 采用工业级流式注入：宿主机提取当前分支快照 (`git archive HEAD | docker cp`) 灌入容器 `/workspace` 并赋权 `10001:10001`，容器在内部独立 Git 环境工作，推送依靠内存注入的短期 Token。
+   - **实现阶段内核级只读锁死 Spec**：将容器内 `proposal.md` 与 `specs/**` 置为 `0:0`（`0444` 只读），从 Linux 内核层物理封锁篡改。
 
 ---
 
