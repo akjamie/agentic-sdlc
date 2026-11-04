@@ -12,6 +12,9 @@
 - [English Solution Proposal](#english-solution-proposal)
   - [1. Problem Statement & Design Principles](#1-problem-statement--design-principles)
   - [2. End-to-End Architecture & Workflows](#2-end-to-end-architecture--workflows)
+    - [2.1 Host Orchestrator vs. Ephemeral Non-Root Container Split](#21-host-orchestrator-vs-ephemeral-non-root-container-split)
+    - [2.2 Autonomous Execution Lifecycle (Including Async PR Comment Grilling)](#22-autonomous-execution-lifecycle-including-async-pr-comment-grilling)
+    - [2.3 Dual-Track Symmetry: Interactive (Non-Container) vs. Autonomous (Container) Modes](#23-dual-track-symmetry-interactive-non-container-vs-autonomous-container-modes)
   - [3. Global Control Plane & Two-Mode Workflow Switch (`asdlc config`)](#3-global-control-plane--two-mode-workflow-switch-asdlc-config)
   - [4. Multi-Source Intake & Two-Tier Skill Resolution](#4-multi-source-intake--two-tier-skill-resolution)
   - [5. Official `ubuntu:26.04` LTS Image & Hardened Non-Root Baseline](#5-official-ubuntu2604-lts-image--hardened-non-root-baseline)
@@ -27,6 +30,9 @@
 - [中文架构方案](#中文架构方案)
   - [1. 背景痛点与核心原则](#1-背景痛点与核心原则)
   - [2. 总体架构与交互流程](#2-总体架构与交互流程)
+    - [2.1 宿主机编排器与临时非 Root 容器切分](#21-宿主机编排器与临时非-root-容器切分)
+    - [2.2 全自动执行生命周期与 PR 评论异步闭环](#22-全自动执行生命周期与-pr-评论异步闭环)
+    - [2.3 双轨生命周期对齐：交互式（非容器）与全自动（容器）模式的无缝互通](#23-双轨生命周期对齐交互式非容器与全自动容器模式的无缝互通)
   - [3. 全局配置控制面与双模式开关 (`asdlc config`)](#3-全局配置控制面与双模式开关-asdlc-config)
   - [4. 多源需求输入（Intake）与两层 Skill 取单架构](#4-多源需求输入intake与两层-skill-取单架构)
   - [5. 官方 `ubuntu:26.04` LTS 全栈镜像与非 Root 安全基线](#5-官方-ubuntu2604-lts-全栈镜像与非-root-安全基线)
@@ -141,6 +147,71 @@ sequenceDiagram
   Runner->>GitPR: Open Implementation PR (asdlc:impl-review)
   Runner-->>Host: Destroy container (--rm)
 ```
+
+### 2.3 Dual-Track Symmetry: Interactive (Non-Container) vs. Autonomous (Container) Modes
+
+A foundational architectural requirement of Agentic SDLC is **Zero Mutation of the Non-Container Workflow**.
+`asdlc run --container` does **not** replace or alter the existing interactive developer workflow in IDEs. Instead, Agentic SDLC operates as a **Dual-Track Symmetric System**:
+
+```mermaid
+flowchart LR
+  subgraph Track1["Track 1: Interactive IDE Mode (Non-Container)"]
+    direction TB
+    I_NEW["asdlc new (Interactive Grill)"] --> I_LINT["asdlc lint"]
+    I_LINT --> I_PR1["asdlc pr (Spec PR)"]
+    I_PR1 --> I_APP["asdlc apply (IDE TDD Loop)"]
+    I_APP --> I_VER["asdlc verify"]
+    I_VER --> I_PR2["asdlc pr (Impl PR)"]
+  end
+
+  subgraph Shared["Single Source of Truth (Git + OpenSpec)"]
+    direction TB
+    SPEC["proposal.md & specs/**"]
+    LOCK["main specSha Lock"]
+    CODE["Source Code & Tests"]
+  end
+
+  subgraph Track2["Track 2: Autonomous Headless Mode (Container)"]
+    direction TB
+    C_DRAFT["asdlc run (Draft & Explore)"] --> C_GRILL["Draft PR Async Comment Q&A"]
+    C_GRILL --> C_PR1["Ready Spec PR (spec-review)"]
+    C_PR1 --> C_TDD["Headless TDD (0444 Spec Lock)"]
+    C_TDD --> C_VER["Verify & Impl Review"]
+    C_VER --> C_PR2["Open Impl PR (impl-review)"]
+  end
+
+  I_NEW -.-> SPEC
+  C_DRAFT -.-> SPEC
+  I_PR1 -.-> LOCK
+  C_PR1 -.-> LOCK
+  I_APP -.-> CODE
+  C_TDD -.-> CODE
+
+  Track1 <==== "Bidirectional Zero-Friction Handoff" ====> Track2
+```
+
+#### 2.3.1 Symmetrical Comparison: Non-Container vs. Container Workflow
+
+| Operational Dimension | Track 1: Interactive IDE Mode (Non-Container) | Track 2: Autonomous Container Mode (`--container`) | Track 1.5: Host Local Orchestrator (`asdlc run` without `--container`) |
+| :--- | :--- | :--- | :--- |
+| **Target User / Context** | Human developer pair-programming in Cursor, VS Code, or terminal. | Unattended background job, CI runner, or cloud execution. | Developer on host machine who wants autonomous execution without Docker. |
+| **Prerequisites** | Node.js, Git. Zero Docker requirement. | Docker / Podman installed; `ghcr.io/akjamie/asdlc-runner` image. | Local AI CLI installed (`opencode` or `claude`). |
+| **Requirement Intake & Grilling** | `asdlc new "req"`: Interactive terminal interview (1 question at a time). | `asdlc run [req] --from-issue ...`: Non-TTY draft; questions posted to Draft PR. | Same as Container, but executed directly on host terminal. |
+| **Spec Authoring & Linting** | Developer edits files in IDE; runs `asdlc lint <id>`. | Headless Session 1 drafts spec; Session 2 reviews; `lint` gate. | Headless local session drafts spec; local `lint` gate. |
+| **Human PR Comments Handling** | Developer reads comments in browser/IDE; edits files; runs `git push`. (Optionally prompts IDE agent: *"Address review comments on PR #42"*). | Container automatically pulls PR comments via GitHub API, amends spec/code, re-verifies, and pushes fix commit. | Same as Container, but updates host working copy. |
+| **Implementation Loop (Apply)** | `asdlc apply <id>`: Developer drives TDD loop in IDE (Red $\to$ Green $\to$ Refactor). | Headless Session 1 executes TDD loop inside sandbox under `0444` kernel lock. | Local session executes TDD loop on host workspace. |
+| **Verification & Review** | Developer runs `asdlc test`, `/asdlc-impl-review`, and `asdlc verify <id>`. | Container runs `asdlc-impl-review` + `asdlc verify` (3-round self-healing loop). | Local session runs verify and review gates. |
+| **PR Lifecycle** | `asdlc pr <id> main`: Developer explicitly opens Spec or Impl PR. | Container programmatically opens/updates PR via injected token. | Host CLI opens/updates PR via host credentials. |
+
+#### 2.3.2 Zero-Breaking-Change Guarantee for Non-Container Workflows
+1. **Underlying Primitives Remain 100% Intact**:
+   All core CLI commands (`asdlc new`, `asdlc lint`, `asdlc apply`, `asdlc verify`, `asdlc pr`, `asdlc approve`, `asdlc archive`, `asdlc status`, `asdlc doctor`) retain their exact CLI arguments, behavior, and exit codes. Existing IDE extensions, bash scripts, and manual developer habits continue to work without modification.
+2. **Global Config Is Strictly Optional**:
+   `~/.asdlc/config.yaml` provides global defaults. If absent, non-container commands fall back seamlessly to `.sdlc/policy.yaml` or built-in defaults.
+3. **Bidirectional Zero-Friction Handoff**:
+   Because Git commits and `.openspec.yaml` are the *only* source of truth:
+   - **Hand off from IDE to Container**: A developer can interactively design a spec in their IDE (`asdlc new`), get the Spec PR merged on GitHub, and then delegate the tedious coding to the container: `asdlc run <changeId> --container`.
+   - **Take over from Container to IDE**: If an autonomous task in a container pauses on a Draft PR, a developer can simply check out the branch (`git checkout change/<slug>`), refine the code or spec in their IDE, run `asdlc lint`, and push—without any synchronization desync.
 
 ---
 
@@ -556,9 +627,48 @@ flowchart TD
 
 *(架构组件图与异步 PR Grill 时序图见上方英文部分第 2 节图表，中英文共享同一套拓扑与状态流转设计。)*
 
-核心职责切分：
+### 2.1 核心职责切分
 - **宿主机（`asdlc run`）**：负责读取 `~/.asdlc/config.yaml`、校验并 `docker cp` 宿主机 `--from-file` 文档、跨平台提取宿主机已有原生 AI 凭证与 `gh auth token`、注入企业自定义 `~/.asdlc/skills/`，并管理一次性非特权容器生命周期。
 - **隔离容器（`UID 10001:10001`）**：在容器原生 Linux `/workspace` 内独立克隆仓库，通过 Skill 拉取外部需求单落盘 `intake/`，以**两个完全独立的进程会话**分别执行「编写/实现」与「独立审查（`Player != Referee`）」，通过确定性门禁后推送分支并创建/更新 PR，退出即销毁（`--rm`）。
+
+### 2.3 双轨生命周期对齐：交互式（非容器）与全自动（容器）模式的无缝互通
+
+Agentic SDLC 的核心设计原则是**绝不破坏、绝不绑架现有的非容器交互式研发流程**。
+`asdlc run --container` 绝非替代现有的 IDE 开发者流程，而是与其构成高度对齐的**双轨对称体系**：
+
+#### 1. 轨道一：交互式 IDE 模式（Non-Container / 经典开发者结对流程）
+- **核心场景**：开发者在 Cursor、VS Code 或本地终端中，与 AI Agent（Claude Code / OpenCode / GitHub Copilot）实时结对编程。
+- **执行方式**：
+  - 单步显式推进：`asdlc new "req"`（终端交互式单步盘问） $\to$ IDE 协同编写 Spec $\to$ `asdlc lint` $\to$ `asdlc pr`（打开 Spec PR） $\to$ Tech Lead 审核合入 $\to$ `asdlc apply`（在 IDE 中由开发者主导任务级 TDD 红绿循环） $\to$ `asdlc verify` $\to$ `asdlc pr`（打开 Impl PR） $\to$ `asdlc archive`。
+- **环境要求**：纯本地 Node.js + Git，**完全不需要 Docker，零额外环境依赖**。
+- **如何处理 PR 评论修改**：
+  - 当 Tech Lead 在 GitHub PR 上提出评审批注（Comments）或打回（Changes Requested）时：
+    - 开发者在本地运行 `asdlc status`，清晰掌握当前处于 `[存在 2 条未解决的 PR 评审意见]`；
+    - 开发者在本地 IDE 中直接修改代码/测试，重新执行 `asdlc lint` 或 `asdlc verify` 并 `git push`；
+    - 开发者亦可在 IDE 聊天窗中唤起内置技能（如 `/asdlc-apply` 或 `/asdlc-spec-review`）：*“请帮我解决 PR #42 上的两条修改批注”*，由本地 Agent 辅助就地修改。
+
+#### 2. 轨道二：全自动无头模式（Autonomous Container Mode / 容器沙箱）
+- **核心场景**：开发者不想在本地占用前台终端、不想安装目标项目的语言编译环境，或者在 CI/CD 流水线中批量处理工单。
+- **执行方式**：
+  - 一键托管执行：`asdlc run --from-issue JIRA-123 --container`。
+  - 遇到业务歧义自动发 Draft PR 评论提问并退出；人在 GitHub 评论回复后，敲一行 `asdlc run #42 --container` 自动接关；
+  - 遇到 PR 评审批注（$H_{\text{feedback}} = 1$），容器沙箱自动拉取行内批注、修改源码或 Spec、跑通门禁、推新 Commit 并回复评论，全流程无人值守。
+
+#### 3. 轨道 1.5：宿主就地编排模式（Host Local Orchestrator，`asdlc run` 不带 `--container`）
+- 开发者希望享受全自动状态机的省心，但本机未装 Docker 或更偏好使用本地编译链时：直接运行 `asdlc run [changeId]`，编排器在本地直接驱动 `opencode run` 或 `claude -p` 就地执行状态流转。
+
+#### 4. 双轨无缝双向自由交接（Seamless Bidirectional Handoff）
+因为系统的唯一真相源（Single Source of Truth）是 **Git 提交拓扑、PR 远端状态与 `.openspec.yaml`**，两套轨道的数据结构完全同构：
+- **从 IDE 甩给容器（Delegate to Container）**：
+  开发者在 IDE 中使用 `asdlc new` 完成了复杂的方案设计，Spec PR 合入后，开发者不想自己手动写几十个单元测试的胶水代码，只需执行 `asdlc run <changeId> --container`，将枯燥的 TDD 编码实现全权托管给容器沙箱，自己在本地继续去喝咖啡或开发其他功能。
+- **从容器接管回 IDE（Takeover to IDE）**：
+  由工单自动触发容器拉起的变更，在遇到复杂业务分歧时挂起在 Draft PR 上。如果开发者认为在 GitHub 评论区回复太麻烦，可以直接在本地 `git checkout change/<slug>`，立刻无缝切入本地 IDE 模式，继续用熟悉的本地命令手工编辑和调试，**两轨之间零状态分歧、零交接损耗**。
+
+#### 5. 对非容器工作流的“零破坏承诺”（Zero Breaking Changes）
+1. **基础指令语义与接口 100% 保持不变**：
+   现有全部 7 阶段底层指令（`new`, `lint`, `apply`, `verify`, `pr`, `approve`, `archive`, `status`, `test`, `doctor`）的参数格式、退出码、门禁语义完全保持原有行为，已有任何自动化脚本与开发习惯无需改动一行代码。
+2. **全局配置向下完全兼容**：
+   `~/.asdlc/config.yaml` 仅作为缺省治理配置提供全局便利。若本地不存在该文件，所有交互式命令 100% 平滑回退至现有代码库的 `.sdlc/policy.yaml` 或默认兜底，绝不产生破坏性断裂。
 
 ---
 
