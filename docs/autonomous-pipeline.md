@@ -21,7 +21,7 @@
   - [6. State-Driven Orchestrator (`asdlc run`) & Async PR Grilling](#6-state-driven-orchestrator-asdlc-run--async-pr-grilling)
     - [6.1 Dual Execution Modes: Local Directory vs Zero-Checkout Remote (`--repo`)](#61-dual-execution-modes-local-directory-vs-zero-checkout-remote---repo)
     - [6.2 Human-Centric Change Identification & Zero-Friction Resume](#62-human-centric-change-identification--zero-friction-resume)
-    - [6.3 Declarative Finite State Machine: How the Container Deduces the Active Task](#63-declarative-finite-state-machine-how-the-container-deduces-the-active-task)
+    - [6.3 Deterministic Stage Resolution Engine (Spec Review vs. Apply vs. Impl Review)](#63-deterministic-stage-resolution-engine-spec-review-vs-apply-vs-impl-review)
     - [6.4 Governance Hardening](#64-governance-hardening)
   - [7. Phased Implementation Roadmap](#7-phased-implementation-roadmap)
 - [中文架构方案](#中文架构方案)
@@ -36,7 +36,7 @@
   - [6. 状态驱动编排器 (`asdlc run`) 与 Draft PR 异步 Grill 闭环](#6-状态驱动编排器-asdlc-run-与-draft-pr-异步-grill-闭环)
     - [6.1 双执行模式：本地就地执行与免 Clone 零检出执行 (`--repo`)](#61-双执行模式本地就地执行与免-clone-零检出执行---repo)
     - [6.2 人性化变更定位与零摩擦续跑机制（智能推导、交互选择器、PR # / URL / Issue 解析）](#62-人性化变更定位与零摩擦续跑机制智能推导交互选择器pr---url--issue-解析)
-    - [6.3 声明式有限状态机：无头容器如何确定当前该执行什么](#63-声明式有限状态机无头容器如何确定当前该执行什么)
+    - [6.3 确定性阶段推导引擎：精准仲裁 Spec Review、Apply 与 Impl Review](#63-确定性阶段推导引擎精准仲裁-spec-reviewapply-与-impl-review)
     - [6.4 治理合规门禁补强](#64-治理合规门禁补强)
   - [7. 分阶段落地路线图](#7-分阶段落地路线图)
 
@@ -403,10 +403,63 @@ Forcing users to memorize or copy-paste synthetic internal change slugs across r
         asdlc run #34 --container
    ```
 
-### 6.3 Declarative Finite State Machine: How the Container Deduces the Active Task
-The container is ephemeral (`--rm`). When a container is launched with `asdlc run [change-target]`, it has zero memory of previous container runs.
-Instead, the orchestrator evaluates a **100% Declarative, Self-Describing Finite State Machine (FSM)** derived purely from Git history, PR metadata, and disk artifacts:
+### 6.3 Deterministic Stage Resolution Engine (Spec Review vs. Apply vs. Impl Review)
+The container is completely ephemeral (`--rm`). When a container is launched with `asdlc run [change-target]`, it has zero memory of previous runs.
+A critical engineering challenge is: **How does the orchestrator deterministically and unambiguously know what stage the change is at, and specifically whether it must execute `spec-review`, `apply` (TDD implementation), or `impl-review`?**
 
+Instead of guessing or relying on fragile prompt heuristics, the engine evaluates a **4-Dimension Ground-Truth State Vector** derived purely from Git history, PR metadata, and disk artifacts.
+
+#### 6.3.1 Ground-Truth State Vector & Invariants
+At startup, `asdlc run` resolves the state vector $\mathbf{S} = \langle \text{Artifacts}, \text{GitLocks}, \text{TreeDiff}, \text{PRMetadata} \rangle$:
+
+1. **Artifact Invariants (`openspec/changes/<id>/`)**:
+   - $P_{\text{spec}} \in \{0, 1\}$: `proposal.md` and `specs/**/*.md` exist.
+   - $N_{\text{open}} \in \mathbb{N}$: Count of unresolved `[OPEN]` items in `clarifications.md`.
+   - $N_{\text{tasks}} \in \mathbb{N}$, $U_{\text{tasks}} \in \mathbb{N}$: Total tasks and unchecked tasks (`- [ ]`) in `tasks.md`.
+   - $R_{\text{stage}} \in \{\text{none}, \text{spec}, \text{impl}\}$, $R_{\text{verdict}} \in \{\text{none}, \text{APPROVE}, \text{CHANGES_REQUESTED}\}$: Latest review record in `review.md`.
+2. **Git Governance Invariant (`specSha`)**:
+   - $L_{\text{target}} \in \{0, 1\}$: Spec is locked on protected target branch (`main`).
+     Evaluated via: `approvedSha = lastCommitTouching(repoRoot, targetBranch, ['proposal.md', 'specs/'])`.
+     - In `workflow_mode: spec-first`: $L_{\text{target}} = 1$ **if and only if** the Spec PR has been merged into `main`.
+     - In `workflow_mode: auto` (L0/L1 single-PR): $L_{\text{target}} \equiv 1$ (single-PR co-location privilege).
+3. **Working Tree & Source Diff**:
+   - $S_{\text{code}} \in \mathbb{N}$: Count of non-spec source code files modified in `git diff targetBranch...HEAD`.
+4. **Remote PR Status (via GitHub/GitLab API)**:
+   - $\text{PR}_{\text{label}} \in \{\text{needs-clarification}, \text{spec-review}, \text{impl-review}, \text{none}\}$.
+   - $\text{PR}_{\text{state}} \in \{\text{DRAFT}, \text{OPEN}, \text{MERGED}, \text{CLOSED}, \text{none}\}$.
+   - $C_{\text{replied}} \in \{0, 1\}$: Human comments exist on Draft PR answering question threads.
+
+#### 6.3.2 Strict Disambiguation: Spec Review vs. Apply vs. Impl Review
+The three critical stages are **strictly mutually exclusive** and partition the execution space:
+
+| Evaluation Dimension | Stage A: Spec Review (`spec-review`) | Stage B: Apply (TDD Implementation) | Stage C: Impl Review (`impl-review`) |
+| :--- | :--- | :--- | :--- |
+| **Spec Locked on Main? ($L_{\text{target}}$)** | **$L_{\text{target}} = 0$** (Spec PR is still on branch, NOT yet merged to main) | **$L_{\text{target}} = 1$** (Spec PR is merged on main; `specSha` cryptographically locked) | **$L_{\text{target}} = 1$** (Spec is locked and immutable) |
+| **Tasks Status ($U_{\text{tasks}}$)** | `tasks.md` does not exist or has not started | **$U_{\text{tasks}} > 0$** (Unchecked tasks remain: `- [ ] Task K`) | **$U_{\text{tasks}} = 0$** (All tasks 100% checked: `- [x]`) |
+| **Source Code Diff ($S_{\text{code}}$)** | $S_{\text{code}} = 0$ (Zero business code changes allowed; spec-only) | $S_{\text{code}} \ge 0$ (Code changes actively being implemented) | **$S_{\text{code}} > 0$** (Source code and test files present in diff) |
+| **Target Under Review** | `proposal.md`, `specs/**`, BDD acceptance criteria | N/A (Coding & Test Execution) | Implementation diff against locked `specSha` & test fidelity |
+| **Kernel Lock Status** | Specs are writable by author | **`proposal.md` & `specs/**` locked as `0:0 0444` read-only** | Specs locked `0444`; implementation code under review |
+| **Next Transition Gate** | `asdlc lint` PASS $\to$ Mark Spec PR Ready $\to$ Human Merge | All tasks checked $\to$ Transition immediately to Impl Review | `asdlc verify` PASS $\to$ Open Implementation PR |
+
+#### 6.3.3 PR-Driven Resolution Pipeline (`asdlc run #N` or URL)
+When a developer or automation invokes `asdlc run #N` or passes a PR URL, the orchestrator queries the PR metadata and dispatches deterministically:
+
+1. **If PR has label `asdlc:needs-clarification` (Draft Spec PR)**:
+   - Checks PR comment thread.
+   - If $C_{\text{replied}} = 0$ (humans have not yet replied): Logs *"Draft Spec PR #N is awaiting human answers to questions Q1..Qn"*, exits cleanly 0.
+   - If $C_{\text{replied}} = 1$ (human replied): Ingests replies, clears `[OPEN]` items, updates `clarifications.md`, transitions to **Spec Review**.
+2. **If PR has label `asdlc:spec-review` (Spec PR)**:
+   - If $\text{PR}_{\text{state}} = \text{MERGED}$: The Spec PR was merged! $L_{\text{target}}$ becomes 1. Automatically checks out `impl/<slug>`, applies `0444` kernel lock on specs, and transitions to **Apply**.
+   - If $\text{PR}_{\text{state}} = \text{OPEN}$:
+     - If `asdlc-spec-review` has not run on current HEAD: Runs fresh **Spec Review**.
+     - If AI review passed: Logs *"Spec PR #N is ready and approved by AI. Waiting for Tech Lead merge approval on GitHub"*, exits cleanly 0.
+3. **If PR has label `asdlc:impl-review` (Implementation PR)**:
+   - If $\text{PR}_{\text{state}} = \text{MERGED}$: Change lifecycle complete! Prompts to run `asdlc archive <slug>`.
+   - If $\text{PR}_{\text{state}} = \text{OPEN}$:
+     - If `asdlc-impl-review` or `asdlc verify` has not run on current HEAD: Runs fresh **Impl Review & Verification**.
+     - If verified: Logs *"Implementation PR #N verified and ready for final Human merge"*, exits cleanly 0.
+
+#### 6.3.4 Comprehensive 8-Phase State Matrix
 ```mermaid
 flowchart TD
   START(["Container Boots: asdlc run {target}"]) --> EVAL["State Evaluator: Inspect Git Branch, PR API, and openspec/"]
@@ -430,16 +483,16 @@ flowchart TD
   S6 -- "Yes" --> A7["Action: Open Implementation PR -> Mission Complete"]
 ```
 
-| Evaluated Invariants (Disk & Git State) | Inferred State Machine Phase | Autonomous Container Action |
-| :--- | :--- | :--- |
-| `openspec/changes/<id>/proposal.md` is absent | **PHASE_DRAFT_SPEC** | Runs `asdlc new --no-grill`; grounds in Tree-sitter AST; writes initial proposal and specifications. |
-| `clarifications.md` has `[OPEN]` AND no PR exists | **PHASE_GRILL_PAUSE** | Pushes branch, opens Draft PR (`asdlc:needs-clarification`), posts structured questions in comments, exits cleanly. |
-| `clarifications.md` has `[OPEN]` AND Draft PR has human comments | **PHASE_GRILL_RESUME** | Pulls PR comments via GitHub API, resolves `[OPEN]` items with human answers, updates `clarifications.md`, finalizes specs. |
-| `specs/**` exists, 0 `[OPEN]`, but `review.md` is absent | **PHASE_SPEC_REVIEW** | Spawns fresh Session 2 for independent AI review (`asdlc-spec-review`), executes `asdlc lint` gate, marks PR Ready. |
-| Spec PR is open, not merged on target branch | **PHASE_AWAITING_SPEC_MERGE** | Logs waiting prompt for Human Tech Lead merge approval, exits cleanly (zero idle container compute). |
-| Target branch contains locked `specSha` AND tasks incomplete | **PHASE_TDD_IMPLEMENTATION** | Locks specs as `0:0` mode `0444` (OS kernel lock); authors `tasks.md`; executes task-level TDD Red-Green-Refactor loop. |
-| All tasks checked AND `verify.json` absent or failing | **PHASE_VERIFY_AND_IMPL_REVIEW** | Spawns fresh Session 2 for independent AI review (`asdlc-impl-review`); runs `asdlc verify` (deterministic security & test gates). |
-| All verification gates pass AND Impl PR absent | **PHASE_OPEN_IMPL_PR** | Opens Implementation PR (`asdlc:impl-review`), attaches verification report and test summary, mission complete. |
+| Phase Index & Name | Active Pre-conditions | Autonomous Engine Action | Exit / Transition Boundary |
+| :--- | :--- | :--- | :--- |
+| **Phase 1: SPEC_DRAFT** | $P_{\text{spec}} = 0$ | Runs `asdlc new --no-grill`; grounds in Tree-sitter AST; writes initial proposal and specifications. | Moves to Phase 2 (if `[OPEN]` exists) or Phase 4. |
+| **Phase 2: SPEC_GRILL_PAUSE** | $N_{\text{open}} > 0 \land \text{PR}_{\text{state}} = \text{none}$ | Pushes branch, opens Draft PR (`asdlc:needs-clarification`), posts structured questions in comments. | Exits cleanly 0 with pause instructions. |
+| **Phase 3: SPEC_GRILL_RESUME** | $N_{\text{open}} > 0 \land C_{\text{replied}} = 1$ | Pulls PR comments via GitHub API, resolves `[OPEN]` items with human answers, updates `clarifications.md`. | Moves to Phase 4. |
+| **Phase 4: SPEC_REVIEW** | $P_{\text{spec}} = 1 \land N_{\text{open}} = 0 \land L_{\text{target}} = 0 \land R_{\text{stage}} \ne \text{spec}$ | Spawns fresh Session 2 (`asdlc-spec-review`), runs `asdlc lint` gate, marks PR Ready with label `asdlc:spec-review`. | Moves to Phase 5. |
+| **Phase 5: AWAITING_SPEC_MERGE** | $\text{PR}_{\text{label}} = \text{spec-review} \land L_{\text{target}} = 0$ | Logs waiting prompt for Human Tech Lead merge approval. | Exits cleanly 0 (zero idle container compute). |
+| **Phase 6: APPLY_TDD** | $L_{\text{target}} = 1 \land U_{\text{tasks}} > 0$ | Locks specs as `0:0 0444`; authors `tasks.md` if missing; executes task-level TDD loop on unchecked tasks. | Moves to Phase 7 when $U_{\text{tasks}} = 0$. |
+| **Phase 7: IMPL_REVIEW_AND_VERIFY** | $L_{\text{target}} = 1 \land U_{\text{tasks}} = 0 \land (\text{verify} \ne \text{PASS} \lor R_{\text{stage}} \ne \text{impl})$ | Spawns fresh Session 2 (`asdlc-impl-review`); runs `asdlc verify` (deterministic security & test gates); up to 3 fix rounds. | Moves to Phase 8 when verify & review pass. |
+| **Phase 8: OPEN_IMPL_PR** | All verification gates pass $\land\ \text{PR}_{\text{label}} \ne \text{impl-review}$ | Opens Implementation PR (`asdlc:impl-review`), attaches verification report and test summary. | Mission Complete. |
 
 ### 6.4 Governance Hardening
 1. **`Player != Referee` Process Isolation**: Author/Implementer and Reviewer always execute as separate fresh processes with zero shared transcript, bounded by a **3-round** convergence cap.
@@ -683,21 +736,72 @@ Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
         asdlc run #34 --container
    ```
 
-### 6.3 声明式有限状态机：无头容器如何确定当前该执行什么
-容器执行完全是无状态且临时销毁（`--rm`）的。当宿主机执行 `asdlc run [target] --container` 启动一个全新的容器沙箱时，**容器内部不依赖任何外部后台常驻守护进程或瞬态内存**。
+### 6.3 确定性阶段推导引擎：精准仲裁 Spec Review、Apply 与 Impl Review
+容器执行完全是无状态且临时销毁（`--rm`）的。当宿主机执行 `asdlc run [target] --container` 启动全新的容器沙箱时，**容器内部不依赖任何外部后台常驻守护进程或瞬态内存**。
 
-编排器内置了一套 **100% 声明式、自描述的有限状态机（Durable Finite State Machine）**，仅通过检视 Git 历史、PR API 状态与工作区规范制品，在毫秒级内准确推导当前所处的唯一合法阶段：
+在自动化流水线中，核心工程难点在于：**编排器如何以数学般的确定性，毫无歧义地区分当前变更到底是处于 Spec Review、Apply（TDD 实现）还是 Impl Review？**
 
-| 磁盘与 Git 关键客观不变量（Evaluated Invariants） | 推导出的状态机阶段 | 容器本次执行的精准动作（Action） |
-| :--- | :--- | :--- |
-| `openspec/changes/<id>/proposal.md` 尚不存在 | **阶段 1: 草拟 Spec** | 运行 `asdlc new --no-grill`，基于 AST 图谱探索代码上下文，撰写提案与初始 Spec |
-| `clarifications.md` 存在 `[OPEN]` 且**尚未建 PR** | **阶段 2: 挂起发问** | 推送分支，打开带 `asdlc:needs-clarification` 的 Draft PR，在评论区发布结构化问题，干净退出 0 |
-| `clarifications.md` 存在 `[OPEN]` 且**PR 评论区有人工回复** | **阶段 3: 消化问答** | 通过 API 抓取评论回复，自动清空 `[OPEN]` 问题并更新决议，定稿 Spec |
-| `specs/**` 完整、0 个 `[OPEN]`，但**尚无 `review.md`** | **阶段 4: 独立评审** | 派生全新无历史的独立审查进程（`asdlc-spec-review`），执行 `asdlc lint` 门禁，将 PR 转为 Ready for Review |
-| Spec PR 处于开启状态，尚未在 Target 分支合入 | **阶段 5: 等待合入** | 输出等待人类 Tech Lead 评审合入的指引，干净退出 0（杜绝容器常驻空转产生费用） |
-| 目标主干已包含锁定的 `specSha`，且 `tasks.md` 存在未勾选项 | **阶段 6: TDD 实现** | 将规范置为 `0:0 0444` 内核级只读锁定；author `tasks.md`；进入严格 TDD 红绿重构循环 |
-| `tasks.md` 任务全部勾选，`verify.json` 不存在或未通过 | **阶段 7: 验收门禁** | 派生独立审查进程执行 `asdlc-impl-review` 与全套 `asdlc verify` 门禁（最多自愈循环 3 轮） |
-| 所有自动化验收门禁全部 PASS，且 Impl PR 尚未打开 | **阶段 8: 交付提单** | 开启 Implementation PR（带 `asdlc:impl-review` 标签），附带完整自动化验证报告与测试用例凭据，流程达成 |
+编排器内置了一套 **4 维客观不变量推导引擎（Ground-Truth State Vector）**，毫秒级推导当前所处的唯一合法阶段：
+
+#### 6.3.1 四维客观不变量状态向量
+编排器在启动时计算状态向量 $\mathbf{S} = \langle \text{Artifacts}, \text{GitLocks}, \text{TreeDiff}, \text{PRMetadata} \rangle$：
+1. **规范制品不变量（Artifact Invariants，取自 `openspec/changes/<id>/`）**：
+   - $P_{\text{spec}} \in \{0, 1\}$：`proposal.md` 与 `specs/**/*.md` 是否已落盘；
+   - $N_{\text{open}} \in \mathbb{N}$：`clarifications.md` 中尚未解决的 `[OPEN]` 问题数量；
+   - $N_{\text{tasks}} \in \mathbb{N}, U_{\text{tasks}} \in \mathbb{N}$：`tasks.md` 中任务总数与**未勾选任务数（`- [ ]`）**；
+   - $R_{\text{stage}}, R_{\text{verdict}}$：`review.md` 中记录的最新审查阶段（`spec` 还是 `impl`）与审查结论。
+2. **Git 主干治理锁（Git Locks & `specSha`）**：
+   - $L_{\text{target}} \in \{0, 1\}$：规范是否已在目标受保护主干（`main`）合入锁定。
+     推导函数：`approvedSha = lastCommitTouching(repoRoot, targetBranch, ['proposal.md', 'specs/'])`。
+     - 在 `spec-first` 模式下：**当且仅当 Spec PR 已合入 `main` 时**，$L_{\text{target}} = 1$；
+     - 在 `auto` 模式（L0/L1 Single-PR 特权）：$L_{\text{target}} \equiv 1$。
+3. **工作区与代码改动树（Tree Diff）**：
+   - $S_{\text{code}} \in \mathbb{N}$：当前变更相对于目标分支的非规范源码改动文件数（`git diff targetBranch...HEAD` 中排除 `openspec/changes/<id>/` 后的文件数）。
+4. **远端 PR 元数据（PR Status via API）**：
+   - $\text{PR}_{\text{label}} \in \{\text{needs-clarification}, \text{spec-review}, \text{impl-review}, \text{none}\}$；
+   - $\text{PR}_{\text{state}} \in \{\text{DRAFT}, \text{OPEN}, \text{MERGED}, \text{CLOSED}, \text{none}\}$；
+   - $C_{\text{replied}} \in \{0, 1\}$：Draft PR 评论区中是否有人类工程师的答复。
+
+#### 6.3.2 核心阶段精准仲裁矩阵：互斥不变量对比
+Spec Review、Apply 与 Impl Review 处于严格的物理互斥区间，不存在任何模棱两可的灰色地带：
+
+| 评估维度 | 阶段 A: Spec Review (`spec-review`) | 阶段 B: Apply (TDD 代码实现) | 阶段 C: Impl Review (`impl-review`) |
+| :--- | :--- | :--- | :--- |
+| **主干规范锁定 ($L_{\text{target}}$)** | **$L_{\text{target}} = 0$**（Spec PR 尚未在目标主干合入，不可执行代码编写） | **$L_{\text{target}} = 1$**（Spec PR 已合入目标主干，生成只读 `specSha` 快照） | **$L_{\text{target}} = 1$**（规范已处于锁定状态） |
+| **未完成任务数 ($U_{\text{tasks}}$)** | `tasks.md` 尚未生成或尚未进入实现 | **$U_{\text{tasks}} > 0$**（存在未完成任务项：`- [ ] Task K`） | **$U_{\text{tasks}} = 0$**（任务全部 100% 勾选完成：`- [x]`） |
+| **源码改动数 ($S_{\text{code}}$)** | $S_{\text{code}} = 0$（严禁包含业务源码改动，纯文档规范） | $S_{\text{code}} \ge 0$（正在编写业务实现代码与单元测试） | **$S_{\text{code}} > 0$**（业务代码与测试文件均已实现完毕） |
+| **审查标的物** | `proposal.md`、`specs/**`、BDD 场景与可测试验收准则 | 无（当前处于编码与测试执行态） | 源码 Diff 对比锁定的 `specSha`、测试保真度与代码质量 |
+| **内核只读锁状态** | 规范处于作者编辑态（可写） | **`proposal.md` 与 `specs/**` 被系统置为 `0:0 0444` 只读** | 规范只读锁定；源码处于交付待审态 |
+| **跃迁出口门禁** | `asdlc lint` PASS $\to$ 转 Ready PR $\to$ 人工合入 | 任务全部勾选清零 $\to$ 立即自动跃迁至 Impl Review | `asdlc verify` PASS $\to$ 打开 Implementation PR |
+
+- **为什么不会把 Spec Review 误判为 Impl Review？**
+  因为 Spec Review 发生时，$L_{\text{target}} = 0$（主干尚未锁定该规范），且 $S_{\text{code}} = 0$（无任何业务代码）。Impl Review 发生的前提必须是主干已锁定规范（$L_{\text{target}} = 1$）且业务代码已实现（$S_{\text{code}} > 0$ 且 $U_{\text{tasks}} = 0$）。
+- **为什么在 Spec PR 合入前绝不会偷跑 Apply？**
+  `spec-first` 模式强制依赖 $L_{\text{target}} = 1$ 作为执行防火墙。在主干未探测到 `approvedSha` 之前，任何试图生成代码的请求都会被物理阻断，并提示进入 `AWAITING_SPEC_MERGE` 状态等待 Tech Lead 合入。
+- **为什么 Apply 编码完成会自动切入 Impl Review？**
+  任务未勾选数 $U_{\text{tasks}}$ 构成精准计数器。只要 $U_{\text{tasks}} > 0$，流水线就保持在 Apply 的 TDD 红绿循环中；一旦 $U_{\text{tasks}} = 0$，编排器立刻判定实现结束，物理封板并派生全新审查进程启动 Impl Review。
+
+#### 6.3.3 PR 驱动的分发链路（当传入 `asdlc run #N` 或 PR URL 时）
+1. **若 PR 带有标签 `asdlc:needs-clarification`（Draft Spec PR）**：
+   - 抓取评论线程。若无人类新评论，退出 0 并提示等待；若有人类回复，消化问答清空 `[OPEN]` 并推进至 **Spec Review**。
+2. **若 PR 带有标签 `asdlc:spec-review`（Spec PR）**：
+   - 若 PR 已合入（`MERGED`）：主干已就绪（$L_{\text{target}} = 1$），自动切出 `impl/<slug>` 分支并开启 `0444` 内核只读锁，推进至 **Apply**。
+   - 若 PR 仍开启（`OPEN`）：若尚未跑过审查则派生独立进程跑 **Spec Review**；若已跑过且 PASS 则打印等待人工合入并退出 0。
+3. **若 PR 带有标签 `asdlc:impl-review`（Implementation PR）**：
+   - 若 PR 已合入（`MERGED`）：流程达成，提示运行 `asdlc archive <slug>` 归档；
+   - 若 PR 仍开启（`OPEN`）：若尚未跑过验收则派生独立进程跑 **Impl Review 与 asdlc verify**；全部通过后打印等待人工最终合入并退出 0。
+
+#### 6.3.4 全生命周期 8 阶段流转矩阵
+| 阶段序号与标识 | 激活前提条件（Pre-conditions） | 容器本次执行的精准动作（Action） | 跃迁与退出出口（Transition Boundary） |
+| :--- | :--- | :--- | :--- |
+| **阶段 1: SPEC_DRAFT** | $P_{\text{spec}} = 0$ | 运行 `asdlc new --no-grill`，基于 AST 图谱草拟提案与 Spec | 若存在 `[OPEN]` 转阶段 2；否则转阶段 4 |
+| **阶段 2: SPEC_GRILL_PAUSE** | $N_{\text{open}} > 0 \land \text{PR}_{\text{state}} = \text{none}$ | 推送分支，创建 Draft PR 并发评论提问 | 打印回复指引，干净退出 0 |
+| **阶段 3: SPEC_GRILL_RESUME** | $N_{\text{open}} > 0 \land C_{\text{replied}} = 1$ | 抓取评论回复，清空 `[OPEN]`，定稿 Spec | 推进至阶段 4 |
+| **阶段 4: SPEC_REVIEW** | $P_{\text{spec}} = 1 \land N_{\text{open}} = 0 \land L_{\text{target}} = 0 \land R_{\text{stage}} \ne \text{spec}$ | 派生独立进程执行 `asdlc-spec-review` 与 `asdlc lint`，标记 PR Ready | 推进至阶段 5 |
+| **阶段 5: AWAITING_SPEC_MERGE** | $\text{PR}_{\text{label}} = \text{spec-review} \land L_{\text{target}} = 0$ | 打印等待人类 Tech Lead 审核合入指引 | 干净退出 0（容器即刻销毁零空转） |
+| **阶段 6: APPLY_TDD** | $L_{\text{target}} = 1 \land U_{\text{tasks}} > 0$ | 内核锁死规范为 `0:0 0444`；生成 `tasks.md`；执行任务级 TDD 红绿重构循环 | 当 $U_{\text{tasks}} = 0$ 时自动跃迁至阶段 7 |
+| **阶段 7: IMPL_REVIEW_AND_VERIFY** | $L_{\text{target}} = 1 \land U_{\text{tasks}} = 0 \land (\text{verify} \ne \text{PASS} \lor R_{\text{stage}} \ne \text{impl})$ | 派生独立进程执行 `asdlc-impl-review` 与 `asdlc verify` 门禁（最多 3 轮修复） | 验证全 PASS 后推进至阶段 8 |
+| **阶段 8: OPEN_IMPL_PR** | 所有验证门禁 PASS $\land\ \text{PR}_{\text{label}} \ne \text{impl-review}$ | 开启正式 Implementation PR，附带全套测试与门禁凭据报告 | 流水线大功告成 |
 
 ### 6.4 治理合规门禁补强
 1. **`Player != Referee` 裁判会话完全物理隔离**：编写/实现与审查强制拆分为独立进程执行，支持配置 `agent.review_model` 异构审查模型，修复循环上限 3 轮。
