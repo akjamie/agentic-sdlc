@@ -428,6 +428,9 @@ At startup, `asdlc run` resolves the state vector $\mathbf{S} = \langle \text{Ar
    - $\text{PR}_{\text{label}} \in \{\text{needs-clarification}, \text{spec-review}, \text{impl-review}, \text{none}\}$.
    - $\text{PR}_{\text{state}} \in \{\text{DRAFT}, \text{OPEN}, \text{MERGED}, \text{CLOSED}, \text{none}\}$.
    - $C_{\text{replied}} \in \{0, 1\}$: Human comments exist on Draft PR answering question threads.
+   - $H_{\text{feedback}} \in \{0, 1\}$: Unaddressed human review comments or `CHANGES_REQUESTED` present on an open Spec/Impl PR.
+     Formally evaluated as:
+     $$H_{\text{feedback}} = 1 \iff \left(\text{reviewDecision} == \text{'CHANGES_REQUESTED'} \lor N_{\text{unresolvedThreads}} > 0 \lor T_{\text{lastHumanComment}} > T_{\text{lastCommit}}\right)$$
 
 #### 6.3.2 Strict Disambiguation: Spec Review vs. Apply vs. Impl Review
 The three critical stages are **strictly mutually exclusive** and partition the execution space:
@@ -439,7 +442,8 @@ The three critical stages are **strictly mutually exclusive** and partition the 
 | **Source Code Diff ($S_{\text{code}}$)** | $S_{\text{code}} = 0$ (Zero business code changes allowed; spec-only) | $S_{\text{code}} \ge 0$ (Code changes actively being implemented) | **$S_{\text{code}} > 0$** (Source code and test files present in diff) |
 | **Target Under Review** | `proposal.md`, `specs/**`, BDD acceptance criteria | N/A (Coding & Test Execution) | Implementation diff against locked `specSha` & test fidelity |
 | **Kernel Lock Status** | Specs are writable by author | **`proposal.md` & `specs/**` locked as `0:0 0444` read-only** | Specs locked `0444`; implementation code under review |
-| **Next Transition Gate** | `asdlc lint` PASS $\to$ Mark Spec PR Ready $\to$ Human Merge | All tasks checked $\to$ Transition immediately to Impl Review | `asdlc verify` PASS $\to$ Open Implementation PR |
+| **Human PR Feedback Loop** | If $H_{\text{feedback}} = 1$: Fix specs $\to$ re-lint $\to$ push fix commit | N/A (Internal TDD execution) | If $H_{\text{feedback}} = 1$: Fix code & tests $\to$ re-verify $\to$ push fix commit |
+| **Next Transition Gate** | `asdlc lint` PASS $\land\ H_{\text{feedback}} = 0 \to$ Ready PR $\to$ Human Merge | All tasks checked $\to$ Transition immediately to Impl Review | `asdlc verify` PASS $\land\ H_{\text{feedback}} = 0 \to$ Ready for Merge |
 
 #### 6.3.3 PR-Driven Resolution Pipeline (`asdlc run #N` or URL)
 When a developer or automation invokes `asdlc run #N` or passes a PR URL, the orchestrator queries the PR metadata and dispatches deterministically:
@@ -451,15 +455,27 @@ When a developer or automation invokes `asdlc run #N` or passes a PR URL, the or
 2. **If PR has label `asdlc:spec-review` (Spec PR)**:
    - If $\text{PR}_{\text{state}} = \text{MERGED}$: The Spec PR was merged! $L_{\text{target}}$ becomes 1. Automatically checks out `impl/<slug>`, applies `0444` kernel lock on specs, and transitions to **Apply**.
    - If $\text{PR}_{\text{state}} = \text{OPEN}$:
-     - If `asdlc-spec-review` has not run on current HEAD: Runs fresh **Spec Review**.
-     - If AI review passed: Logs *"Spec PR #N is ready and approved by AI. Waiting for Tech Lead merge approval on GitHub"*, exits cleanly 0.
+     - **If $H_{\text{feedback}} = 1$ (Human Reviewer requested changes or left inline comments)**:
+       - Enters **PHASE_SPEC_HUMAN_REVIEW_FIX**: Pulls inline review comments via `gh api repos/:owner/:repo/pulls/:id/comments`.
+       - Session A amends `proposal.md` and `specs/**` to satisfy reviewer demands, records settlements in `clarifications.md`.
+       - Runs `asdlc lint`, spawns fresh Session B (`asdlc-spec-review`) for delta validation.
+       - Pushes commit `spec(<slug>): address PR review comments from @reviewer`, replies to review comment threads, and requests re-review.
+     - **If $H_{\text{feedback}} = 0$ (No unaddressed human feedback)**:
+       - If `asdlc-spec-review` has not run on current HEAD: Runs fresh **Spec Review**.
+       - If AI review passed: Logs *"Spec PR #N is ready and approved by AI. Waiting for Tech Lead merge approval on GitHub"*, exits cleanly 0.
 3. **If PR has label `asdlc:impl-review` (Implementation PR)**:
    - If $\text{PR}_{\text{state}} = \text{MERGED}$: Change lifecycle complete! Prompts to run `asdlc archive <slug>`.
    - If $\text{PR}_{\text{state}} = \text{OPEN}$:
-     - If `asdlc-impl-review` or `asdlc verify` has not run on current HEAD: Runs fresh **Impl Review & Verification**.
-     - If verified: Logs *"Implementation PR #N verified and ready for final Human merge"*, exits cleanly 0.
+     - **If $H_{\text{feedback}} = 1$ (Human Reviewer requested code changes or test additions)**:
+       - Enters **PHASE_IMPL_HUMAN_REVIEW_FIX**: Pulls line-by-line review comments via GitHub REST API.
+       - Session A modifies source code and unit tests to satisfy feedback.
+       - Runs local test suite to ensure green, executes `asdlc verify` and spawns fresh Session B (`asdlc-impl-review`).
+       - Pushes commit `impl(<slug>): address PR review comments from @reviewer`, replies to threads, and requests re-review.
+     - **If $H_{\text{feedback}} = 0$ (No unaddressed human feedback)**:
+       - If `asdlc-impl-review` or `asdlc verify` has not run on current HEAD: Runs fresh **Impl Review & Verification**.
+       - If verified: Logs *"Implementation PR #N verified and ready for final Human merge"*, exits cleanly 0.
 
-#### 6.3.4 Comprehensive 8-Phase State Matrix
+#### 6.3.4 Comprehensive 10-Phase State Matrix
 ```mermaid
 flowchart TD
   START(["Container Boots: asdlc run {target}"]) --> EVAL["State Evaluator: Inspect Git Branch, PR API, and openspec/"]
@@ -472,15 +488,20 @@ flowchart TD
   S2_REP -- "No" --> A2_2["Action: Log 'Waiting for human replies' & Exit 0"]
   S2_REP -- "Yes" --> A2_3["Action: Ingest replies -> Clear OPEN -> Finalize Specs"]
   A2_3 --> S3
-  S2 -- "No" --> S3{"3. Spec reviewed & Spec PR ready?"}
-  S3 -- "No" --> A3["Action: Spawn Session 2 (spec-review) -> asdlc lint -> Open/Mark Ready Spec PR"]
-  S3 -- "Yes" --> S4{"4. Spec PR merged to main (specSha locked)?"}
+  S2 -- "No" --> S3{"3. Spec reviewed & Spec PR open?"}
+  S3 -- "Yes" --> S3_REV{"Human requested changes on Spec PR? (H_feedback == 1)"}
+  S3_REV -- "Yes" --> A3_FIX["Action: Ingest human comments -> Session A fixes specs -> Session B re-lints -> Push fix commit"]
+  S3_REV -- "No" --> S4{"4. Spec PR merged to main (specSha locked)?"}
+  S3 -- "No" --> A3_RUN["Action: Spawn Session 2 (spec-review) -> asdlc lint -> Open Ready Spec PR"]
+  A3_RUN --> S4
   S4 -- "No" --> A4["Action: Log 'Waiting for human TL to review & merge Spec PR' & Exit 0"]
   S4 -- "Yes" --> S5{"5. tasks.md 100% completed?"}
   S5 -- "No" --> A5["Action: Lock Specs 0444 -> Run task-level TDD loop (Red -> Green -> Refactor)"]
-  S5 -- "Yes" --> S6{"6. asdlc verify & impl-review pass?"}
-  S6 -- "No" --> A6["Action: Spawn Session 2 (impl-review) -> Fix regressions (max 3 rounds)"]
-  S6 -- "Yes" --> A7["Action: Open Implementation PR -> Mission Complete"]
+  S5 -- "Yes" --> S6{"6. Impl PR open & has human comments? (H_feedback == 1)"}
+  S6 -- "Yes" --> A6_FIX["Action: Ingest human review comments -> Session A fixes code/tests -> asdlc verify -> Push fix commit"]
+  S6 -- "No" --> S7{"7. asdlc verify & impl-review pass?"}
+  S7 -- "No" --> A7_FIX["Action: Spawn Session 2 (impl-review) -> Fix regressions (max 3 rounds)"]
+  S7 -- "Yes" --> A8["Action: Open/Update Implementation PR -> Ready for Final Merge"]
 ```
 
 | Phase Index & Name | Active Pre-conditions | Autonomous Engine Action | Exit / Transition Boundary |
@@ -489,10 +510,12 @@ flowchart TD
 | **Phase 2: SPEC_GRILL_PAUSE** | $N_{\text{open}} > 0 \land \text{PR}_{\text{state}} = \text{none}$ | Pushes branch, opens Draft PR (`asdlc:needs-clarification`), posts structured questions in comments. | Exits cleanly 0 with pause instructions. |
 | **Phase 3: SPEC_GRILL_RESUME** | $N_{\text{open}} > 0 \land C_{\text{replied}} = 1$ | Pulls PR comments via GitHub API, resolves `[OPEN]` items with human answers, updates `clarifications.md`. | Moves to Phase 4. |
 | **Phase 4: SPEC_REVIEW** | $P_{\text{spec}} = 1 \land N_{\text{open}} = 0 \land L_{\text{target}} = 0 \land R_{\text{stage}} \ne \text{spec}$ | Spawns fresh Session 2 (`asdlc-spec-review`), runs `asdlc lint` gate, marks PR Ready with label `asdlc:spec-review`. | Moves to Phase 5. |
-| **Phase 5: AWAITING_SPEC_MERGE** | $\text{PR}_{\text{label}} = \text{spec-review} \land L_{\text{target}} = 0$ | Logs waiting prompt for Human Tech Lead merge approval. | Exits cleanly 0 (zero idle container compute). |
+| **Phase 4b: SPEC_HUMAN_REVIEW_FIX** | $\text{PR}_{\text{label}} = \text{spec-review} \land \text{PR}_{\text{state}} = \text{OPEN} \land H_{\text{feedback}} = 1$ | Pulls human review comments; Session A amends specs; runs `lint`; Session B re-evaluates; pushes fix commit and replies to threads. | Moves back to Phase 5 for human re-review. |
+| **Phase 5: AWAITING_SPEC_MERGE** | $\text{PR}_{\text{label}} = \text{spec-review} \land L_{\text{target}} = 0 \land H_{\text{feedback}} = 0$ | Logs waiting prompt for Human Tech Lead merge approval. | Exits cleanly 0 (zero idle container compute). |
 | **Phase 6: APPLY_TDD** | $L_{\text{target}} = 1 \land U_{\text{tasks}} > 0$ | Locks specs as `0:0 0444`; authors `tasks.md` if missing; executes task-level TDD loop on unchecked tasks. | Moves to Phase 7 when $U_{\text{tasks}} = 0$. |
 | **Phase 7: IMPL_REVIEW_AND_VERIFY** | $L_{\text{target}} = 1 \land U_{\text{tasks}} = 0 \land (\text{verify} \ne \text{PASS} \lor R_{\text{stage}} \ne \text{impl})$ | Spawns fresh Session 2 (`asdlc-impl-review`); runs `asdlc verify` (deterministic security & test gates); up to 3 fix rounds. | Moves to Phase 8 when verify & review pass. |
-| **Phase 8: OPEN_IMPL_PR** | All verification gates pass $\land\ \text{PR}_{\text{label}} \ne \text{impl-review}$ | Opens Implementation PR (`asdlc:impl-review`), attaches verification report and test summary. | Mission Complete. |
+| **Phase 7b: IMPL_HUMAN_REVIEW_FIX** | $\text{PR}_{\text{label}} = \text{impl-review} \land \text{PR}_{\text{state}} = \text{OPEN} \land H_{\text{feedback}} = 1$ | Pulls line-by-line review comments; Session A fixes code & tests; runs `npm test` & `asdlc verify`; pushes fix commit. | Moves back to Phase 8 for human re-review. |
+| **Phase 8: OPEN_IMPL_PR** | All verification gates pass $\land\ H_{\text{feedback}} = 0 \land \text{PR}_{\text{label}} \ne \text{impl-review}$ | Opens Implementation PR (`asdlc:impl-review`), attaches verification report and test summary. | Mission Complete. |
 
 ### 6.4 Governance Hardening
 1. **`Player != Referee` Process Isolation**: Author/Implementer and Reviewer always execute as separate fresh processes with zero shared transcript, bounded by a **3-round** convergence cap.
@@ -760,7 +783,10 @@ Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
 4. **远端 PR 元数据（PR Status via API）**：
    - $\text{PR}_{\text{label}} \in \{\text{needs-clarification}, \text{spec-review}, \text{impl-review}, \text{none}\}$；
    - $\text{PR}_{\text{state}} \in \{\text{DRAFT}, \text{OPEN}, \text{MERGED}, \text{CLOSED}, \text{none}\}$；
-   - $C_{\text{replied}} \in \{0, 1\}$：Draft PR 评论区中是否有人类工程师的答复。
+   - $C_{\text{replied}} \in \{0, 1\}$：Draft PR 评论区中是否有人类工程师的答复；
+   - $H_{\text{feedback}} \in \{0, 1\}$：开启态的 Spec/Impl PR 上是否存在人类审查者提出的**未修改评论或 Changes Requested**。
+     形式化计算式：
+     $$H_{\text{feedback}} = 1 \iff \left(\text{reviewDecision} == \text{'CHANGES_REQUESTED'} \lor N_{\text{unresolvedThreads}} > 0 \lor T_{\text{lastHumanComment}} > T_{\text{lastCommit}}\right)$$
 
 #### 6.3.2 核心阶段精准仲裁矩阵：互斥不变量对比
 Spec Review、Apply 与 Impl Review 处于严格的物理互斥区间，不存在任何模棱两可的灰色地带：
@@ -772,7 +798,8 @@ Spec Review、Apply 与 Impl Review 处于严格的物理互斥区间，不存�
 | **源码改动数 ($S_{\text{code}}$)** | $S_{\text{code}} = 0$（严禁包含业务源码改动，纯文档规范） | $S_{\text{code}} \ge 0$（正在编写业务实现代码与单元测试） | **$S_{\text{code}} > 0$**（业务代码与测试文件均已实现完毕） |
 | **审查标的物** | `proposal.md`、`specs/**`、BDD 场景与可测试验收准则 | 无（当前处于编码与测试执行态） | 源码 Diff 对比锁定的 `specSha`、测试保真度与代码质量 |
 | **内核只读锁状态** | 规范处于作者编辑态（可写） | **`proposal.md` 与 `specs/**` 被系统置为 `0:0 0444` 只读** | 规范只读锁定；源码处于交付待审态 |
-| **跃迁出口门禁** | `asdlc lint` PASS $\to$ 转 Ready PR $\to$ 人工合入 | 任务全部勾选清零 $\to$ 立即自动跃迁至 Impl Review | `asdlc verify` PASS $\to$ 打开 Implementation PR |
+| **人类 PR 评审修改闭环** | 若 $H_{\text{feedback}} = 1$：修改规范 $\to$ 重跑 lint $\to$ 推送修复 Commit | 无（内部闭环 TDD 执行） | 若 $H_{\text{feedback}} = 1$：修改代码与用例 $\to$ 重跑 verify $\to$ 推送修复 Commit |
+| **跃迁出口门禁** | `asdlc lint` PASS $\land\ H_{\text{feedback}} = 0 \to$ 转 Ready PR $\to$ 人工合入 | 任务全部勾选清零 $\to$ 立即自动跃迁至 Impl Review | `asdlc verify` PASS $\land\ H_{\text{feedback}} = 0 \to$ 准备终态合入 |
 
 - **为什么不会把 Spec Review 误判为 Impl Review？**
   因为 Spec Review 发生时，$L_{\text{target}} = 0$（主干尚未锁定该规范），且 $S_{\text{code}} = 0$（无任何业务代码）。Impl Review 发生的前提必须是主干已锁定规范（$L_{\text{target}} = 1$）且业务代码已实现（$S_{\text{code}} > 0$ 且 $U_{\text{tasks}} = 0$）。
@@ -786,22 +813,38 @@ Spec Review、Apply 与 Impl Review 处于严格的物理互斥区间，不存�
    - 抓取评论线程。若无人类新评论，退出 0 并提示等待；若有人类回复，消化问答清空 `[OPEN]` 并推进至 **Spec Review**。
 2. **若 PR 带有标签 `asdlc:spec-review`（Spec PR）**：
    - 若 PR 已合入（`MERGED`）：主干已就绪（$L_{\text{target}} = 1$），自动切出 `impl/<slug>` 分支并开启 `0444` 内核只读锁，推进至 **Apply**。
-   - 若 PR 仍开启（`OPEN`）：若尚未跑过审查则派生独立进程跑 **Spec Review**；若已跑过且 PASS 则打印等待人工合入并退出 0。
+   - 若 PR 仍开启（`OPEN`）：
+     - **若 $H_{\text{feedback}} = 1$（人类评审提出修改意见或打回 Changes Requested）**：
+       - 进入 **SPEC_HUMAN_REVIEW_FIX（阶段 4b）**：通过 GitHub API 拉取评审行内与总体评论；
+       - Session A 响应人类审查意见，修改 `proposal.md` 与 `specs/**`，在 `clarifications.md` 记录修改依据；
+       - 跑通 `asdlc lint`，派生 Session B 独立审查验证修改点；
+       - 推送新提交 `spec(<slug>): address PR review comments from @reviewer`，回复评论并请求重新审查。
+     - **若 $H_{\text{feedback}} = 0$（无未解决的人工评审意见）**：
+       - 若尚未跑过审查则派生独立进程跑 **Spec Review**；若已跑过且 PASS 则打印等待人工合入并退出 0。
 3. **若 PR 带有标签 `asdlc:impl-review`（Implementation PR）**：
    - 若 PR 已合入（`MERGED`）：流程达成，提示运行 `asdlc archive <slug>` 归档；
-   - 若 PR 仍开启（`OPEN`）：若尚未跑过验收则派生独立进程跑 **Impl Review 与 asdlc verify**；全部通过后打印等待人工最终合入并退出 0。
+   - 若 PR 仍开启（`OPEN`）：
+     - **若 $H_{\text{feedback}} = 1$（人类评审要求修改代码或追加测试）**：
+       - 进入 **IMPL_HUMAN_REVIEW_FIX（阶段 7b）**：拉取行内代码 Review 意见；
+       - Session A 修改业务代码与测试用例，执行本地测试套件确认通过；
+       - 跑通 `asdlc verify` 并派生 Session B 独立审查；
+       - 推送新提交 `impl(<slug>): address PR review comments from @reviewer`，回复评审并请求重新审查。
+     - **若 $H_{\text{feedback}} = 0$（无未解决的人工评审意见）**：
+       - 若尚未跑过验收则派生独立进程跑 **Impl Review 与 asdlc verify**；全部通过后打印等待人工最终合入并退出 0。
 
-#### 6.3.4 全生命周期 8 阶段流转矩阵
+#### 6.3.4 全生命周期 10 阶段流转矩阵
 | 阶段序号与标识 | 激活前提条件（Pre-conditions） | 容器本次执行的精准动作（Action） | 跃迁与退出出口（Transition Boundary） |
 | :--- | :--- | :--- | :--- |
 | **阶段 1: SPEC_DRAFT** | $P_{\text{spec}} = 0$ | 运行 `asdlc new --no-grill`，基于 AST 图谱草拟提案与 Spec | 若存在 `[OPEN]` 转阶段 2；否则转阶段 4 |
 | **阶段 2: SPEC_GRILL_PAUSE** | $N_{\text{open}} > 0 \land \text{PR}_{\text{state}} = \text{none}$ | 推送分支，创建 Draft PR 并发评论提问 | 打印回复指引，干净退出 0 |
 | **阶段 3: SPEC_GRILL_RESUME** | $N_{\text{open}} > 0 \land C_{\text{replied}} = 1$ | 抓取评论回复，清空 `[OPEN]`，定稿 Spec | 推进至阶段 4 |
 | **阶段 4: SPEC_REVIEW** | $P_{\text{spec}} = 1 \land N_{\text{open}} = 0 \land L_{\text{target}} = 0 \land R_{\text{stage}} \ne \text{spec}$ | 派生独立进程执行 `asdlc-spec-review` 与 `asdlc lint`，标记 PR Ready | 推进至阶段 5 |
-| **阶段 5: AWAITING_SPEC_MERGE** | $\text{PR}_{\text{label}} = \text{spec-review} \land L_{\text{target}} = 0$ | 打印等待人类 Tech Lead 审核合入指引 | 干净退出 0（容器即刻销毁零空转） |
+| **阶段 4b: SPEC_HUMAN_REVIEW_FIX** | $\text{PR}_{\text{label}} = \text{spec-review} \land \text{PR}_{\text{state}} = \text{OPEN} \land H_{\text{feedback}} = 1$ | 抓取人工评审意见；Session A 修改 Spec；通过 `lint` 与 Session B 重评；推送修复提交并回复 Review | 推进回阶段 5 等待人工复审 |
+| **阶段 5: AWAITING_SPEC_MERGE** | $\text{PR}_{\text{label}} = \text{spec-review} \land L_{\text{target}} = 0 \land H_{\text{feedback}} = 0$ | 打印等待人类 Tech Lead 审核合入指引 | 干净退出 0（容器即刻销毁零空转） |
 | **阶段 6: APPLY_TDD** | $L_{\text{target}} = 1 \land U_{\text{tasks}} > 0$ | 内核锁死规范为 `0:0 0444`；生成 `tasks.md`；执行任务级 TDD 红绿重构循环 | 当 $U_{\text{tasks}} = 0$ 时自动跃迁至阶段 7 |
 | **阶段 7: IMPL_REVIEW_AND_VERIFY** | $L_{\text{target}} = 1 \land U_{\text{tasks}} = 0 \land (\text{verify} \ne \text{PASS} \lor R_{\text{stage}} \ne \text{impl})$ | 派生独立进程执行 `asdlc-impl-review` 与 `asdlc verify` 门禁（最多 3 轮修复） | 验证全 PASS 后推进至阶段 8 |
-| **阶段 8: OPEN_IMPL_PR** | 所有验证门禁 PASS $\land\ \text{PR}_{\text{label}} \ne \text{impl-review}$ | 开启正式 Implementation PR，附带全套测试与门禁凭据报告 | 流水线大功告成 |
+| **阶段 7b: IMPL_HUMAN_REVIEW_FIX** | $\text{PR}_{\text{label}} = \text{impl-review} \land \text{PR}_{\text{state}} = \text{OPEN} \land H_{\text{feedback}} = 1$ | 抓取行内代码评审意见；Session A 修改源码与测试；执行 `asdlc verify`；推送修复提交并回复 Review | 推进回阶段 8 等待人工复审 |
+| **阶段 8: OPEN_IMPL_PR** | 所有验证门禁 PASS $\land\ H_{\text{feedback}} = 0 \land \text{PR}_{\text{label}} \ne \text{impl-review}$ | 开启正式 Implementation PR，附带全套测试与门禁凭据报告 | 流水线大功告成 |
 
 ### 6.4 治理合规门禁补强
 1. **`Player != Referee` 裁判会话完全物理隔离**：编写/实现与审查强制拆分为独立进程执行，支持配置 `agent.review_model` 异构审查模型，修复循环上限 3 轮。
