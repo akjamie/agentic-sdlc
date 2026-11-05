@@ -13,7 +13,7 @@
   - [1. Problem Statement & Design Principles](#1-problem-statement--design-principles)
   - [2. End-to-End Architecture & Workflows](#2-end-to-end-architecture--workflows)
     - [2.1 Host Orchestrator vs. Ephemeral Non-Root Container Split](#21-host-orchestrator-vs-ephemeral-non-root-container-split)
-    - [2.2 Autonomous Execution Lifecycle (Including Async PR Comment Grilling)](#22-autonomous-execution-lifecycle-including-async-pr-comment-grilling)
+    - [2.2 Stage-Driven Container Lifecycle with Human-in-the-Loop Gates](#22-stage-driven-container-lifecycle-with-human-in-the-loop-gates)
     - [2.3 Dual-Track Symmetry: Interactive (Non-Container) vs. Autonomous (Container) Modes](#23-dual-track-symmetry-interactive-non-container-vs-autonomous-container-modes)
   - [3. Global Control Plane & Two-Mode Workflow Switch (`asdlc config`)](#3-global-control-plane--two-mode-workflow-switch-asdlc-config)
     - [3.1 Interactive Terminal UI (`asdlc config`) & Scriptable CLI](#31-interactive-terminal-ui-asdlc-config--scriptable-cli)
@@ -42,7 +42,7 @@
   - [1. 背景痛点与核心原则](#1-背景痛点与核心原则)
   - [2. 总体架构与交互流程](#2-总体架构与交互流程)
     - [2.1 宿主机编排器与临时非 Root 容器切分](#21-宿主机编排器与临时非-root-容器切分)
-    - [2.2 全自动执行生命周期与 PR 评论异步闭环](#22-全自动执行生命周期与-pr-评论异步闭环)
+    - [2.2 阶段驱动的容器生命周期与人机协作门禁（定界自主，拒绝黑盒猜测）](#22-阶段驱动的容器生命周期与人机协作门禁定界自主拒绝黑盒猜测)
     - [2.3 双轨生命周期对齐：交互式（非容器）与全自动（容器）模式的无缝互通](#23-双轨生命周期对齐交互式非容器与全自动容器模式的无缝互通)
   - [3. 全局配置控制面与双模式开关 (`asdlc config`)](#3-全局配置控制面与双模式开关-asdlc-config)
     - [3.1 交互式终端 UI (`asdlc config`) 与脚本化 CLI](#31-交互式终端-ui-asdlc-config-与脚本化-cli)
@@ -132,7 +132,16 @@ flowchart TD
   GATES -- "Phase 2 / single-pr" --> PR2
 ```
 
-### 2.2 Autonomous Execution Lifecycle (Including Async PR Comment Grilling & Review Fixes)
+### 2.2 Stage-Driven Container Lifecycle with Human-in-the-Loop Gates
+
+> [!IMPORTANT]
+> **Architectural Clarity: Bounded Stage Automation vs. Naive Telepathic Black Box**
+> A common fallacy in autonomous software engineering tooling is attempting to build a "one-command magic black box" that telepathically guesses what to do across multiple days and multiple human PR review cycles. In production enterprise engineering, software development is inherently **multi-phased, asynchronous, and punctuated by human judgment** (clarification answers, PR reviews, and Tech Lead merge approvals).
+> 
+> Therefore, the container pipeline **strictly rejects telepathic black-box state guessing**. Instead, it adopts **Bounded Stage-Driven Execution**:
+> 1. **Autonomous Within Bounded Stages**: Inside each ephemeral container run, execution is 100% automated (AST grounding, TDD loops, gate linting, review comment triage).
+> 2. **Stage-Driven Across Milestones**: Across stages, transitions are driven by human milestones or CI webhooks using the four canonical stage commands: `--stage spec`, `--stage apply`, `--stage verify`, and `--stage fix`.
+> 3. **Finite Container Lifespan**: Each container run has a single, crystal-clear, non-negotiable mission: execute its designated stage, enforce the verification gate, and destroy itself (`--rm`). Zero idle background compute.
 
 ```mermaid
 sequenceDiagram
@@ -959,7 +968,16 @@ flowchart TD
 - **宿主机（`asdlc run`）**：负责读取 `~/.asdlc/config.yaml`、校验并 `docker cp` 宿主机 `--from-file` 文档、跨平台提取宿主机已有原生 AI 凭证与 `gh auth token`、注入企业自定义 `~/.asdlc/skills/`，并管理一次性非特权容器生命周期。
 - **隔离容器（`UID 10001:10001`）**：在容器原生 Linux `/workspace` 内独立克隆仓库，通过 Skill 拉取外部需求单落盘 `intake/`，以**两个完全独立的进程会话**分别执行「编写/实现」与「独立审查（`Player != Referee`）」，通过确定性门禁后推送分支并创建/更新 PR，退出即销毁（`--rm`）。
 
-### 2.2 全自动执行生命周期与 PR 评论异步闭环（涵盖 Spec 问答与代码 Review 修复）
+### 2.2 阶段驱动的容器生命周期与人机协作门禁（定界自主，拒绝黑盒猜测）
+
+> [!IMPORTANT]
+> **架构定调：阶段定界自主 vs. 虚幻的“全自动读心黑盒”**
+> AI 研发流水线最常陷入的一个典型误区，是试图把系统做成一个“敲一行命令、全自动猜透一切、跨越数天无所不能的黑盒”。在真实企业软件工程中，任何严谨的交付必然跨越数天、必然穿插着人类的技术判断（需求澄清问答、PR Review 批注、Tech Lead 合入审查与发布裁决）。
+> 
+> 因此，本方案**坚决摒弃脆弱的“黑盒状态猜测”**，采用**“阶段定界自主（Bounded Stage Automation）与显式驱动”**：
+> 1. **阶段内高度自治（Stage-Scoped Automation）**：每一次容器启动，其目标极度聚焦，在边界内全自动执行（AST 图谱解析、TDD 红绿循环、门禁代码检查、Review 意见自动修复）；
+> 2. **阶段间显式驱动（Stage-Driven Orchestration）**：跨越人机协作里程碑时，由开发者或 CI Webhook 显式下发指令（`--stage spec`、`--stage apply`、`--stage verify`、`--stage fix`），彻底杜绝跨天多次启动时的“不知道做到哪儿了”；
+> 3. **用完即焚零空转（Ephemeral Compute）**：容器执行完当前 Stage 并通过门禁后立刻退出销毁（`--rm`），绝不在后台常驻挂起浪费算力。
 
 ```mermaid
 sequenceDiagram
