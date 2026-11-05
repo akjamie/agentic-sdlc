@@ -16,6 +16,12 @@
     - [2.2 Autonomous Execution Lifecycle (Including Async PR Comment Grilling)](#22-autonomous-execution-lifecycle-including-async-pr-comment-grilling)
     - [2.3 Dual-Track Symmetry: Interactive (Non-Container) vs. Autonomous (Container) Modes](#23-dual-track-symmetry-interactive-non-container-vs-autonomous-container-modes)
   - [3. Global Control Plane & Two-Mode Workflow Switch (`asdlc config`)](#3-global-control-plane--two-mode-workflow-switch-asdlc-config)
+    - [3.1 Interactive Terminal UI (`asdlc config`) & Scriptable CLI](#31-interactive-terminal-ui-asdlc-config--scriptable-cli)
+    - [3.2 Enterprise & User-Grade AI Configuration Strategy (Zero Schema Loss)](#32-enterprise--user-grade-ai-configuration-strategy-zero-schema-loss)
+    - [3.3 End-to-End Authentication & Ephemeral Secret Ingestion Pipeline](#33-end-to-end-authentication--ephemeral-secret-ingestion-pipeline)
+    - [3.4 Enterprise Model Injection & Heterogeneous Reviewer Topology](#34-enterprise-model-injection--heterogeneous-reviewer-topology)
+    - [3.5 Multi-Tier Environment Variable Precedence & Secret Masking Engine](#35-multi-tier-environment-variable-precedence--secret-masking-engine)
+    - [3.6 Zero-Friction GitHub Repository & Context Auto-Detection](#36-zero-friction-github-repository--context-auto-detection)
   - [4. Multi-Source Intake & Two-Tier Skill Resolution](#4-multi-source-intake--two-tier-skill-resolution)
   - [5. Official `ubuntu:26.04` LTS Image & Hardened Non-Root Baseline](#5-official-ubuntu2604-lts-image--hardened-non-root-baseline)
     - [5.1 Two-Layer Polyglot Runner Image](#51-two-layer-polyglot-runner-image)
@@ -39,6 +45,12 @@
     - [2.2 全自动执行生命周期与 PR 评论异步闭环](#22-全自动执行生命周期与-pr-评论异步闭环)
     - [2.3 双轨生命周期对齐：交互式（非容器）与全自动（容器）模式的无缝互通](#23-双轨生命周期对齐交互式非容器与全自动容器模式的无缝互通)
   - [3. 全局配置控制面与双模式开关 (`asdlc config`)](#3-全局配置控制面与双模式开关-asdlc-config)
+    - [3.1 交互式终端 UI (`asdlc config`) 与脚本化 CLI](#31-交互式终端-ui-asdlc-config-与脚本化-cli)
+    - [3.2 行业级与用户级 AI 配置设计（整文件原子继承 + CLI 参数覆盖）](#32-行业级与用户级-ai-配置设计整文件原子继承--cli-参数覆盖)
+    - [3.3 端到端鉴权体系与无痕临时凭据注入流水线](#33-端到端鉴权体系与无痕临时凭据注入流水线)
+    - [3.4 企业级模型传入与异构审查拓扑（Player != Referee）](#34-企业级模型传入与异构审查拓扑player--referee)
+    - [3.5 多层环境变量优先级链与全局敏感信息脱敏引擎](#35-多层环境变量优先级链与全局敏感信息脱敏引擎)
+    - [3.6 零摩擦 GitHub 仓库与执行上下文全自动识别引擎](#36-零摩擦-github-仓库与执行上下文全自动识别引擎)
   - [4. 多源需求输入（Intake）与两层 Skill 取单架构](#4-多源需求输入intake与两层-skill-取单架构)
   - [5. 官方 `ubuntu:26.04` LTS 全栈镜像与非 Root 安全基线](#5-官方-ubuntu2604-lts-全栈镜像与非-root-安全基线)
     - [5.1 双层镜像与版本强绑定](#51-双层镜像与版本强绑定)
@@ -332,6 +344,105 @@ asdlc config unset env.JIRA_API_TOKEN
      asdlc config agent --file ./enterprise-opencode.json
      ```
      Stores the team-vetted JSON verbatim under `~/.asdlc/agent/opencode/opencode.json`, overriding host local defaults for all container runs.
+
+### 3.3 End-to-End Authentication & Ephemeral Secret Ingestion Pipeline
+To satisfy corporate zero-trust and CIS container security standards, secret credentials must **never be baked into Docker image layers, written to host-mounted volumes, or stored in plaintext disk files**.
+
+```mermaid
+flowchart LR
+  subgraph Host ["Host Workstation / CI Environment"]
+    KEYCHAIN["Host Keychain / gh auth token / $GITHUB_TOKEN"]
+    CFG["~/.asdlc/config.yaml (0600)"]
+    EXTRACT["Host Orchestrator Memory Pipe"]
+  end
+
+  subgraph Container ["Ephemeral Container (UID 10001)"]
+    RAMDISK["/dev/shm (In-Memory RAM Disk, 0600)"]
+    ENV_PIPE["In-Memory Process Env: $GH_TOKEN"]
+    GIT_HELPER["git credential.helper (RAM Hook)"]
+    AGENT_PROC["Headless Agent Process"]
+  end
+
+  KEYCHAIN --> EXTRACT
+  CFG --> EXTRACT
+  EXTRACT -- "Ephemeral stdin / --env" --> ENV_PIPE
+  EXTRACT -- "Memory stream (0600)" --> RAMDISK
+  ENV_PIPE --> GIT_HELPER
+  RAMDISK --> AGENT_PROC
+```
+
+1. **Host-to-Container Ingestion (Ephemeral In-Memory Pipe)**:
+   - When running on a developer workstation, `asdlc run` queries the host OS keychain via `gh auth token` (Windows Credential Manager, macOS Keychain, or Linux Secret Service).
+   - The token is passed to the container exclusively via ephemeral container environment (`--env GH_TOKEN=...`) or an in-memory stream into `/dev/shm` (RAM disk), strictly owned by `10001:10001` with permissions `0600`.
+   - The container Git environment is pre-configured with an in-memory credential helper:
+     ```bash
+     git config --global credential.helper '!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f'
+     ```
+   - When the container terminates (`--rm`), process memory and `/dev/shm` are completely destroyed.
+2. **CI/CD Execution Context (Zero Interactive Prompts)**:
+   - In GitHub Actions / GitLab CI, `asdlc run` automatically consumes the native ambient token:
+     `$GITHUB_TOKEN`, `$GH_TOKEN`, or `$CI_JOB_TOKEN`.
+   - Git commits pushed by the pipeline are attributed to the official automation identity:
+     `name: github-actions[bot]`, `email: 41898282+github-actions[bot]@users.noreply.github.com`.
+3. **Enterprise VPC & Private Trackers (Jira / Confluence / Private Git)**:
+   - Secrets defined in `~/.asdlc/config.yaml` (`env.JIRA_API_TOKEN`, `env.GITLAB_TOKEN`) are injected into the container via explicit passthrough (`runner.env_passthrough: "JIRA_*,GITLAB_*"`).
+
+### 3.4 Enterprise Model Injection & Heterogeneous Reviewer Topology
+The AI reasoning engine requires flexibility to consume models from diverse internal and commercial providers while enforcing governance guardrails:
+1. **Dynamic Model Injection via Runtime Flags**:
+   - The primary authoring model (`agent.model` or `--model <provider/model>`) drives Spec drafting (Phase 1) and TDD implementation (Phase 6).
+   - CLI flags take absolute precedence:
+     ```bash
+     asdlc run feat-auth --stage apply --model anthropic/claude-3-7-sonnet
+     ```
+2. **Heterogeneous Reviewer Topology (`Player != Referee`)**:
+   - To eliminate "cognitive bias" and prevent self-rubberstamping, the independent review phases (Phase 4 Spec Review and Phase 7 Impl Review) execute under a physically isolated process using `agent.review_model` or `--review-model <provider/model>`.
+   - Example:
+     ```bash
+     asdlc run feat-auth --stage verify --review-model openai/gpt-4o
+     ```
+3. **Private Corporate AI Gateways**:
+   - When enterprise traffic must route through an internal proxy or AI gateway (e.g. LiteLLM, Cloudflare AI Gateway, Volcano Ark, Azure APIM):
+     ```bash
+     asdlc config set agent.base_url "https://ai-gateway.corp.company.com/v1"
+     asdlc config set agent.custom_headers '{"X-Corp-Dept": "Infra", "X-Project-TRN": "trn:infra:sdlc"}'
+     ```
+
+### 3.5 Multi-Tier Environment Variable Precedence & Secret Masking Engine
+A predictable 5-Tier hierarchy governs all configuration resolution:
+```text
+Tier 1: CLI Runtime Flags (--model, --repo, --stage, --env KEY=VAL) [Highest]
+   ↓
+Tier 2: Host Process Environment (process.env.ASDLC_*, ANTHROPIC_API_KEY, GH_TOKEN)
+   ↓
+Tier 3: Local Project Policy (.openspec/policy.yaml or .sdlc/policy.yaml)
+   ↓
+Tier 4: Global Configuration (~/.asdlc/config.yaml, mode 0600)
+   ↓
+Tier 5: System Internal Defaults [Lowest]
+```
+- **Global Secret Masking Engine**:
+  - All output streams (stdout, stderr, and logfiles) pass through a stream sanitizer matching regex `/(token|key|secret|password|credential|pat|auth)/i`.
+  - Values matching sensitive keys are masked: `ghp_1234567890abcdef...` -> `ghp_************cdef`.
+  - Anti-Dumping Invariant: Even if an agent script executes `printenv` or `env` inside the container bash, the host runner intercepts and redacts sensitive strings before they can reach terminal displays or artifact logs.
+
+### 3.6 Zero-Friction GitHub Repository & Context Auto-Detection
+The orchestrator resolves the target Git remote and PR context through an unambiguous 4-tier detection cascade:
+1. **Tier 1: Direct PR / Issue URL**:
+   `asdlc run https://github.com/owner/repo/pull/42 --stage fix`
+   - Regex decomposes URL into `host: github.com`, `owner: owner`, `repo: repo`, `number: 42`.
+2. **Tier 2: PR Number with Local Remote Resolution**:
+   `asdlc run #42 --stage fix`
+   - When executed inside a local workspace, `asdlc` inspects `git remote -v`:
+     - Parses SSH: `git@github.com:owner/repo.git` $\to$ `owner/repo`
+     - Parses HTTPS: `https://github.com/owner/repo.git` $\to$ `owner/repo`
+     - Parses Enterprise GitHub: `https://github.corp.company.com/team/repo.git`
+3. **Tier 3: Ambient CI/CD Environment Auto-Detection**:
+   - In GitHub Actions: automatically reads `$GITHUB_REPOSITORY` (`owner/repo`) and `$GITHUB_SERVER_URL`.
+   - In GitLab CI: automatically reads `$CI_PROJECT_PATH` and `$CI_SERVER_URL`.
+4. **Tier 4: Zero-Checkout Remote Mode (`--repo`)**:
+   `asdlc run #42 --repo owner/repo --stage fix`
+   - When invoked from an arbitrary folder or machine without local git checkout, the container runner performs an ephemeral shallow clone directly inside container `/workspace`. Zero host disk pollution.
 
 ---
 
@@ -941,6 +1052,101 @@ Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
      asdlc config agent --file ./enterprise-opencode.json
      ```
      原封不动存入 `~/.asdlc/agent/opencode/opencode.json`，供所有容器流水线作为专属配置执行。
+
+### 3.3 端到端鉴权体系与无痕临时凭据注入流水线
+为全面满足企业级零信任与 CIS 容器安全规范，敏感凭据**绝不允许烘烤进 Docker 镜像层、绝不挂载宿主机敏感目录、绝不在容器磁盘以明文持久化**。
+
+```mermaid
+flowchart LR
+  subgraph 宿主机 ["宿主机工作站 / CI 执行环境"]
+    KEYCHAIN["系统凭据管理器 / gh auth token / $GITHUB_TOKEN"]
+    CFG["~/.asdlc/config.yaml (0600 严格权限)"]
+    EXTRACT["编排器进程内存管道 (Host Memory Pipe)"]
+  end
+
+  subgraph 容器沙箱 ["临时非 Root 容器 (UID 10001:10001)"]
+    RAMDISK["/dev/shm 内存盘 (0600 严格权限)"]
+    ENV_PIPE["进程环境变量 $GH_TOKEN (无磁盘留存)"]
+    GIT_HELPER["git credential.helper (内存钩子)"]
+    AGENT_PROC["无头 AI 研发主进程"]
+  end
+
+  KEYCHAIN --> EXTRACT
+  CFG --> EXTRACT
+  EXTRACT -- "临时 stdin / --env" --> ENV_PIPE
+  EXTRACT -- "内存流注入 (0600)" --> RAMDISK
+  ENV_PIPE --> GIT_HELPER
+  RAMDISK --> AGENT_PROC
+```
+
+1. **宿主机到容器无痕注入（内存管道传输）**：
+   - 开发者在本地工作站执行 `asdlc run` 时，系统直接调用宿主机 OS 凭据库（Windows Credential Manager、macOS Keychain 或 Linux Secret Service）提取 `gh auth token`；
+   - 凭据仅通过单向临时进程环境变量（`--env GH_TOKEN=...`）或写入 `/dev/shm` 内存临时文件（权限 `0600`、属主 `10001:10001`）注入容器；
+   - 容器内全局 Git 预置内存级 Credential Helper：
+     ```bash
+     git config --global credential.helper '!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f'
+     ```
+   - 容器执行完毕退出即销毁（`--rm`），内存盘与环境变量即刻蒸发，**宿主机与容器磁盘零密钥残留**。
+2. **CI/CD 无人值守环境（零交互全自动接入）**：
+   - 在 GitHub Actions / GitLab CI 中，`asdlc run` 自动侦测并透传原生环境变量：`$GITHUB_TOKEN`、`$GH_TOKEN` 或 `$CI_JOB_TOKEN`；
+   - 容器流水线推送的所有 Commit 与 PR 统一署名合规的官方自动化账号：`name: github-actions[bot]`, `email: 41898282+github-actions[bot]@users.noreply.github.com`。
+3. **企业内网与私有工单鉴权（Jira / Confluence / 私有 GitLab）**：
+   - 在 `~/.asdlc/config.yaml` 中配置的第三方服务密钥（如 `env.JIRA_API_TOKEN`）遵循严格白名单机制，通过 `runner.env_passthrough` 按需定向透传至容器，禁止宽泛全量注入。
+
+### 3.4 企业级模型传入与异构审查拓扑（Player != Referee）
+编排器在支持接入商业与企业内网私有各类大模型的同时，在架构层面固化治理防御机制：
+1. **动态模型传入（命令行绝对优先覆盖）**：
+   - 主体编码/实现模型可通过 `agent.model` 全局预设，亦可通过 `--model <provider/model>` 在运行时动态指定：
+     ```bash
+     asdlc run feat-auth --stage apply --model anthropic/claude-3-7-sonnet
+     ```
+2. **异构独立审查拓扑（`Player != Referee` 裁判会话解耦）**：
+   - 为避免同一模型在审查自身编写的代码时产生“认知盲区”或“自欺欺人的橡胶图章（Rubber-stamping）”，规范审查（阶段 4）与代码审查（阶段 7）强制派生独立审查子进程，并支持指定物理隔离的异构审查模型（`--review-model`）：
+     ```bash
+     asdlc run feat-auth --stage verify --review-model openai/gpt-4o
+     ```
+3. **企业私有 AI 网关无缝透传**：
+   - 面向金融、政企私有化部署环境（如火山方舟网关、LiteLLM、Cloudflare AI Gateway、Azure APIM），支持配置内网 Base URL 与审计认证 Header：
+     ```bash
+     asdlc config set agent.base_url "https://ai-gateway.corp.company.com/v1"
+     asdlc config set agent.custom_headers '{"X-Corp-Dept": "Security", "X-Audit-TRN": "trn:audit:sdlc"}'
+     ```
+
+### 3.5 多层环境变量优先级链与全局敏感信息脱敏引擎
+所有配置项与环境变量遵循严格确定性的 5 层决策链：
+```text
+第 1 层：命令行运行时参数 (--model, --repo, --stage, --env KEY=VAL) [最高优先级]
+   ↓
+第 2 层：宿主机进程环境变量 (process.env.ASDLC_*, ANTHROPIC_API_KEY, GH_TOKEN)
+   ↓
+第 3 层：项目仓级策略文件 (.openspec/policy.yaml 或 .sdlc/policy.yaml)
+   ↓
+第 4 层：机器全局配置文件 (~/.asdlc/config.yaml, mode 0600)
+   ↓
+第 5 层：系统出厂内置默认值 [最低优先级]
+```
+- **全局动态敏感信息脱敏引擎**：
+  - 系统所有终端输出、日志与 `asdlc config list` 统一挂载敏感词脱敏拦截器（正则命中 `/(token|key|secret|password|credential|pat|auth)/i`）；
+  - 敏感值自动打码显示：`ghp_1234567890abcdef...` $\to$ `ghp_************cdef`；
+  - **防泄密环境拦截不变量（Anti-Dumping Invariant）**：即使有未受信任的脚本或 Agent 试图在容器终端内执行 `env`、`printenv` 或发生异常报错转储，宿主机输出流管道均会实时拦截并清洗敏感字串，彻底阻断泄密路径。
+
+### 3.6 零摩擦 GitHub 仓库与执行上下文全自动识别引擎
+编排器通过四级解析级联，让开发者和 CI 在任何场景下均能以最符合直觉的方式自动绑定目标代码仓：
+1. **第 1 级：完整 PR / Issue 链接直接解析**：
+   `asdlc run https://github.com/owner/repo/pull/42 --stage fix`
+   - 正则自动解构提取 `host: github.com`、`owner: owner`、`repo: repo`、`number: 42`，无需用户在本地预先存在任何 Git 仓。
+2. **第 2 级：PR 编号结合本地 Git Remote 自动解析**：
+   `asdlc run #42 --stage fix`
+   - 当在本地工作区执行时，自动读取本地 `git remote -v`：
+     - 支持标准 SSH 协议：`git@github.com:owner/repo.git` $\to$ `owner/repo`；
+     - 支持标准 HTTPS 协议：`https://github.com/owner/repo.git` $\to$ `owner/repo`；
+     - 支持企业私有域名：`https://github.corp.company.com/team/repo.git`。
+3. **第 3 级：CI/CD 运行时上下文无感自动绑定**：
+   - 在 GitHub Actions 环境下，自动读取环境变量 `$GITHUB_REPOSITORY`（`owner/repo`）与 `$GITHUB_SERVER_URL`；
+   - 在 GitLab CI 环境下，自动读取环境变量 `$CI_PROJECT_PATH` 与 `$CI_SERVER_URL`。
+4. **第 4 级：免 Clone 零检出远程执行（`--repo`）**：
+   `asdlc run #42 --repo owner/repo --stage fix`
+   - 当在空目录或跳板机执行时，容器沙箱自动执行基于内存盘的轻量 Shallow Clone，宿主机零磁盘占用、零残留代码。
 
 ---
 
