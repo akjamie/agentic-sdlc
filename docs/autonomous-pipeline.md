@@ -25,6 +25,7 @@
     - [6.1 Dual Execution Modes: Local Directory vs Zero-Checkout Remote (`--repo`)](#61-dual-execution-modes-local-directory-vs-zero-checkout-remote---repo)
     - [6.2 Human-Centric Change Identification & Zero-Friction Resume](#62-human-centric-change-identification--zero-friction-resume)
     - [6.3 Deterministic Stage Resolution Engine (Spec Review vs. Apply vs. Impl Review)](#63-deterministic-stage-resolution-engine-spec-review-vs-apply-vs-impl-review)
+      - [6.3.3.1 Autonomous Review Comment Triage & Resolution Engine (Beyond 'CHANGES_REQUESTED')](#6331-autonomous-review-comment-triage--resolution-engine-beyond-changes_requested)
     - [6.4 Governance Hardening](#64-governance-hardening)
   - [7. Phased Implementation Roadmap](#7-phased-implementation-roadmap)
 - [中文架构方案](#中文架构方案)
@@ -43,6 +44,7 @@
     - [6.1 双执行模式：本地就地执行与免 Clone 零检出执行 (`--repo`)](#61-双执行模式本地就地执行与免-clone-零检出执行---repo)
     - [6.2 人性化变更定位与零摩擦续跑机制（智能推导、交互选择器、PR # / URL / Issue 解析）](#62-人性化变更定位与零摩擦续跑机制智能推导交互选择器pr---url--issue-解析)
     - [6.3 确定性阶段推导引擎：精准仲裁 Spec Review、Apply 与 Impl Review](#63-确定性阶段推导引擎精准仲裁-spec-reviewapply-与-impl-review)
+      - [6.3.3.1 深度解析：无 Request Changes 纯评论场景下的自主甄别与处理引擎（3-Tier Triage Engine）](#6331-深度解析无-request-changes-纯评论场景下的自主甄别与处理引擎3-tier-triage-engine)
     - [6.4 治理合规门禁补强](#64-治理合规门禁补强)
   - [7. 分阶段落地路线图](#7-分阶段落地路线图)
 
@@ -499,9 +501,8 @@ At startup, `asdlc run` resolves the state vector $\mathbf{S} = \langle \text{Ar
    - $\text{PR}_{\text{label}} \in \{\text{needs-clarification}, \text{spec-review}, \text{impl-review}, \text{none}\}$.
    - $\text{PR}_{\text{state}} \in \{\text{DRAFT}, \text{OPEN}, \text{MERGED}, \text{CLOSED}, \text{none}\}$.
    - $C_{\text{replied}} \in \{0, 1\}$: Human comments exist on Draft PR answering question threads.
-   - $H_{\text{feedback}} \in \{0, 1\}$: Unaddressed human review comments or `CHANGES_REQUESTED` present on an open Spec/Impl PR.
-     Formally evaluated as:
-     $$H_{\text{feedback}} = 1 \iff \left(\text{reviewDecision} == \text{'CHANGES_REQUESTED'} \lor N_{\text{unresolvedThreads}} > 0 \lor T_{\text{lastHumanComment}} > T_{\text{lastCommit}}\right)$$
+   - $H_{\text{feedback}} \in \{0, 1\}$: Unaddressed human feedback present on an open Spec/Impl PR, evaluated comprehensively across review decisions, unresolved threads, and post-commit comments:
+     $$H_{\text{feedback}} = 1 \iff \left(\text{reviewDecision} == \text{'CHANGES_REQUESTED'} \lor N_{\text{unresolvedActionableThreads}} > 0 \lor T_{\text{lastHumanComment}} > T_{\text{lastCommit}}\right)$$
 
 #### 6.3.2 Strict Disambiguation: Spec Review vs. Apply vs. Impl Review
 The three critical stages are **strictly mutually exclusive** and partition the execution space:
@@ -545,6 +546,128 @@ When a developer or automation invokes `asdlc run #N` or passes a PR URL, the or
      - **If $H_{\text{feedback}} = 0$ (No unaddressed human feedback)**:
        - If `asdlc-impl-review` or `asdlc verify` has not run on current HEAD: Runs fresh **Impl Review & Verification**.
        - If verified: Logs *"Implementation PR #N verified and ready for final Human merge"*, exits cleanly 0.
+
+#### 6.3.3.1 Autonomous Review Comment Triage & Resolution Engine (Beyond 'CHANGES_REQUESTED')
+In real-world enterprise engineering, human reviewers rarely click "Request Changes" (`reviewDecision: CHANGES_REQUESTED`). Instead, reviewers frequently:
+1. Submit a review bundle with state `COMMENTED` (leaving `reviewDecision` as `null` or `COMMENTED`), containing actionable feedback like *"nit: handle null pointer here"* or *"please add test for edge case X"*;
+2. Post single inline comments directly on the diff without bundling a formal review;
+3. Use GitHub's native ```suggestion``` blocks;
+4. Post clarifying questions (e.g., *"Why did we choose SHA256 over HMAC?"*) that require technical explanations rather than code changes;
+5. Post non-actionable remarks (e.g., *"LGTM"*, *"Nice approach"*).
+
+If an autonomous agent solely checks `reviewDecision === 'CHANGES_REQUESTED'`, it will falsely declare victory ($H_{\text{feedback}} = 0$), completely ignoring human feedback. To solve this, `asdlc` implements a **3-Tier PR Comment Triage & Resolution Engine**:
+
+```mermaid
+flowchart TD
+  START(["PR Inspection: asdlc run #N"]) --> T1["Tier 1: Multi-Channel Ingestion & Temporal Filter\nGraphQL reviewThreads(isResolved: false) + Issue Comments\nFilter: createdAt > latestCommit && author != agent"]
+  T1 --> T1_CHECK{"Unaddressed Comments Found?"}
+  T1_CHECK -- "No (N == 0)" --> CLEAN["H_feedback = 0 -> PR Clean -> Proceed to Verify/Merge"]
+  T1_CHECK -- "Yes (N > 0)" --> T2["Tier 2: Semantic Intent Classifier (4-Way Router)"]
+  
+  T2 --> C1["Category A: ACTION_REQUIRED (Code/Spec)\nExplicit bugfix, missing case, refactor demand"]
+  T2 --> C2["Category B: SUGGESTION_BLOCK\nGitHub ```suggestion diff blocks"]
+  T2 --> C3["Category C: INFORMATIONAL_QUESTION\nArchitectural inquiry, rationale request"]
+  T2 --> C4["Category D: NON_ACTIONABLE\nPraise, 'LGTM', emoji acknowledgments"]
+
+  C1 --> ACT_CODE["Session A: Edit Code/Spec -> Run TDD / Lint -> Local Verify"]
+  C2 --> ACT_SUGG["AST Dry-Run: Apply Suggestion -> Run Unit Tests"]
+  C3 --> ACT_INFO["Reasoning Agent: Formulate technical answer citing Spec/AST"]
+  C4 --> ACT_ACK["Post reaction/acknowledgment (No code change)"]
+
+  ACT_CODE --> T3["Tier 3: Bidirectional Resolution & Audit Trail"]
+  ACT_SUGG --> T3
+  ACT_INFO --> T3_REPLY["Reply to PR thread with technical explanation (Leave thread open for human)"]
+
+  T3 --> COMMIT["Git Commit: fix(scope): address review feedback (ref: #threadId)\nGit Push to branch"]
+  COMMIT --> REPLY["addPullRequestReviewThreadReply(body: 'Fixed in commit abc1234')"]
+  REPLY --> RESOLVE["resolveReviewThread(threadId: $id)\nThread marked resolved in GitHub UI"]
+  RESOLVE --> NEXT_CYCLE["Re-evaluate: Verify branch passes -> Update PR Status"]
+```
+
+##### 1. Tier 1: Deterministic Multi-Channel Ingestion & Anti-Loop Filtering
+The engine fetches review feedback via GitHub GraphQL API, which preserves conversation threads and line mappings:
+```graphql
+query PullRequestReviewThreads($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewDecision
+      headRefOid
+      commits(last: 1) { nodes { commit { committedDate, oid } } }
+      reviewThreads(first: 100) {
+        nodes {
+          id
+          isResolved
+          isOutdated
+          path
+          line
+          originalLine
+          comments(first: 20) {
+            nodes {
+              id
+              databaseId
+              author { login }
+              body
+              createdAt
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+Anti-Infinite-Loop Invariants:
+- **Temporal Invariant ($T_{\text{comment}} > T_{\text{commit}}$)**: Only comments created *after* the latest commit on the PR branch are considered unaddressed. Any comment preceding the latest commit is deemed already addressed or outdated.
+- **Author Invariant ($\text{Author} \ne \text{Agent}$)**: The agent's own automated comments, bot summaries, and CI notifications are strictly filtered out to prevent self-triggering feedback loops.
+- **Resolution Invariant ($\text{isResolved} == \text{false}$)**: Only unresolved review threads are evaluated. Threads marked resolved by humans are respected as closed.
+
+##### 2. Tier 2: 4-Way Semantic Intent Classification
+Each candidate comment is parsed with repository AST grounding and classified into one of four distinct intent categories:
+- **Category A: `ACTION_REQUIRED_CODE_OR_SPEC`**:
+  - *Trigger Pattern*: Imperatives requesting alterations ("Please add test", "Rename to parseQuery", "Should throw 404 instead of 500").
+  - *Routing*: Passed directly to `Session A` alongside exact file path, line hunk, and AST symbol context. `Session A` applies the change, runs local tests/lint, and verifies compliance.
+- **Category B: `SUGGESTION_BLOCK`**:
+  - *Trigger Pattern*: Markdown code fence ````suggestion ... ```` directly in review comment.
+  - *Routing*: Extracted into an in-memory diff patch, applied to the working tree, and tested against `npm test`. If green, accepted directly.
+- **Category C: `INFORMATIONAL_QUESTION`**:
+  - *Trigger Pattern*: Interrogatives requesting clarification ("Why was this approach chosen?", "Will this cause memory leaks?").
+  - *Routing*: Handled by AI Technical Lead reasoning engine. Evaluates against `specs/`, `design.md`, and code AST to produce an authoritative, courteous response. **Zero code or spec files are mutated; zero empty commits are pushed.**
+- **Category D: `NON_ACTIONABLE`**:
+  - *Trigger Pattern*: "Looks good to me", "Nice!", "+1", emoji reactions.
+  - *Routing*: Acknowledged with a thumbs-up reaction on GitHub; no downstream action triggered.
+
+##### 3. Tier 3: Bidirectional Thread Resolution & Audit Trail
+When actionable feedback (Category A or B) is implemented:
+1. **Traceable Commit**: Changes are committed with conventional commit standards referencing the thread ID:
+   ```bash
+   git commit -m "fix(auth): handle null token exception (ref: #thread-MDEyOlB1bGxSZXF1ZXN0UmV2aWV3VGhyZWFkMTIz)"
+   git push origin <branch>
+   ```
+2. **Explicit Thread Reply**: The engine calls `addPullRequestReviewThreadReply`:
+   ```graphql
+   mutation ReplyThread($threadId: ID!, $body: String!) {
+     addPullRequestReviewThreadReply(input: {
+       pullRequestReviewThreadId: $threadId,
+       body: "Resolved in commit [`abc1234`](commit/abc1234): Handled null token exception and added regression test in `auth.test.js`."
+     }) {
+       comment { id }
+     }
+   }
+   ```
+3. **GraphQL Thread Resolution**: The engine resolves the thread in GitHub's UI:
+   ```graphql
+   mutation ResolveThread($threadId: ID!) {
+     resolveReviewThread(input: { threadId: $threadId }) {
+       thread { isResolved }
+     }
+   }
+   ```
+This completes a 100% automated, transparent review feedback loop without requiring human reviewers to re-navigate the PR just to click "Resolve conversation".
+
+##### 4. Dual-Track Symmetry (Local IDE vs. Container Pipeline)
+This triage engine is part of `@asdlc/engine` core and is completely symmetrical across execution modes:
+- **Container Mode (`asdlc run --container #42`)**: Runs end-to-end automatically inside the isolated container runner.
+- **Local IDE Mode (`asdlc review-comments --pr #42` or `asdlc apply --from-pr #42`)**: A developer in VS Code or CLI can invoke the exact same command locally to view triaged comments, apply suggested patches interactively, or let the local agent address them step-by-step. Non-container developer workflows remain 100% first-class and unimpaired.
 
 #### 6.3.4 Comprehensive 10-Phase State Matrix
 ```mermaid
@@ -896,7 +1019,7 @@ Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
    - $C_{\text{replied}} \in \{0, 1\}$：Draft PR 评论区中是否有人类工程师的答复；
    - $H_{\text{feedback}} \in \{0, 1\}$：开启态的 Spec/Impl PR 上是否存在人类审查者提出的**未修改评论或 Changes Requested**。
      形式化计算式：
-     $$H_{\text{feedback}} = 1 \iff \left(\text{reviewDecision} == \text{'CHANGES_REQUESTED'} \lor N_{\text{unresolvedThreads}} > 0 \lor T_{\text{lastHumanComment}} > T_{\text{lastCommit}}\right)$$
+     $$H_{\text{feedback}} = 1 \iff \left(\text{reviewDecision} == \text{'CHANGES_REQUESTED'} \lor N_{\text{unresolvedActionableThreads}} > 0 \lor T_{\text{lastHumanComment}} > T_{\text{lastCommit}}\right)$$
 
 #### 6.3.2 核心阶段精准仲裁矩阵：互斥不变量对比
 Spec Review、Apply 与 Impl Review 处于严格的物理互斥区间，不存在任何模棱两可的灰色地带：
@@ -941,6 +1064,128 @@ Spec Review、Apply 与 Impl Review 处于严格的物理互斥区间，不存�
        - 推送新提交 `impl(<slug>): address PR review comments from @reviewer`，回复评审并请求重新审查。
      - **若 $H_{\text{feedback}} = 0$（无未解决的人工评审意见）**：
        - 若尚未跑过验收则派生独立进程跑 **Impl Review 与 asdlc verify**；全部通过后打印等待人工最终合入并退出 0。
+
+#### 6.3.3.1 深度解析：无 Request Changes 纯评论场景下的自主甄别与处理引擎（3-Tier Triage Engine）
+在真实企业工程研发协作中，代码审查人员（Reviewer）往往**并不会显式点击 GitHub 的 "Request Changes"** 按钮（很多团队甚至禁用该阻断性动作或将其视为对抗性沟通）。相反，审查者通常通过以下四种方式提出修改：
+1. 提交状态为 `COMMENTED` 的 Review 汇总包（此时 `reviewDecision` 为 `null` 或 `COMMENTED`），并在行内留下实质性改动建议（如 *"nit: 这里缺少判空保护，请加一下"* 或 *"请补充超时异常测试用例"*）；
+2. 不打 Review 包，直接在 Diff 页面留下一条或多条独立的行内行级别 Comment；
+3. 直接使用 GitHub 原生 ```suggestion 代码块建议微调；
+4. 提出技术性提问与原理解析（如 *"为什么这里选 SHA256 而不是 HMAC？"*），这类评论**不需要改动代码或规范，而需要给出严谨的技术解答**；
+5. 纯赞赏或表情反馈（如 *"LGTM"*、*":+1:"*）。
+
+若 AI 编排器仅仅机械地判定 `reviewDecision === 'CHANGES_REQUESTED'`，系统会直接误判为"评审通过无意见"（$H_{\text{feedback}} = 0$），将人类审查意见完全置若罔闻。为此，`asdlc` 设计并实现了 **3-Tier PR 审查评论自主甄别与处理引擎**：
+
+```mermaid
+flowchart TD
+  START(["PR 检查启动: asdlc run #N"]) --> T1["Tier 1: 多通道摄取与时序过滤\nGraphQL reviewThreads(isResolved: false) + Issue 顶层评论\n时序与作者防环过滤: createdAt > latestCommit && author != agent"]
+  T1 --> T1_CHECK{"是否存在未响应评论?"}
+  T1_CHECK -- "否 (N == 0)" --> CLEAN["H_feedback = 0 -> PR 干净无阻碍 -> 进入验证/合入"]
+  T1_CHECK -- "是 (N > 0)" --> T2["Tier 2: 语义意图四分类路由器 (4-Way Router)"]
+  
+  T2 --> C1["类别 A: 实质修改需求 (ACTION_REQUIRED)\n显式 Bug 修复、边界遗漏、重构或用例补充"]
+  T2 --> C2["类别 B: 建议代码块 (SUGGESTION_BLOCK)\nGitHub 原生 ```suggestion 代码补丁"]
+  T2 --> C3["类别 C: 咨询与原理解答 (INFORMATIONAL_QUESTION)\n架构选型疑问、原理澄清、非修改性交流"]
+  T2 --> C4["类别 D: 非操作性响应 (NON_ACTIONABLE)\n赞美、LGTM、表情符号肯定"]
+
+  C1 --> ACT_CODE["Session A: 修改代码/规范 -> 运行 TDD / Lint -> 本地验证"]
+  C2 --> ACT_SUGG["AST 语法校验试跑: 应用补丁 -> 运行测试套件"]
+  C3 --> ACT_INFO["架构推导智能体: 结合 Spec 与 AST 生成严谨技术解答"]
+  C4 --> ACT_ACK["调用 GitHub API 回复表情/点赞 (不触发代码变更)"]
+
+  ACT_CODE --> T3["Tier 3: 双向线程自动闭环与审计溯源"]
+  ACT_SUGG --> T3
+  ACT_INFO --> T3_REPLY["在 PR 讨论线程内回复专业解答 (保留线程开放供人类确认)"]
+
+  T3 --> COMMIT["Git 提交: fix(scope): 修复评审意见 (ref: #threadId)\nGit Push 推送至分支"]
+  COMMIT --> REPLY["addPullRequestReviewThreadReply(body: '已在提交 abc1234 中修复')"]
+  REPLY --> RESOLVE["resolveReviewThread(threadId: $id)\nGitHub UI 自动 Resolve 讨论线程"]
+  RESOLVE --> NEXT_CYCLE["重新评估: 验证分支门禁全绿 -> 更新 PR 状态"]
+```
+
+##### 1. Tier 1: 确定性多通道摄取与时序防环过滤
+编排器通过 GitHub GraphQL API 获取具备严格会话线索与代码锚点的行内评审线程：
+```graphql
+query PullRequestReviewThreads($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewDecision
+      headRefOid
+      commits(last: 1) { nodes { commit { committedDate, oid } } }
+      reviewThreads(first: 100) {
+        nodes {
+          id
+          isResolved
+          isOutdated
+          path
+          line
+          originalLine
+          comments(first: 20) {
+            nodes {
+              id
+              databaseId
+              author { login }
+              body
+              createdAt
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+**三重防死循环不变量约束**：
+- **时序不变量 ($T_{\text{comment}} > T_{\text{commit}}$)**：仅筛选**晚于当前 PR 分支最新 Commit 提交时间戳**的评论。凡是在当前 Commit 之前的评论，一律视为历史已解决或已过期项。
+- **作者不变量 ($\text{Author} \ne \text{Agent}$)**：严格剔除 Agent 自身账号、CI/CD Bot 与自动化汇总账号发表的评论，杜绝"Agent 回复自己触发死循环"。
+- **解决状态不变量 ($\text{isResolved} == \text{false}$)**：在 GraphQL 线程中已被人工标记为 Resolved 的线程直接跳过，仅处理处于活跃争议状态的线程。
+
+##### 2. Tier 2: 语义意图四分类路由器
+抓取到的有效评论与上下文 AST 代码行进行联合解析，归入四个互斥类别：
+- **类别 A: 实质改动需求 (`ACTION_REQUIRED_CODE_OR_SPEC`)**：
+  - *特征*：祁使句式、明确缺陷指出、要求补充测试或修改逻辑（如 *"这里空指针异常未处理"*、*"请补充边界场景用例"*）。
+  - *执行*：将文件路径、精确行号代码块与评论内容打包派发给 `Session A`，由其按 TDD 规范修改代码或规范，本地跑通单元测试与 lint。
+- **类别 B: 建议代码块 (`SUGGESTION_BLOCK`)**：
+  - *特征*：评论体中包含 GitHub 原生 ````suggestion ... ```` 标记。
+  - *执行*：原地解析出内存补丁并打入当前工作区，执行本地测试套件确认无语法错误且全绿后采纳。
+- **类别 C: 咨询与原理解答 (`INFORMATIONAL_QUESTION`)**：
+  - *特征*：疑问句式、设计考量咨询、性能与安全关切（如 *"为什么使用内存锁而非 Redis 分布式锁？"*）。
+  - *执行*：交由架构推导模型查阅 `specs/`、`design.md` 与系统 AST，在 PR 线程中生成专业、详尽、有理有据的技术答复。**严禁为了回复提问而空跑无意义的虚假代码提交**。
+- **类别 D: 非操作性肯定 (`NON_ACTIONABLE`)**：
+  - *特征*："LGTM"、"赞"、"Good idea"、纯表情。
+  - *执行*：在 GitHub 评论上直接打上 Thumbs-Up 表情，不触发下游任何流水线动作。
+
+##### 3. Tier 3: 双向线程自动闭环与审计凭据
+当实质性修改（类别 A 或 B）完成并通过验证后：
+1. **结构化追溯提交**：以规范化语义提交代码并显式关联评论线程 ID：
+   ```bash
+   git commit -m "fix(auth): handle null token exception (ref: #thread-MDEyOlB1bGxSZXF1ZXN0UmV2aWV3VGhyZWFkMTIz)"
+   git push origin <branch>
+   ```
+2. **精准线索回复**：调用 GraphQL `addPullRequestReviewThreadReply` 在原行内评论下跟帖回复：
+   ```graphql
+   mutation ReplyThread($threadId: ID!, $body: String!) {
+     addPullRequestReviewThreadReply(input: {
+       pullRequestReviewThreadId: $threadId,
+       body: "已在提交 [`abc1234`](commit/abc1234) 中修复：增加了空令牌异常处理并在 `auth.test.js` 中补齐了回归测试用例。"
+     }) {
+       comment { id }
+     }
+   }
+   ```
+3. **GraphQL 自动标记 Resolve**：调用 GitHub GraphQL Mutation 将该 Review 线程在网页端标记为 Resolved：
+   ```graphql
+   mutation ResolveThread($threadId: ID!) {
+     resolveReviewThread(input: { threadId: $threadId }) {
+       thread { isResolved }
+     }
+   }
+   ```
+审查人员无需反复手动去点一个个 "Resolve conversation"，只要刷新 PR 页面即可看到完整的修改 Commit、代码 Diff 与线程关闭凭据。
+
+##### 4. 双轨生命周期对称性保障（本地 IDE vs 容器运行）
+本评论甄别引擎是 `@asdlc/engine` 的纯纯核心模块，完全支持双轨双向复用：
+- **容器自动化模式 (`asdlc run --container #42`)**：在隔离容器内静默、高效地全自动完成抓取、修复、测试、推送与回复。
+- **本地交互模式 (`asdlc review-comments --pr #42` 或 `asdlc apply --from-pr #42`)**：工程师在 VS Code / 本地终端中运行同样命令，可以逐条预览分类后的 Review 意见、交互式采纳建议代码块，或驱动本地 Agent 协同完成修复。非容器开发流程获得 100% 同等的能力赋能，绝无任何体验降级或逻辑漂移。
 
 #### 6.3.4 全生命周期 10 阶段流转矩阵
 | 阶段序号与标识 | 激活前提条件（Pre-conditions） | 容器本次执行的精准动作（Action） | 跃迁与退出出口（Transition Boundary） |
