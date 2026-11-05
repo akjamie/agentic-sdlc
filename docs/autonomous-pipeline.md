@@ -209,7 +209,7 @@ flowchart LR
   I_APP -.-> CODE
   C_TDD -.-> CODE
 
-  Track1 <==== "Bidirectional Zero-Friction Handoff" ====> Track2
+  I_APP <-.->|"Bidirectional Zero-Friction Handoff"| C_TDD
 ```
 
 #### 2.3.1 Symmetrical Comparison: Non-Container vs. Container Workflow
@@ -741,7 +741,7 @@ flowchart TD
   T1_CHECK -- "Yes (N > 0)" --> T2["Tier 2: Semantic Intent Classifier (4-Way Router)"]
   
   T2 --> C1["Category A: ACTION_REQUIRED (Code/Spec)\nExplicit bugfix, missing case, refactor demand"]
-  T2 --> C2["Category B: SUGGESTION_BLOCK\nGitHub ```suggestion diff blocks"]
+  T2 --> C2["Category B: SUGGESTION_BLOCK\nGitHub suggestion diff blocks"]
   T2 --> C3["Category C: INFORMATIONAL_QUESTION\nArchitectural inquiry, rationale request"]
   T2 --> C4["Category D: NON_ACTIONABLE\nPraise, 'LGTM', emoji acknowledgments"]
 
@@ -1410,7 +1410,7 @@ flowchart TD
   T1_CHECK -- "是 (N > 0)" --> T2["Tier 2: 语义意图四分类路由器 (4-Way Router)"]
   
   T2 --> C1["类别 A: 实质修改需求 (ACTION_REQUIRED)\n显式 Bug 修复、边界遗漏、重构或用例补充"]
-  T2 --> C2["类别 B: 建议代码块 (SUGGESTION_BLOCK)\nGitHub 原生 ```suggestion 代码补丁"]
+  T2 --> C2["类别 B: 建议代码块 (SUGGESTION_BLOCK)\nGitHub 原生 suggestion 代码补丁"]
   T2 --> C3["类别 C: 咨询与原理解答 (INFORMATIONAL_QUESTION)\n架构选型疑问、原理澄清、非修改性交流"]
   T2 --> C4["类别 D: 非操作性响应 (NON_ACTIONABLE)\n赞美、LGTM、表情符号肯定"]
 
