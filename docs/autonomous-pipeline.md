@@ -25,7 +25,7 @@
     - [6.1 Dual Execution Modes: Local Directory vs Zero-Checkout Remote (`--repo`)](#61-dual-execution-modes-local-directory-vs-zero-checkout-remote---repo)
     - [6.2 Human-Centric Change Identification & Zero-Friction Resume](#62-human-centric-change-identification--zero-friction-resume)
     - [6.3 The "3+1" Canonical Stage Execution Model & Deterministic Resolution Engine](#63-the-31-canonical-stage-execution-model--deterministic-resolution-engine)
-      - [6.3.1 The "3+1" Canonical Stage Taxonomy (`--stage spec | apply | verify | fix-comments`)](#631-the-31-canonical-stage-taxonomy---stage-spec--apply--verify--fix-comments)
+      - [6.3.1 The "3+1" Canonical Stage Taxonomy (`--stage spec | apply | verify | fix`)](#631-the-31-canonical-stage-taxonomy---stage-spec--apply--verify--fix)
       - [6.3.2 Ground-Truth State Vector & Invariants (Fallback Pipeline Driver)](#632-ground-truth-state-vector--invariants-fallback-pipeline-driver)
       - [6.3.3 Strict Disambiguation: Spec Review vs. Apply vs. Impl Review](#633-strict-disambiguation-spec-review-vs-apply-vs-impl-review)
       - [6.3.4 Autonomous Review Comment Triage & Resolution Engine (Beyond 'CHANGES_REQUESTED')](#634-autonomous-review-comment-triage--resolution-engine-beyond-changes_requested)
@@ -48,7 +48,7 @@
     - [6.1 双执行模式：本地就地执行与免 Clone 零检出执行 (`--repo`)](#61-双执行模式本地就地执行与免-clone-零检出执行---repo)
     - [6.2 人性化变更定位与零摩擦续跑机制（智能推导、交互选择器、PR # / URL / Issue 解析）](#62-人性化变更定位与零摩擦续跑机制智能推导交互选择器pr---url--issue-解析)
     - [6.3 “3+1” 权威阶段执行体系与确定性阶段推导引擎](#63-31-权威阶段执行体系与确定性阶段推导引擎)
-      - [6.3.1 “3+1” 核心阶段手柄 (`--stage spec | apply | verify | fix-comments`)](#631-31-核心阶段手柄---stage-spec--apply--verify--fix-comments)
+      - [6.3.1 “3+1” 核心阶段手柄 (`--stage spec | apply | verify | fix`)](#631-31-核心阶段手柄---stage-spec--apply--verify--fix)
       - [6.3.2 四维客观不变量状态向量（无 `--stage` 时的后备流水线驱动器）](#632-四维客观不变量状态向量无---stage-时的后备流水线驱动器)
       - [6.3.3 核心阶段精准仲裁矩阵：互斥不变量对比](#633-核心阶段精准仲裁矩阵互斥不变量对比)
       - [6.3.4 深度解析：无 Request Changes 纯评论场景下的自主甄别与处理引擎（3-Tier Triage Engine）](#634-深度解析无-request-changes-纯评论场景下的自主甄别与处理引擎3-tier-triage-engine)
@@ -487,15 +487,15 @@ Forcing users to memorize or copy-paste synthetic internal change slugs across r
 ### 6.3 The "3+1" Canonical Stage Execution Model & Deterministic Resolution Engine
 In adherence to the UNIX philosophy—*Explicit is better than implicit*—the autonomous container pipeline treats **explicit stage flags as First-Class Citizens**, while providing an automated, single-hop **Pipeline Driver** as a convenience fallback when `--stage` is omitted.
 
-#### 6.3.1 The "3+1" Canonical Stage Taxonomy (`--stage spec | apply | verify | fix-comments`)
-The autonomous lifecycle is factored cleanly into **three forward production stages** and **one reactive collaboration stage**:
+#### 6.3.1 The "3+1" Canonical Stage Taxonomy (`--stage spec | apply | verify | fix`)
+The autonomous lifecycle is factored cleanly into **three forward production stages** and **one reactive collaboration stage** (all standardized into clean, single-word verbs):
 
-| Stage Name | Shorthand Alias | Category | Target Input | Autonomous Action | Verification Gate |
+| Stage Name | Category | Target Input | Autonomous Action | Verification Gate | Legacy Alias |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `--stage spec` | `--stage spec-review` | Forward Production | Change ID, File, Issue | Ground in AST $\to$ Draft Proposal & Specs $\to$ Run BDD Lint $\to$ Initial Review $\to$ Open Spec PR | `asdlc lint` PASS |
-| `--stage apply` | N/A | Forward Production | Change ID with merged Spec | Enforce `0444` kernel lock on specs $\to$ Execute Task-level TDD Loop (Red $\to$ Green $\to$ Refactor) | Unit tests PASS |
-| `--stage verify` | `--stage impl-review` | Forward Production | Change ID with completed tasks | Independent AI Impl Review $\to$ Run `asdlc verify` (14-gate suite) $\to$ Open/Update Impl PR | `asdlc verify` PASS |
-| `--stage fix-comments` | `--stage fix` | Reactive Collaboration | PR Number (`#N`) or URL | 3-Tier Triage Engine: Fetch unresolved review comments $\to$ Classify $\to$ Apply fixes / Reply / Resolve | Re-lint (Spec) or Re-verify (Impl) |
+| `--stage spec` | Forward Production | Change ID, File, Issue | Ground in AST $\to$ Draft Proposal & Specs $\to$ Run BDD Lint $\to$ Initial Review $\to$ Open Spec PR | `asdlc lint` PASS | `--stage spec-review` |
+| `--stage apply` | Forward Production | Change ID with merged Spec | Enforce `0444` kernel lock on specs $\to$ Execute Task-level TDD Loop (Red $\to$ Green $\to$ Refactor) | Unit tests PASS | N/A |
+| `--stage verify` | Forward Production | Change ID with completed tasks | Independent AI Impl Review $\to$ Run `asdlc verify` (14-gate suite) $\to$ Open/Update Impl PR | `asdlc verify` PASS | `--stage impl-review` |
+| `--stage fix` | Reactive Collaboration | PR Number (`#N`) or URL | 3-Tier Triage Engine: Fetch unresolved review comments $\to$ Classify $\to$ Apply fixes / Reply / Resolve | Re-lint (Spec) or Re-verify (Impl) | `--stage fix-comments` |
 
 ##### 1. Explicit Stage Execution (Deterministic & CI/CD Native)
 When invoking `asdlc run` with an explicit `--stage`, zero heuristic guesswork is performed:
@@ -510,13 +510,11 @@ asdlc run feat-auth --stage apply
 asdlc run feat-auth --stage verify
 
 # 4. Ingest and address review comments on PR #42 (Spec PR or Impl PR)
-asdlc run #42 --stage fix-comments
-# or shorthand:
 asdlc run #42 --stage fix
 ```
 
 ##### 2. Enterprise CI/CD Integration (GitHub Actions / GitLab CI)
-In production CI pipelines, webhooks already know the exact triggering event. The `--stage fix-comments` stage enables dead-simple, 1-line automation without brittle Bash scripting:
+In production CI pipelines, webhooks already know the exact triggering event. The `--stage fix` stage enables dead-simple, 1-line automation without brittle Bash scripting:
 ```yaml
 name: Agentic Review Auto-Fix
 on:
@@ -530,24 +528,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Address Review Feedback
-        run: asdlc run ${{ github.event.pull_request.number }} --stage fix-comments
+        run: asdlc run ${{ github.event.pull_request.number }} --stage fix
 ```
 
 ##### 3. Non-Container Local CLI Symmetry
 To guarantee Dual-Track SDLC symmetry, review comment fixing is also available as an atomic local CLI command for developers working directly in their local IDE without containers:
 ```bash
 # Interactive local developer execution in terminal/VS Code:
-asdlc fix-comments #42
+asdlc fix #42
 # Container sandbox execution:
-asdlc run #42 --stage fix-comments
+asdlc run #42 --stage fix
 ```
 
 #### 6.3.2 Ground-Truth State Vector & Invariants (Fallback Pipeline Driver)
 When a developer or automation invokes `asdlc run [target]` **without an explicit `--stage`**, the orchestrator acts as a transparent, single-hop **Pipeline Driver** (analogous to `make` checking target dependencies).
 It evaluates the 4-Dimension State Vector $\mathbf{S} = \langle \text{Artifacts}, \text{GitLocks}, \text{TreeDiff}, \text{PRMetadata} \rangle$, logs the selected stage prominently, and advances by exactly one logical step:
 ```text
-[INFO] No --stage specified. Auto-selected stage: 'fix-comments' for PR #42.
-[TIP]  You can run this stage explicitly: asdlc run #42 --stage fix-comments
+[INFO] No --stage specified. Auto-selected stage: 'fix' for PR #42.
+[TIP]  You can run this stage explicitly: asdlc run #42 --stage fix
 ```
 
 At startup, the Pipeline Driver resolves the state vector $\mathbf{S} = \langle \text{Artifacts}, \text{GitLocks}, \text{TreeDiff}, \text{PRMetadata} \rangle$:
@@ -1062,15 +1060,15 @@ Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
 ### 6.3 “3+1” 权威阶段执行体系与确定性阶段推导引擎
 秉承 UNIX 实用主义哲学——*“显式优于隐式，透明优于魔法”*——容器流水线将**显式阶段标志（Explicit Stage Flag）作为第一公民**；同时提供一套确定性、单向单步推进的**流水线驱动器（Pipeline Driver）**，在用户缺省 `--stage` 时提供极简的自动前推便利。
 
-#### 6.3.1 “3+1” 核心阶段手柄 (`--stage spec | apply | verify | fix-comments`)
-整个全生命周期收敛为 **3 个前向生产阶段** 与 **1 个响应协作阶段**：
+#### 6.3.1 “3+1” 核心阶段手柄 (`--stage spec | apply | verify | fix`)
+整个全生命周期收敛为 **3 个前向生产阶段** 与 **1 个响应协作阶段**（统一为精炼、齐整的单动词体系）：
 
-| Stage 参数 | 快捷别名 | 阶段属性 | 适用输入 | 核心动作 | 质量门禁 |
+| Stage 参数 | 阶段属性 | 适用输入 | 核心动作 | 质量门禁 | 兼容别名 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `--stage spec` | `--stage spec-review` | 前向生产 | 变更 ID、需求文件、Issue | 基于 AST 图谱草拟提案与 Spec $\to$ 跑通 BDD Lint $\to$ 初审 $\to$ 发起 Spec PR | `asdlc lint` PASS |
-| `--stage apply` | 无 | 前向生产 | 主干已合入 Spec 的变更 ID | 启用 Spec `0444` 内核只读锁 $\to$ 执行任务级 TDD 红绿重构循环 | 单元测试全 PASS |
-| `--stage verify` | `--stage impl-review` | 前向生产 | 代码已完成的变更 ID | 派生独立进程跑 Impl Review $\to$ 跑通 `asdlc verify`（14 项物理门禁） $\to$ 提单/更新 Impl PR | `asdlc verify` PASS |
-| `--stage fix-comments` | `--stage fix` | 响应协作 | PR 编号（`#N`）或 PR URL | 调用 3-Tier 甄别引擎：拉取未解决评论 $\to$ 语义分类 $\to$ 修复/答疑/提交 $\to$ 标记 Resolve | 重跑 lint 或 verify |
+| `--stage spec` | 前向生产 | 变更 ID、需求文件、Issue | 基于 AST 图谱草拟提案与 Spec $\to$ 跑通 BDD Lint $\to$ 初审 $\to$ 发起 Spec PR | `asdlc lint` PASS | `--stage spec-review` |
+| `--stage apply` | 前向生产 | 主干已合入 Spec 的变更 ID | 启用 Spec `0444` 内核只读锁 $\to$ 执行任务级 TDD 红绿重构循环 | 单元测试全 PASS | 无 |
+| `--stage verify` | 前向生产 | 代码已完成的变更 ID | 派生独立进程跑 Impl Review $\to$ 跑通 `asdlc verify`（14 项物理门禁） $\to$ 提单/更新 Impl PR | `asdlc verify` PASS | `--stage impl-review` |
+| `--stage fix` | 响应协作 | PR 编号（`#N`）或 PR URL | 调用 3-Tier 甄别引擎：拉取未解决评论 $\to$ 语义分类 $\to$ 修复/答疑/提交 $\to$ 标记 Resolve | 重跑 lint 或 verify | `--stage fix-comments` |
 
 ##### 1. 显式阶段执行（确定性、无歧义、指哪打哪）
 当使用显式 `--stage` 启动时，容器直奔目标，零黑盒猜测：
@@ -1085,13 +1083,11 @@ asdlc run feat-auth --stage apply
 asdlc run feat-auth --stage verify
 
 # 4. 明确消化并回复 PR #42 上的评审意见（支持 Spec PR 与 Impl PR）
-asdlc run #42 --stage fix-comments
-# 极简缩写：
 asdlc run #42 --stage fix
 ```
 
 ##### 2. 企业 CI/CD 自动化集成（GitHub Actions / GitLab CI）
-在生产流水线中，Webhook 事件自身已携带明确动作。`--stage fix-comments` 使得自动化配置极其纯粹，一行搞定：
+在生产流水线中，Webhook 事件自身已携带明确动作。`--stage fix` 使得自动化配置极其纯粹，一行搞定：
 ```yaml
 name: Agentic Review Auto-Fix
 on:
@@ -1105,24 +1101,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Address Review Feedback
-        run: asdlc run ${{ github.event.pull_request.number }} --stage fix-comments
+        run: asdlc run ${{ github.event.pull_request.number }} --stage fix
 ```
 
 ##### 3. 本地非容器原子命令对齐（双轨对称性）
 为了确保本地开发者体验 100% 对齐，Review 意见修复在本地非容器模式下作为一等原子子命令提供：
 ```bash
 # 本地终端/IDE 交互式执行：
-asdlc fix-comments #42
+asdlc fix #42
 # 容器沙箱全自动执行：
-asdlc run #42 --stage fix-comments
+asdlc run #42 --stage fix
 ```
 
 #### 6.3.2 四维客观不变量状态向量（无 `--stage` 时的后备流水线驱动器）
 当开发者或脚本在未提供 `--stage` 的情况下调用 `asdlc run [target]` 时，编排器退化为透明的单步**流水线驱动器（Pipeline Driver，类似 `make` 检查 Target 依赖）**。
 它毫秒级计算状态向量 $\mathbf{S} = \langle \text{Artifacts}, \text{GitLocks}, \text{TreeDiff}, \text{PRMetadata} \rangle$，在终端首行清晰打印当前推进动作，向前推进一步：
 ```text
-[INFO] No --stage specified. Auto-selected stage: 'fix-comments' for PR #42.
-[TIP]  You can run this stage explicitly: asdlc run #42 --stage fix-comments
+[INFO] No --stage specified. Auto-selected stage: 'fix' for PR #42.
+[TIP]  You can run this stage explicitly: asdlc run #42 --stage fix
 ```
 
 编排器在启动时计算状态向量 $\mathbf{S} = \langle \text{Artifacts}, \text{GitLocks}, \text{TreeDiff}, \text{PRMetadata} \rangle$：
