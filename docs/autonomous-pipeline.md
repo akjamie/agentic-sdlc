@@ -132,42 +132,71 @@ flowchart TD
   GATES -- "Phase 2 / single-pr" --> PR2
 ```
 
-### 2.2 Autonomous Execution Lifecycle (Including Async PR Comment Grilling)
+### 2.2 Autonomous Execution Lifecycle (Including Async PR Comment Grilling & Review Fixes)
 
 ```mermaid
 sequenceDiagram
   autonumber
   actor Dev as Developer / Tech Lead
+  actor Rev as Peer Reviewer
   participant Host as Host CLI (asdlc run)
   participant Runner as Container Runner (UID 10001)
   participant AgentA as Session A (Author / Impl)
   participant AgentR as Session B (Fresh Reviewer)
   participant GitPR as GitHub / GitLab PR
 
-  Dev->>Host: asdlc run --from-issue JIRA-345 --from-file ./prd.md --container
-  Host->>Runner: Create non-root container + docker cp workspace archive, config & skills
-  Runner->>AgentA: Resolve JIRA-345 via skill into intake/, run asdlc new --no-grill, draft spec
-  alt Unresolved business ambiguity or conflicting docs (OPEN questions)
-    AgentA->>GitPR: Open Draft Spec PR (asdlc:needs-clarification) + post Q1..Qn comment
-    Runner-->>Host: Exit cleanly (awaiting_clarification, zero idle container)
-    Dev->>GitPR: Reply to Q1..Qn directly in PR comments
-    Dev->>Host: asdlc run {changeId} --container
-    Host->>Runner: Pull PR branch + latest PR comments
-    Runner->>AgentA: Ingest human replies, clear OPEN items in clarifications.md, finalize Spec
+  Note over Dev,GitPR: Stage 1: Specification Authoring & Review (--stage spec)
+  Dev->>Host: asdlc run --from-issue JIRA-345 --from-file ./prd.md --stage spec
+  Host->>Runner: Launch container + docker cp workspace, config, skills
+  Runner->>AgentA: Resolve intake/ issues, ground in AST, draft proposal & specs
+  alt Unresolved business ambiguity (OPEN items exist)
+    AgentA->>GitPR: Open Draft PR (asdlc:needs-clarification) + post Q1..Qn comments
+    Runner-->>Host: Exit cleanly 0 (awaiting human answers, zero idle container)
+    Dev->>GitPR: Reply directly to Q1..Qn in PR comments
+    Dev->>Host: asdlc run #34 --stage spec
+    Host->>Runner: Ingest PR comments -> Clear OPEN items in clarifications.md
   end
-  Runner->>AgentR: Spawn fresh process for asdlc-spec-review (zero shared history)
-  Runner->>Runner: Run deterministic gate asdlc lint {changeId} (blocks if any OPEN remains)
-  Runner->>GitPR: Push & mark Ready Spec PR (asdlc:spec-review) + attach review summary
+  Runner->>AgentR: Spawn Session B (asdlc-spec-review, heterogeneous model)
+  Runner->>Runner: Run deterministic gate: asdlc lint (must PASS)
+  Runner->>GitPR: Mark Ready Spec PR #34 (asdlc:spec-review) + attach review verdict
   Runner-->>Host: Destroy container (--rm)
 
-  Dev->>GitPR: Review & Merge Spec PR into main (locks specSha)
-  Dev->>Host: asdlc run {changeId} --container
-  Host->>Runner: Clone branch, lock proposal.md & specs/** as 0:0 (0444 read-only)
-  Runner->>AgentA: Author tasks.md + execute task-level TDD loop
-  Runner->>AgentR: Spawn fresh process for asdlc-impl-review + asdlc test
-  Runner->>Runner: Run asdlc verify {changeId} (all deterministic gates incl. spec-tamper)
-  Runner->>GitPR: Open Implementation PR (asdlc:impl-review)
+  opt Reviewer Leaves Feedback on Spec PR #34 (--stage fix)
+    Rev->>GitPR: Post review comments or suggestions on Spec PR #34
+    Dev->>Host: asdlc run #34 --stage fix
+    Host->>Runner: Pull unresolved review threads via GraphQL
+    Runner->>AgentA: Amend proposal.md & specs/** to satisfy feedback
+    Runner->>Runner: Run asdlc lint (must PASS)
+    Runner->>GitPR: Push fix commit + reply to thread + resolveReviewThread
+    Runner-->>Host: Destroy container (--rm)
+  end
+
+  Dev->>GitPR: Human TL reviews & merges Spec PR #34 into main (locks specSha)
+
+  Note over Dev,GitPR: Stage 2: TDD Implementation (--stage apply)
+  Dev->>Host: asdlc run feat-auth --stage apply
+  Host->>Runner: Clone branch, lock specs as 0:0 0444 read-only
+  Runner->>AgentA: Generate tasks.md + execute task-level TDD loop (Red -> Green -> Refactor)
+  Runner->>Runner: Local test suite PASS on all tasks
   Runner-->>Host: Destroy container (--rm)
+
+  Note over Dev,GitPR: Stage 3: Verification & Impl Review (--stage verify)
+  Dev->>Host: asdlc run feat-auth --stage verify
+  Host->>Runner: Spawn Session B (asdlc-impl-review) + run asdlc verify (14 gates)
+  Runner->>GitPR: Open Implementation PR #42 (asdlc:impl-review) + attach evidence
+  Runner-->>Host: Destroy container (--rm)
+
+  opt Reviewer Leaves Feedback on Impl PR #42 (--stage fix)
+    Rev->>GitPR: Post code review comments / suggestions on Impl PR #42
+    Dev->>Host: asdlc run #42 --stage fix
+    Host->>Runner: Ingest review comments via GraphQL
+    Runner->>AgentA: Modify source code & tests to satisfy feedback
+    Runner->>Runner: Run asdlc verify (14 gates must PASS)
+    Runner->>GitPR: Push fix commit + reply to thread + resolveReviewThread
+    Runner-->>Host: Destroy container (--rm)
+  end
+
+  Dev->>GitPR: Final Human Approval & Merge Impl PR into main
 ```
 
 ### 2.3 Dual-Track Symmetry: Interactive (Non-Container) vs. Autonomous (Container) Modes
@@ -929,6 +958,73 @@ flowchart TD
 ### 2.1 核心职责切分
 - **宿主机（`asdlc run`）**：负责读取 `~/.asdlc/config.yaml`、校验并 `docker cp` 宿主机 `--from-file` 文档、跨平台提取宿主机已有原生 AI 凭证与 `gh auth token`、注入企业自定义 `~/.asdlc/skills/`，并管理一次性非特权容器生命周期。
 - **隔离容器（`UID 10001:10001`）**：在容器原生 Linux `/workspace` 内独立克隆仓库，通过 Skill 拉取外部需求单落盘 `intake/`，以**两个完全独立的进程会话**分别执行「编写/实现」与「独立审查（`Player != Referee`）」，通过确定性门禁后推送分支并创建/更新 PR，退出即销毁（`--rm`）。
+
+### 2.2 全自动执行生命周期与 PR 评论异步闭环（涵盖 Spec 问答与代码 Review 修复）
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Dev as 业务开发者 / Tech Lead
+  actor Rev as 同行代码审查者 (Reviewer)
+  participant Host as 宿主机 CLI (asdlc run)
+  participant Runner as 容器沙箱 (UID 10001)
+  participant AgentA as Session A (编写/实现会话)
+  participant AgentR as Session B (独立审查会话)
+  participant GitPR as GitHub / GitLab PR
+
+  Note over Dev,GitPR: 阶段 1: 需求草拟与规范审查 (--stage spec)
+  Dev->>Host: asdlc run --from-issue JIRA-345 --from-file ./prd.md --stage spec
+  Host->>Runner: 启动容器 + docker cp 注入代码树、配置与技能
+  Runner->>AgentA: 解析 intake/ 需求单，AST 图谱定位，草拟提案与 Spec
+  alt 存在未解决业务歧义 (含 OPEN 标记)
+    AgentA->>GitPR: 开启 Draft Spec PR (asdlc:needs-clarification) + 提交提问评论
+    Runner-->>Host: 干净退出 0 (零空转等待人工回复)
+    Dev->>GitPR: 直接在 PR 评论区回复答疑
+    Dev->>Host: asdlc run #34 --stage spec
+    Host->>Runner: 抓取 PR 评论回复 -> 消化并清空 OPEN 标记
+  end
+  Runner->>AgentR: 派生独立审查进程 (asdlc-spec-review, 异构模型)
+  Runner->>Runner: 运行物理门禁: asdlc lint (必须通过)
+  Runner->>GitPR: 标记 Ready Spec PR #34 (asdlc:spec-review) + 附带审查凭据
+  Runner-->>Host: 销毁容器 (--rm)
+
+  opt 人工审查提出 Spec 修改批注 (--stage fix)
+    Rev->>GitPR: 在 Spec PR #34 留下行内修改建议或评论
+    Dev->>Host: asdlc run #34 --stage fix
+    Host->>Runner: 通过 GraphQL 拉取未解决评论线程
+    Runner->>AgentA: 修改 proposal.md 与 specs/** 响应评审
+    Runner->>Runner: 重新执行 asdlc lint (必须通过)
+    Runner->>GitPR: 推送修复 Commit + 回复评论 + resolveReviewThread
+    Runner-->>Host: 销毁容器 (--rm)
+  end
+
+  Dev->>GitPR: Tech Lead 审核并在主干合入 Spec PR #34 (锁定 specSha)
+
+  Note over Dev,GitPR: 阶段 2: 严格 TDD 编码实现 (--stage apply)
+  Dev->>Host: asdlc run feat-auth --stage apply
+  Host->>Runner: 克隆主干，内核锁死 Spec 为 0:0 0444 只读
+  Runner->>AgentA: 生成 tasks.md + 执行任务级 TDD 红绿重构循环
+  Runner->>Runner: 本地单元测试全部通过
+  Runner-->>Host: 销毁容器 (--rm)
+
+  Note over Dev,GitPR: 阶段 3: 独立审查与终态验证 (--stage verify)
+  Dev->>Host: asdlc run feat-auth --stage verify
+  Host->>Runner: 派生独立审查进程 (asdlc-impl-review) + 运行 asdlc verify (14项门禁)
+  Runner->>GitPR: 开启正式 Implementation PR #42 (asdlc:impl-review) + 附带测试凭据
+  Runner-->>Host: 销毁容器 (--rm)
+
+  opt 人工审查提出代码/测试修改批注 (--stage fix)
+    Rev->>GitPR: 在 Impl PR #42 提出代码审查意见
+    Dev->>Host: asdlc run #42 --stage fix
+    Host->>Runner: 通过 GraphQL 拉取行内评审批注
+    Runner->>AgentA: 修改源码与测试用例响应批注
+    Runner->>Runner: 运行 asdlc verify 门禁验证 (14 项必须全绿)
+    Runner->>GitPR: 推送修复 Commit + 回复评论 + resolveReviewThread
+    Runner-->>Host: 销毁容器 (--rm)
+  end
+
+  Dev->>GitPR: Tech Lead 终审通过合入 Impl PR，流水线大功告成
+```
 
 ### 2.3 双轨生命周期对齐：交互式（非容器）与全自动（容器）模式的无缝互通
 
