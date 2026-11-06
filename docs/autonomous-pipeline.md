@@ -434,6 +434,36 @@ flowchart LR
      `name: github-actions[bot]`, `email: 41898282+github-actions[bot]@users.noreply.github.com`.
 3. **Enterprise VPC & Private Trackers (Jira / Confluence / Private Git)**:
    - Secrets defined in `~/.asdlc/config.yaml` (`env.JIRA_API_TOKEN`, `env.GITLAB_TOKEN`) are injected into the container via explicit passthrough (`runner.env_passthrough: "JIRA_*,GITLAB_*"`).
+4. **Enterprise SSH Authentication & Zero-Leak Ingestion**:
+   - **Does SSH Require a Private Key?**: Yes. Git over SSH (`git@host:dept/repo.git`) uses asymmetric cryptography (Ed25519/RSA). It strictly requires a valid private key registered with the remote Git server, or an active SSH agent holding that key. Without it, Git aborts with `Permission denied (publickey)`.
+   - **How It Is Solved in the Container (Avoiding Four Security Anti-Patterns)**:
+     - ❌ *Never bake SSH keys into the Docker image* (prevents image layer leakage).
+     - ❌ *Never bind-mount host `~/.ssh` read-write* (prevents rogue scripts from corrupting host keys or `authorized_keys`).
+     - ❌ *Never bind-mount `~/.ssh` across Windows/Linux UID boundaries* (prevents OpenSSH fatal error `Permissions 0644 for id_rsa are too open`).
+     - ❌ *Never allow interactive host verification prompts* (prevents headless runs from hanging forever on `Are you sure you want to continue connecting (yes/no)?`).
+   - **Supported Ingestion Patterns**:
+     - **Pattern A: Ephemeral SSH-Agent Socket Forwarding (`SSH_AUTH_SOCK`)** *(Default for Local Dev)*:
+       - The developer's host machine runs an SSH Agent (OpenSSH Authentication Agent on Windows, macOS Keychain, or Linux `ssh-agent`).
+       - `asdlc run` binds the host SSH agent socket into the container as a read-only socket:
+         ```bash
+         # Linux / macOS native:
+         -v "$SSH_AUTH_SOCK":/run/host-services/ssh-auth.sock:ro -e SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock
+         # Docker Desktop (Windows / macOS) built-in socket alias:
+         -v //run/host-services/ssh-auth.sock:/run/host-services/ssh-auth.sock -e SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock
+         ```
+       - **Zero Private Keys in Container**: The container sends cryptographic sign requests to the host agent; no raw private key files ever enter the container filesystem or RAM.
+     - **Pattern B: Ephemeral RAM-Disk Key Stream (`/dev/shm/.ssh/`)** *(For Headless CI / Deploy Keys)*:
+       - When running in automated CI without an agent, or when using a dedicated deploy key (`asdlc config set git.ssh_key_path ~/.ssh/id_ci` or env `ASDLC_SSH_KEY`):
+       - The host orchestrator reads the private key into memory and streams it into the container's tmpfs RAM disk (`/dev/shm/.ssh/id_ed25519`), setting permissions strictly to `0600` and owner `10001:10001`.
+       - Wiped completely when the container stops (`--rm`).
+     - **Pattern C: Headless Known-Hosts Pre-Seeding (Zero TTY Prompts)**:
+       - Before launching the container, the host orchestrator inspects the target host and pre-seeds container `/etc/ssh/ssh_known_hosts` (via in-memory `ssh-keyscan` or host `~/.ssh/known_hosts`), or injects `StrictHostKeyChecking accept-new` into container `~/.ssh/config`.
+       - Eliminates terminal hangs on first-time host key verification.
+   - **PE Recommendation (HTTPS Tokens vs SSH Keys)**:
+     - In modern container CI/CD, **HTTPS + Token (`x-access-token` / `$GH_TOKEN` / `$GITLAB_TOKEN`) via `credential.helper` is generally preferred over SSH**:
+       1. Tokens support fine-grained repository scoping and auto-expiration (e.g. 1-hour GitHub Actions tokens).
+       2. HTTPS traverses corporate web proxies (`HTTP_PROXY`) and firewall rules seamlessly, whereas corporate egress firewalls frequently block outbound SSH port 22.
+     - However, where enterprise compliance mandates SSH, Patterns A and B provide 100% automated, zero-leak operational parity.
 
 ### 3.4 Enterprise Model Injection & Heterogeneous Reviewer Topology
 The AI reasoning engine requires flexibility to consume models from diverse internal and commercial providers while enforcing governance guardrails:
@@ -1311,6 +1341,35 @@ flowchart LR
    - 容器流水线推送的所有 Commit 与 PR 统一署名合规的官方自动化账号：`name: github-actions[bot]`, `email: 41898282+github-actions[bot]@users.noreply.github.com`。
 3. **企业内网与私有工单鉴权（Jira / Confluence / 私有 GitLab）**：
    - 在 `~/.asdlc/config.yaml` 中配置的第三方服务密钥（如 `env.JIRA_API_TOKEN`）遵循严格白名单机制，通过 `runner.env_passthrough` 按需定向透传至容器，禁止宽泛全量注入。
+4. **企业级 SSH 鉴权与零泄漏沙箱注入方案**：
+   - **SSH 是否需要配置密钥？**：是的。Git over SSH（`git@host:dept/repo.git`）采用非对称加密（Ed25519 或 RSA），强依赖能够与远端 Git 服务公钥配对的私钥（或正在运行的 SSH Agent）。没有私钥，Git 会立即报 `Permission denied (publickey)` 失败。
+   - **容器内解决 SSH 密钥的四大安全禁区**：
+     - ❌ **严禁将私钥打入镜像**：防止镜像发布或内网被拉取时泄露凭据；
+     - ❌ **严禁直接挂载宿主 `~/.ssh:/home/agent/.ssh:rw`**：防止沙箱内恶意或故障脚本覆盖宿主机 `authorized_keys` 或篡改配置；
+     - ❌ **严禁跨操作系统卷权限挂载**：Windows NTFS 挂载到 Linux 容器后权限常为 `0777`，OpenSSH 会强制拦截报错：`Permissions 0644 for id_rsa are too open`；
+     - ❌ **严禁阻塞式交互提示**：首次连接未预埋公钥指纹时，SSH 会阻塞等待 `Are you sure you want to continue connecting (yes/no)?`，导致无头容器直接死锁挂起。
+   - **三大权威落地工程方案**：
+     - **方案 A：宿主机 SSH-Agent 转发（`SSH_AUTH_SOCK` 推荐用于工位开发）**：
+       - 开发者本地通常已有 SSH Agent（Windows OpenSSH Authentication Agent、macOS Keychain 或 Linux `ssh-agent`）；
+       - `asdlc run` 启动容器时，仅以只读方式挂载 Agent 的 Unix Domain Socket：
+         ```bash
+         # 原生 Linux / macOS:
+         -v "$SSH_AUTH_SOCK":/run/host-services/ssh-auth.sock:ro -e SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock
+         # Docker Desktop (Windows / macOS) 专属内建转发别名:
+         -v //run/host-services/ssh-auth.sock:/run/host-services/ssh-auth.sock -e SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock
+         ```
+       - **沙箱内零私钥实体**：容器内部仅通过 Socket 向宿主发起签名协商请求，私钥明文从始至终不离开宿主机内存，容器退出销毁后无任何残留。
+     - **方案 B：内存盘流式临时密钥注入（`/dev/shm/.ssh/` 适用于 CI / Deploy Key）**：
+       - 面向无 SSH Agent 的自动化 CI 或专用部署密钥场景（配置 `asdlc config set git.ssh_key_path ~/.ssh/id_ci` 或注入环境变量 `ASDLC_SSH_KEY`）；
+       - 宿主机在内存中读取密钥，流式写入容器 Linux 内存盘（`/dev/shm/.ssh/id_ed25519`），严格设为属主 `10001:10001`、权限 `0600`；
+       - 自动生成容器内 `~/.ssh/config`（绑定 `IdentityFile /dev/shm/.ssh/id_ed25519` 与 `IdentitiesOnly yes`）；容器停止（`--rm`）后内存自动抹除。
+     - **方案 C：指纹无感预埋（Known-Hosts Headless Pre-Seeding，根绝死锁）**：
+       - 容器启动前，宿主编排器自动根据目标 Host 提取公钥指纹（从宿主 `~/.ssh/known_hosts` 提取或在内存执行 `ssh-keyscan`），直接写入容器 `/etc/ssh/ssh_known_hosts`，并附加 `StrictHostKeyChecking accept-new`，实现 100% 零人工确认、零死锁卡死。
+   - **PE 架构建议（HTTPS Token vs. SSH Key）**：
+     - 在现代云原生与容器 CI/CD 流水线中，**HTTPS + Token（`x-access-token` / `$GH_TOKEN` / `$GITLAB_TOKEN`）通常比 SSH 更加稳健**：
+       1. 权限最小化与短期有效（如 GitHub Actions 临时 Token 1 小时自动失效，且限制单仓权限，而 SSH Key 往往具有全账号或长期全局权限）；
+       2. 企业网络穿透性好（内网通常走 `HTTP_PROXY` 穿透 443 端口，而很多企业防火墙策略严格封锁外发 22 端口 SSH）。
+     - 两种协议在 `asdlc` 中均得到 100% 工业级支持，企业可按安全合规要求自由选择。
 
 ### 3.4 企业级模型传入与异构审查拓扑（Player != Referee）
 编排器在支持接入商业与企业内网私有各类大模型的同时，在架构层面固化治理防御机制：
