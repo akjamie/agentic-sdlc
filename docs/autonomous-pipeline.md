@@ -311,8 +311,8 @@ Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
 For headless automation, scripts, and granular inspection, standard subcommands remain fully available:
 
 ```bash
-# 1. Global workflow switch: strictly two supported modes
-asdlc config set workflow_mode spec-first      # spec-first | auto
+# 1. Global workflow switch: three supported operational modes
+asdlc config set workflow_mode auto           # auto (default) | single-pr | spec-first
 
 # 2. Optional agent & runner orchestration settings
 asdlc config set agent.harness opencode        # opencode (default) | claude
@@ -331,12 +331,13 @@ asdlc config get workflow_mode
 asdlc config unset env.JIRA_API_TOKEN
 ```
 
-**Exact Boundary of the Two Workflow Modes** (`single-pr` and `risk_assessment` are not exposed as separate global toggles; risk classification belongs exclusively to `auto` mode):
+**Exact Boundary of the Three Workflow Modes** (Identical behavior across Non-Container IDE and Container modes):
 
-| `workflow_mode` | Governance Behavior |
+| `workflow_mode` | Governance & PR Topology |
 | :--- | :--- |
-| **`spec-first`** (Classic Mandatory Dual-PR) | **Skips L0–L3 risk classification and `risk-history.jsonl` ratchets.** Every change (outside `fast_path` pure documentation) follows the deterministic two-PR pipeline: **Spec PR (`lint` + `spec-review` + human merge locking `specSha`) → Impl PR (`verify` + `impl-review`)**. Recommended for initial team rollouts. |
-| **`auto`** (Adaptive Risk-Tiered) | **100% preserves current behavior.** Runs the three-vector L0–L3 risk assessment and anti-downgrade ratchet: L0/L1 changes route to `single-pr` (co-locating spec and implementation in one PR), while L2/L3 changes route to `spec-first`. |
+| **`auto`** *(Default)* | **Adaptive Risk-Tiered.** Evaluates the three-vector L0–L3 risk engine: L0/L1 changes route to `single-pr` (co-locating spec and code in one PR), while L2/L3 changes route to `spec-first` (mandatory dual PRs). |
+| **`single-pr`** | **Mandatory Single-PR (Max Velocity).** Bypasses dual-PR gates. Runs spec $\to$ apply $\to$ verify and opens **one consolidated PR** containing proposal, specs, source code, and tests. Ideal for agile/startup teams. |
+| **`spec-first`** | **Mandatory Dual-PR (Max Governance).** Skips risk engine and forces strict dual-PR separation: **Spec PR (`lint` + `spec-review` + human merge locking `specSha`) $\to$ Impl PR (`verify` + `impl-review`)**. Ideal for compliance/core infrastructure. |
 
 **Precedence Chain (Highest → Lowest)**:
 `CLI Flags` > `Environment Variables (ASDLC_*)` > `Repo .sdlc/policy.yaml (optional override)` > **`Global ~/.asdlc/config.yaml`** > `Built-in Default`.
@@ -1122,9 +1123,10 @@ Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
 
 引入机器级全局配置 `~/.asdlc/config.yaml`（权限强制 `0600`），所有配置项统一收敛至 `asdlc config`（不单设 `asdlc auth`；命中 `*key/*token/*secret/*password` 在 `list` 时自动脱敏）：
 
-- **`workflow_mode` 仅保留两档**（不暴露单独的 `single-pr` 或 `risk_assessment`，风险分级是 `auto` 模式内生机制）：
-  - **`spec-first`（经典强制双 PR）**：**完全跳过 L0–L3 分级评估与 `risk-history.jsonl` 防降级棘轮**。除 `fast_path` 纯文档变更外，所有变更统一执行：**Spec PR（`lint` + `spec-review` + 人工合入锁 `specSha`）→ Impl PR（`verify` + `impl-review`）**。
-  - **`auto`（现有自适应分级）**：**100% 保持现有机制**。运行内置 L0–L3 风险评估与防降级校验，L0/L1 走单 PR（同时含 Spec 与代码），L2/L3 走双 PR。
+- **`workflow_mode` 权威支持三档**（在本地 IDE 与容器沙箱中表现 100% 严格一致）：
+  - **`auto`（默认智能自适应）**：**推荐出厂默认**。内置 L0–L3 风险评估引擎，L0/L1 走单 PR（Spec 与源码合并为一个 PR，极速交付），L2/L3 高危架构自动升格走双 PR。
+  - **`single-pr`（全场景极速单 PR）**：面向敏捷业务团队。跳过双 PR 门禁，一条龙执行 `spec` $\to$ `apply` $\to$ `verify`，永远只开启 1 个包含完整 Spec、源码与测试用例的 Pull Request。
+  - **`spec-first`（经典强制双 PR）**：面向合规与核心底层架构团队。跳过风险评估，所有变更统一执行：**Spec PR（`lint` + `spec-review` + 人工合入主干锁 `specSha`）$\to$ Impl PR（`verify` + `impl-review`）**。
 - **优先级链**：`CLI 参数` > `环境变量 ASDLC_*` > `单仓 .sdlc/policy.yaml（仅特例覆盖）` > **`全局 ~/.asdlc/config.yaml`** > `内置默认值`。
 
 ### 3.2 行业级与用户级 AI 配置设计（整文件原子继承 + CLI 参数覆盖）
