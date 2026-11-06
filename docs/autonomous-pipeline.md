@@ -311,8 +311,8 @@ Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
 For headless automation, scripts, and granular inspection, standard subcommands remain fully available:
 
 ```bash
-# 1. Global workflow switch: three supported operational modes
-asdlc config set workflow_mode auto           # auto (default) | single-pr | spec-first
+# 1. Global workflow switch: two supported operational modes
+asdlc config set workflow_mode auto           # auto (default) | spec-first
 
 # 2. Optional agent & runner orchestration settings
 asdlc config set agent.harness opencode        # opencode (default) | claude
@@ -331,13 +331,17 @@ asdlc config get workflow_mode
 asdlc config unset env.JIRA_API_TOKEN
 ```
 
-**Exact Boundary of the Three Workflow Modes** (Identical behavior across Non-Container IDE and Container modes):
+**Exact Boundary of the Two Workflow Modes** (Strict 100% Mathematical Symmetry Across Non-Container IDE and Container Modes):
 
-| `workflow_mode` | Governance & PR Topology |
-| :--- | :--- |
-| **`auto`** *(Default)* | **Adaptive Risk-Tiered.** Evaluates the three-vector L0–L3 risk engine: L0/L1 changes route to `single-pr` (co-locating spec and code in one PR), while L2/L3 changes route to `spec-first` (mandatory dual PRs). |
-| **`single-pr`** | **Mandatory Single-PR (Max Velocity).** Bypasses dual-PR gates. Runs spec $\to$ apply $\to$ verify and opens **one consolidated PR** containing proposal, specs, source code, and tests. Ideal for agile/startup teams. |
-| **`spec-first`** | **Mandatory Dual-PR (Max Governance).** Skips risk engine and forces strict dual-PR separation: **Spec PR (`lint` + `spec-review` + human merge locking `specSha`) $\to$ Impl PR (`verify` + `impl-review`)**. Ideal for compliance/core infrastructure. |
+| `workflow_mode` | Governance & PR Topology | Non-Container Local IDE (Track 1) | Container Runner (Track 2) |
+| :--- | :--- | :--- | :--- |
+| **`auto`** *(Default)* | **Adaptive Risk-Tiered.** Evaluates the three-vector L0–L3 risk engine: L0/L1 changes route to Single-PR topology (spec + code co-located in 1 PR for maximum velocity), while L2/L3 changes route to Dual-PR topology (mandatory Spec PR human approval before Impl PR). | Developer runs `asdlc lint`; risk engine calculates Level. If L0/L1, single PR is opened (`asdlc pr <id>`). If L2/L3, Spec PR is opened first, locked upon merge. | Container evaluates risk in Phase 3. If L0/L1, container proceeds through `apply` & `verify` and opens a single combined PR. If L2/L3, opens Spec PR, enters Phase 5 wait state. |
+| **`spec-first`** | **Mandatory Dual-PR (Max Governance).** Skips risk engine and forces strict dual-PR separation for all changes: **Spec PR (`lint` + `spec-review` + human merge locking `specSha`) $\to$ Impl PR (`verify` + `impl-review`)**. Ideal for compliance and core infrastructure. | Every change requires Spec PR creation, human TL approval & merge on GitHub, locking `specSha`, before `asdlc apply` is permitted. | Container executes `--stage spec`, opens Spec PR, and terminates or waits for merge. Implementation requires explicit `--stage apply` after Spec merge. |
+
+> [!IMPORTANT]
+> **Why `single-pr` is NOT a Standalone Global Configuration**:
+> In enterprise governance, exposing a top-level `workflow_mode: single-pr` setting creates a catastrophic loophole: a developer or rogue automation could set global `single-pr` to bypass all dual-PR gates for high-risk changes (such as database schema migrations, IAM privilege escalations, or core billing logic). 
+> Therefore, in `agentic-sdlc`, `single-pr` is strictly an **internal routing topology** determined dynamically by `auto` mode when a change's risk assessment strictly evaluates to L0 or L1.
 
 **Precedence Chain (Highest → Lowest)**:
 `CLI Flags` > `Environment Variables (ASDLC_*)` > `Repo .sdlc/policy.yaml (optional override)` > **`Global ~/.asdlc/config.yaml`** > `Built-in Default`.
@@ -482,6 +486,39 @@ The orchestrator resolves the target Git remote and PR context through an unambi
 4. **Tier 4: Zero-Checkout Remote Mode (`--repo`)**:
    `asdlc run #42 --repo owner/repo --stage fix`
    - When invoked from an arbitrary folder or machine without local git checkout, the container runner performs an ephemeral shallow clone directly inside container `/workspace`. Zero host disk pollution.
+5. **Tier 5: Greenfield Resolution & Mandatory Remote Contract**:
+   - When executed in an uninitialized non-Git folder or a directory without a configured remote origin:
+     - **Mandatory Target Requirement**: Container mode requires either `--create-repo <owner/repo>` (automatically creates the GitHub repository on the fly via `gh repo create` and pushes the initial baseline) or `--repo <owner/repo>` (links to an existing remote repository).
+     - **Why Blind Host Write-Back is Prohibited**: Naively allowing a container to scaffold a repository in isolation and write it back to host without a target repository violates four core production principles:
+       1. *Orphan / Undefined Namespace*: The local directory may be an arbitrary temporary folder (`/tmp` or unassigned workspace). Without an authoritative repo name, writing files back generates unmanaged orphan projects.
+       2. *Cross-OS Permission Snowballs*: Container runs as non-root UID `10001:10001`. Blind `docker cp` writes root/Linux-permissioned Git trees onto Windows NTFS or macOS hosts, leading to broken file permissions and Git credential locks.
+       3. *Autonomous PR Loop Blockage*: The core purpose of `asdlc run` is end-to-end lifecycle execution (PR creation, CI status checks, async PR comment grilling). Without a remote Git repo, the container cannot open a PR or receive CI feedback, stranding the task mid-execution.
+       4. *Host Write-Back Failure Risk*: If host write-back fails (due to disk limits, antivirus file locks, or path errors), container teardown destroys all progress without recovery.
+     - **Fail-Fast Error Notification Specification (`ASDLC_ERR_NO_REPOSITORY`)**:
+       - **Diagnostic Exit Code**: Non-zero (`1`). Halts before launching containers or consuming AI tokens.
+       - **Eye-Catching Terminal Card**: Emits a structured diagnostic card with exact causes and 3 copy-pasteable remedies:
+         ```text
+         ┌──────────────────────────────────────────────────────────────────────────────┐
+         │  [ERROR] ASDLC_ERR_NO_REPOSITORY: Target GitHub repository not specified     │
+         ├──────────────────────────────────────────────────────────────────────────────┤
+         │  Root Cause:                                                                 │
+         │  - Current directory is not a Git repository or has no remote origin.        │
+         │  - Container execution requires an explicit target repository.               │
+         │                                                                              │
+         │  Actionable Remedies (Choose one):                                           │
+         │  1. Create a new GitHub repository on the fly:                               │
+         │     $ asdlc run "Build refund API" --create-repo <org/repo-name> --container │
+         │                                                                              │
+         │  2. Target an existing remote GitHub repository (Zero-Checkout mode):        │
+         │     $ asdlc run "Build refund API" --repo <org/repo-name> --container        │
+         │                                                                              │
+         │  3. For local non-container development, initialize Git locally first:       │
+         │     $ git init && asdlc init                                                 │
+         └──────────────────────────────────────────────────────────────────────────────┘
+         ```
+       - **CI/CD Workflow Annotation**: In GitHub Actions, automatically outputs:
+         `::error title=ASDLC_ERR_NO_REPOSITORY::Target GitHub repository could not be resolved. Provide --repo or --create-repo.`
+       - **Machine-Readable JSON**: Supports `--json` emitting `{ "code": "ASDLC_ERR_NO_REPOSITORY", "verdict": "FAIL", "message": "...", "remedies": [...] }`.
 
 ---
 
@@ -542,16 +579,17 @@ A production-grade container runtime cannot assume every project is already a ma
 
 | Lifecycle State | Host Detection Condition | Host-to-Container Ingestion | Container Autonomous Initialization | Change Execution & Verification | Egress & Host Bidirectional Sync |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **1. Greenfield Project**<br>*(Empty dir or loose PRD/docs, no Git repo)* | `git rev-parse --is-inside-work-tree` fails | Tar-streams directory content (filtering build artifacts via standard ignore list) + intake files via `docker cp`; sets `ASDLC_LIFECYCLE=greenfield` | 1. `git init -b main`<br>2. Configures container committer<br>3. Runs `asdlc init --headless`<br>4. Creates initial governance baseline commit | Scaffolds language project layout (`package.json`, `go.mod`, etc.) based on PRD/prompt; drafts proposal, spec, tasks, and TDD loop | **A. Remote**: `gh repo create` (if `--create-repo` specified)<br>**B. Local Materialization**: Host CLI copies initialized workspace back: `docker cp <cid>:/workspace/. <hostDir>/` before container teardown |
+| **1. Greenfield Project**<br>*(Empty dir or loose PRD/docs, no Git repo)* | `git rev-parse --is-inside-work-tree` fails | Tar-streams directory content (filtering build artifacts via standard ignore list) + intake files via `docker cp`; sets `ASDLC_LIFECYCLE=greenfield`. **Guard**: Requires `--create-repo <name>` or `--repo <name>`; otherwise fails fast before container spin-up with `ASDLC_ERR_NO_REPOSITORY`. | 1. `git init -b main`<br>2. Configures container committer<br>3. Runs `asdlc init --headless`<br>4. Creates initial governance baseline commit<br>5. Calls `gh repo create` (if `--create-repo`) | Scaffolds language project layout (`package.json`, `go.mod`, etc.) based on PRD/prompt; drafts proposal, spec, tasks, and TDD loop | **A. Remote**: Pushes baseline to `main`, pushes feature branch to `origin`, opens PR<br>**B. Local Materialization**: Host CLI copies initialized workspace back: `docker cp <cid>:/workspace/. <hostDir>/` before container teardown |
 | **2. Brownfield Project**<br>*(Existing codebase & Git history, never run asdlc)* | `git rev-parse --is-inside-work-tree` succeeds, but `openspec/` does NOT exist | Streams `git archive HEAD` + uncommitted/untracked non-ignored delta files; sets `ASDLC_LIFECYCLE=brownfield` | **Zero-Touch Auto-Onboarding (`asdlc init --onboard`)**:<br>1. Detects build system & test runner<br>2. Generates AST graph (`graphifyy`)<br>3. Seeds `.agents/skills` & OpenSpec<br>4. Generates tailored `AGENTS.md`<br>5. Commits onboarding baseline | Grounds in freshly generated AST graph (`explore.md`); drafts spec, reviews, and runs TDD against existing codebase | **A. Remote PR**: Pushes onboarding baseline & feature branch, opens Spec/Impl PR<br>**B. Local Materialization**: Syncs `openspec/` and `.agents/` back to host via `git bundle` or selective `docker cp` |
 | **3. Established Project**<br>*(Git repo + initialized asdlc)* | `git rev-parse --is-inside-work-tree` succeeds AND `openspec/` exists | Streams `git archive HEAD` + dirty working tree delta (staged + unstaged diff); sets `ASDLC_LIFECYCLE=established` | Verifies governance integrity; runs incremental AST graph refresh on touched files | State machine advances change: drafts spec, PR comment grilling, or locks Spec `0444` and runs TDD verification | **A. Remote PR**: Pushes feature branch to `origin`, opens/updates PR<br>**B. Offline/Local**: Exports branch via `git bundle`, host CLI imports via `git fetch <bundle> <branch>:<branch>` (zero working tree pollution) |
 
 #### 5.3.1 Greenfield Project Bootstrapping & Local Workspace Materialization
-When a developer runs `asdlc run "Build an express service" --from-file ./prd.md --container` in an empty or non-Git directory:
-1. **Host Ingestion**: The host CLI detects the absence of `.git`, packages any existing local documentation or files (excluding `.DS_Store`, `node_modules`, etc.), and streams them into the container's `/workspace`.
-2. **Container Headless Bootstrapping**: Inside `/workspace`, the runner initializes Git (`git init -b main`), sets local identity (`asdlc-agent <agent@asdlc.internal>`), runs headless `asdlc init`, and creates commit 0 (`chore: initialize repository with agentic-sdlc governance`).
-3. **Scaffolding & Implementation**: The agent inspects the requirement, scaffolds project build files (`package.json`, `tsconfig.json`, source directory skeleton), drafts the spec, and executes the TDD implementation.
-4. **Local Workspace Materialization**: Before the ephemeral container is destroyed (`--rm`), the host CLI copies the newly initialized workspace, `.git` repository, code, and OpenSpec artifacts back to the host project directory (`docker cp <container_id>:/workspace/. <host_dir>/`). The host is left with a fully functional, version-controlled project.
+When a developer runs `asdlc run "Build an express service" --from-file ./prd.md --create-repo my-org/express-service --container` in an empty or non-Git directory:
+1. **Mandatory Remote Guard**: If neither `--create-repo <owner/repo>` nor `--repo <owner/repo>` is provided, the host orchestrator fails fast immediately with `ASDLC_ERR_NO_REPOSITORY` (see §3.6 Tier 5), protecting against orphaned container runs.
+2. **Host Ingestion**: The host CLI packages any existing local documentation or files (excluding `.DS_Store`, `node_modules`, etc.), and streams them into the container's `/workspace`.
+3. **Container Headless Bootstrapping**: Inside `/workspace`, the runner initializes Git (`git init -b main`), sets local identity (`asdlc-agent <agent@asdlc.internal>`), runs headless `asdlc init`, creates commit 0 (`chore: initialize repository with agentic-sdlc governance`), and provisions the remote repository via `gh repo create my-org/express-service --private --source=. --push`.
+4. **Scaffolding & Implementation**: The agent inspects the requirement, scaffolds project build files (`package.json`, `tsconfig.json`, source directory skeleton), drafts the spec, and executes the TDD implementation.
+5. **Local Workspace Materialization**: Before the ephemeral container is destroyed (`--rm`), the host CLI copies the newly initialized workspace, `.git` repository, code, and OpenSpec artifacts back to the host project directory (`docker cp <container_id>:/workspace/. <host_dir>/`). The host is left with a fully functional, version-controlled project bound to the newly created remote repository.
 
 #### 5.3.2 Brownfield Zero-Touch Auto-Onboarding & Baseline Isolation
 When running `asdlc run <requirement> --container` on an existing legacy repository that has never adopted Agentic SDLC:
@@ -1123,10 +1161,18 @@ Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
 
 引入机器级全局配置 `~/.asdlc/config.yaml`（权限强制 `0600`），所有配置项统一收敛至 `asdlc config`（不单设 `asdlc auth`；命中 `*key/*token/*secret/*password` 在 `list` 时自动脱敏）：
 
-- **`workflow_mode` 权威支持三档**（在本地 IDE 与容器沙箱中表现 100% 严格一致）：
-  - **`auto`（默认智能自适应）**：**推荐出厂默认**。内置 L0–L3 风险评估引擎，L0/L1 走单 PR（Spec 与源码合并为一个 PR，极速交付），L2/L3 高危架构自动升格走双 PR。
-  - **`single-pr`（全场景极速单 PR）**：面向敏捷业务团队。跳过双 PR 门禁，一条龙执行 `spec` $\to$ `apply` $\to$ `verify`，永远只开启 1 个包含完整 Spec、源码与测试用例的 Pull Request。
-  - **`spec-first`（经典强制双 PR）**：面向合规与核心底层架构团队。跳过风险评估，所有变更统一执行：**Spec PR（`lint` + `spec-review` + 人工合入主干锁 `specSha`）$\to$ Impl PR（`verify` + `impl-review`）**。
+- **`workflow_mode` 权威支持两档**（在本地 IDE 与容器沙箱中表现 100% 严格对称一致）：
+
+| `workflow_mode` | 治理定位与 PR 拓扑 | 本地 IDE 交互模式 (Track 1) | 容器沙箱自动化流水线 (Track 2) |
+| :--- | :--- | :--- | :--- |
+| **`auto`** *(默认推荐)* | **自适应风险分级拓扑**。内置 L0–L3 三维风险引擎：L0/L1 自动走单 PR 拓扑（Spec 与代码合并提 1 个 PR，保障极速流转）；L2/L3 自动升格为双 PR 拓扑（强制 Spec PR 人工合入锁定后再进 Impl PR）。 | 开发者本地运行 `asdlc lint`，引擎自动评定级别。若为 L0/L1 直接提单 PR；若为 L2/L3 则先提 Spec PR，合入锁定 `specSha` 后才准许 `asdlc apply`。 | 容器在阶段 3 评定风险。若为 L0/L1，直接连贯执行 `apply` 与 `verify` 并开单 PR；若为 L2/L3，开启 Spec PR 并挂起进入阶段 5 等待人工合入。 |
+| **`spec-first`** | **强制严格双 PR（合规顶配）**。跳过风险评估，所有变更一律强制双 PR：**Spec PR（`lint` + `spec-review` + 人工合入主干锁 `specSha`）$\to$ Impl PR（`verify` + `impl-review`）**。适合金融级核心架构与强合规团队。 | 所有变更无例外，必须先走 Spec PR、人类 Tech Lead 审查并合入主干生成锁定的 `specSha`，本地 `asdlc apply` 才能解锁。 | 容器仅执行 `--stage spec`，提 Spec PR 后安全退出；待人类合入后，通过 `--stage apply` 唤醒进入实现流水线。 |
+
+> [!IMPORTANT]
+> **为何 `single-pr` 绝不能作为全局配置开放**：
+> 在企业级研发生命周期中，若开放全局 `workflow_mode: single-pr`，将形成极其危险的治理后门：个别开发者或流水线可通过设置全局单 PR，绕过对高危 DDL 库表重构、认证改造、转账计费等 L2/L3 变更的双 PR 强审拦截。
+> 因此，在 `agentic-sdlc` 规范中，`single-pr` **纯粹是 `auto` 模式评估出 L0/L1 低风险后所授予的内部流转特权**，坚决不作为顶层全局开关暴露。
+
 - **优先级链**：`CLI 参数` > `环境变量 ASDLC_*` > `单仓 .sdlc/policy.yaml（仅特例覆盖）` > **`全局 ~/.asdlc/config.yaml`** > `内置默认值`。
 
 ### 3.2 行业级与用户级 AI 配置设计（整文件原子继承 + CLI 参数覆盖）
@@ -1263,6 +1309,39 @@ flowchart LR
 4. **第 4 级：免 Clone 零检出远程执行（`--repo`）**：
    `asdlc run #42 --repo owner/repo --stage fix`
    - 当在空目录或跳板机执行时，容器沙箱自动执行基于内存盘的轻量 Shallow Clone，宿主机零磁盘占用、零残留代码。
+5. **第 5 级：Greenfield 全新目录判定与强约束远端契约**：
+   - 当在非 Git 目录或未配置 remote origin 的目录执行容器流水线时：
+     - **强约束远端参数要求**：容器模式下必须显式提供 `--create-repo <owner/repo>`（在云端一键新建 GitHub 仓库并推送初始提交）或 `--repo <owner/repo>`（关联已有远端仓库）。
+     - **为何坚决禁止宿主机盲写回（Blind Host Write-Back）**：
+       1. *无锚定标识与目录污染*：在临时目录或空目录下，项目没有权威的仓库名称与 Remote 命名空间，盲目回写会制造未受管的孤立目录；
+       2. *跨操作系统权限雪崩*：容器内部为 `10001:10001` 用户，盲目 `docker cp` 会将 Linux 权限写入 Windows NTFS 或 macOS 宿主，引发 Git 权限锁死；
+       3. *端到端 PR 闭环阻断*：`asdlc run` 核心使命是全自动 PR、CI 验证与评论 Grill。没有远端 Git 仓，流程在第一阶段结束后便无法开 PR、无法触发 CI，流水线陷入死胡同；
+       4. *回写失败无容灾*：若宿主磁盘满或文件被 IDE 占用导致 `docker cp` 失败，临时容器销毁将导致成果彻底丢失。
+     - **标准阻断错误规范（`ASDLC_ERR_NO_REPOSITORY`）**：
+       - **Fail Fast 拦截**：退出码返回 `1`，在启动容器消耗算力或 Token 前立即中止；
+       - **控制台诊断卡片**：输出高可读性 ANSI 错误卡片，明确列出 3 条直接可复制执行的解决方案：
+         ```text
+         ┌──────────────────────────────────────────────────────────────────────────────┐
+         │  [ERROR] ASDLC_ERR_NO_REPOSITORY: 未指定目标 GitHub 代码仓                   │
+         ├──────────────────────────────────────────────────────────────────────────────┤
+         │  问题根因:                                                                   │
+         │  - 当前工作目录不是 Git 仓库，或尚未配置 remote origin。                     │
+         │  - 容器沙箱自动化运行必须有明确的归宿代码仓。                                 │
+         │                                                                              │
+         │  解决方案 (任选其一直接复制执行):                                            │
+         │  1. 自动新建远端 GitHub 仓库并执行端到端流水线:                              │
+         │     $ asdlc run "Build refund API" --create-repo <org/repo-name> --container │
+         │                                                                              │
+         │  2. 指定已有远端 GitHub 代码仓 (免 Clone 零检出模式):                        │
+         │     $ asdlc run "Build refund API" --repo <org/repo-name> --container        │
+         │                                                                              │
+         │  3. 若仅进行本地非容器化开发，请先在宿主执行本地初始化:                      │
+         │     $ git init && asdlc init                                                 │
+         └──────────────────────────────────────────────────────────────────────────────┘
+         ```
+       - **CI/CD 原生注解**：在 GitHub Actions 环境下自动输出工作流指令：
+         `::error title=ASDLC_ERR_NO_REPOSITORY::无法解析目标 GitHub 代码仓。请传入 --repo 或 --create-repo。`
+       - **机器可读 JSON**：支持 `--json` 输出结构化错误诊断 `{ "code": "ASDLC_ERR_NO_REPOSITORY", "verdict": "FAIL", "message": "...", "remedies": [...] }`。
 
 ---
 
@@ -1296,10 +1375,11 @@ flowchart LR
    - 工业级容器执行器不能假定所有项目均已规范初始化。`asdlc run --container` 在宿主机侧动态检测项目状态并执行对应的流式注入与结果物化：
      - **场景一：Greenfield 全新项目（无 Git 仓库、零代码自举与宿主反向物化）**：
        - *宿主机检测*：`git rev-parse --is-inside-work-tree` 失败（空目录或仅有 loose PRD/说明文档）。
+       - *强契约门禁拦截*：**必须显式提供 `--create-repo <owner/repo>` 或 `--repo <owner/repo>`**。若均未提供，宿主编排器立即以 `ASDLC_ERR_NO_REPOSITORY` 阻断退出，绝不盲目启动容器，杜绝孤儿工程与回写失败（参见 §3.6 第 5 级）。
        - *注入机制*：宿主机将当前目录非忽略文件（过滤 `.DS_Store`、`node_modules` 等）通过 `tar | docker cp` 灌入容器 `/workspace`，传递环境变量 `ASDLC_LIFECYCLE=greenfield`。
-       - *容器内自举*：容器内执行 `git init -b main` 并配置本地签名（`asdlc-agent <agent@asdlc.internal>`）；自动执行无头 `asdlc init --headless` 初始化 OpenSpec 规范结构；提交初始治理基线提交 `commit 0: Initial repository scaffolding via asdlc`。
+       - *容器内自举*：容器内执行 `git init -b main` 并配置本地签名（`asdlc-agent <agent@asdlc.internal>`）；自动执行无头 `asdlc init --headless` 初始化 OpenSpec 规范结构；通过 `gh repo create <owner/repo> --private --source=. --push` 在 GitHub 创建远端仓库并推送主干；提交初始治理基线提交 `commit 0: Initial repository scaffolding via asdlc`。
        - *脚手架与变更落地*：基于输入的 PRD/Prompt 自动初始化对应语言的项目骨架（如 `package.json`、`go.mod`、`pom.xml`），推进 Spec 与 TDD 实现。
-       - *双向同步与结果物化*：若配置了 `--create-repo` 则容器直接调用 `gh repo create` 推送远端；在容器销毁（`--rm`）前，宿主机 CLI 自动执行 `docker cp <container_id>:/workspace/. <host_dir>/`，将初始化完毕的 Git 仓库、项目工程骨架与治理文件完整物化回宿主机，开发者立即获得完整可运行的本地工程。
+       - *双向同步与结果物化*：容器向刚创建的远端仓库推送 Feature 分支并开 PR；在容器销毁（`--rm`）前，宿主机 CLI 自动执行 `docker cp <container_id>:/workspace/. <host_dir>/`，将初始化完毕的 Git 仓库、项目工程骨架与治理文件完整物化回宿主机，开发者立即获得完整绑定远端、可直接运行的本地工程。
      - **场景二：Brownfield 既有老项目（已有 Git 历史、首次接入 asdlc 的无感知自初始化）**：
        - *宿主机检测*：`git rev-parse --is-inside-work-tree` 成功（存在 `.git`），但根目录下无 `openspec/` 目录。
        - *注入机制*：宿主机按 3 层结构打包灌入容器，传递 `ASDLC_LIFECYCLE=brownfield`。
