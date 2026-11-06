@@ -316,7 +316,7 @@ asdlc config set workflow_mode auto           # auto (default) | spec-first
 
 # 2. Git & PR Remote Host Settings (for Enterprise Intranets / Private GitLab / GHES)
 asdlc config set git.default_host gitlab.corp.company.com # default: github.com
-asdlc config set git.protocol ssh                         # ssh (default) | https
+asdlc config set git.protocol https                       # https (default & recommended) | ssh
 asdlc config set git.provider gitlab                      # github (default) | gitlab
 
 # 3. Optional agent & runner orchestration settings
@@ -596,7 +596,7 @@ If a user passes a shorthand slug (e.g. `--repo dept/project` or `--create-repo 
 │                                                                              │
 │  2. Configure your enterprise default host once globally:                    │
 │     $ asdlc config set git.default_host gitlab.corp.company.com              │
-│     $ asdlc config set git.protocol ssh                                      │
+│     $ asdlc config set git.protocol https                                    │
 │     Then rerun with shorthand: $ asdlc run --repo dept/project --container   │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -1246,7 +1246,7 @@ Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
 - **企业内网 Git 默认主机配置**：
   ```bash
   asdlc config set git.default_host gitlab.corp.company.com # 默认: github.com
-  asdlc config set git.protocol ssh                         # ssh (默认) | https
+  asdlc config set git.protocol https                       # https (默认推荐) | ssh
   asdlc config set git.provider gitlab                      # github (默认) | gitlab
   ```
 
@@ -1501,7 +1501,7 @@ flowchart LR
   │                                                                              │
   │  2. 一次性配置企业内网默认 Host:                                             │
   │     $ asdlc config set git.default_host gitlab.corp.company.com              │
-  │     $ asdlc config set git.protocol ssh                                      │
+  │     $ asdlc config set git.protocol https                                    │
   │     配置后即可直接使用简写: $ asdlc run --repo dept/project --container      │
   └──────────────────────────────────────────────────────────────────────────────┘
   ```
