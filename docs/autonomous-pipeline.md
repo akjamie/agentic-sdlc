@@ -314,18 +314,23 @@ For headless automation, scripts, and granular inspection, standard subcommands 
 # 1. Global workflow switch: two supported operational modes
 asdlc config set workflow_mode auto           # auto (default) | spec-first
 
-# 2. Optional agent & runner orchestration settings
+# 2. Git & PR Remote Host Settings (for Enterprise Intranets / Private GitLab / GHES)
+asdlc config set git.default_host gitlab.corp.company.com # default: github.com
+asdlc config set git.protocol ssh                         # ssh (default) | https
+asdlc config set git.provider gitlab                      # github (default) | gitlab
+
+# 3. Optional agent & runner orchestration settings
 asdlc config set agent.harness opencode        # opencode (default) | claude
 asdlc config set agent.model ""                # optional override (-m provider/model)
 asdlc config set agent.review_model ""         # optional heterogeneous reviewer model
 asdlc config set runner.image ""               # optional internal registry mirror override
 
-# 3. Generic env injection & passthrough for enterprise custom skills
+# 4. Generic env injection & passthrough for enterprise custom skills
 asdlc config set env.JIRA_BASE_URL https://jira.corp.com
 asdlc config set env.JIRA_API_TOKEN <TOKEN>
 asdlc config set runner.env_passthrough "JIRA_*,CONFLUENCE_*"
 
-# 4. Inspection (keys matching *key/*token/*secret/*password are masked by default)
+# 5. Inspection (keys matching *key/*token/*secret/*password are masked by default)
 asdlc config list [--show-secrets] [--json]
 asdlc config get workflow_mode
 asdlc config unset env.JIRA_API_TOKEN
@@ -519,6 +524,52 @@ The orchestrator resolves the target Git remote and PR context through an unambi
        - **CI/CD Workflow Annotation**: In GitHub Actions, automatically outputs:
          `::error title=ASDLC_ERR_NO_REPOSITORY::Target GitHub repository could not be resolved. Provide --repo or --create-repo.`
        - **Machine-Readable JSON**: Supports `--json` emitting `{ "code": "ASDLC_ERR_NO_REPOSITORY", "verdict": "FAIL", "message": "...", "remedies": [...] }`.
+
+### 3.6.1 Canonical Full URL vs. Shorthand Slug & Enterprise Intranet Zero-Guessing Policy
+
+A major point of failure in enterprise container automation is resolving repository targets: **Should users specify a full canonical URL or a partial shorthand slug?** While guessing `github.com` works on the public internet, **guessing in enterprise private networks (Intranet / VPC / On-Premise) is completely impossible and dangerous**.
+
+#### 1. Real-World Enterprise Intranet Dilemmas
+* **Multi-Host & Heterogeneous Git Platforms**: Enterprise intranets host multiple Git servers concurrently: GitHub Enterprise Server (GHES, e.g. `github.corp.company.com`), self-hosted GitLab (`gitlab.internal.corp`), Bitbucket Server, Gitea, or private cloud remotes (Aliyun Codeup, Tencent CNB).
+* **Deeply Nested Namespaces**: Unlike GitHub's fixed 2-level `owner/repo`, enterprise GitLab projects frequently have 3–5 levels of subgroups (e.g. `fintech/core-banking/settlement/refund-service`). A partial name like `refund-service` or `settlement/refund-service` is inherently ambiguous.
+* **Anti-Data-Exfiltration Invariant**: If a developer on an internal network types `--repo fintech/refund-service`, **the system must NEVER fall back to guessing `github.com`!** Blindly querying `github.com/fintech/refund-service` with internal project tokens across public DNS/networks is an unacceptable data-leakage and compliance violation.
+
+#### 2. Dual-Format Support with Deterministic Disambiguation
+
+`asdlc run` enforces an unambiguous three-tier resolution policy:
+
+| Format Type | Syntax Example | Resolution Behavior | Best Used When |
+| :--- | :--- | :--- | :--- |
+| **A. Canonical Full URL** *(Highest Precedence & Zero-Ambiguity)* | `https://gitlab.corp.company.com/fintech/settlement/refund.git`<br>`git@github.corp.company.com:infra/runner.git` | **100% Deterministic.** Directly extracts protocol, host, port, nested groups, and repo name. Bypasses all config defaults and guessing. | Enterprise CI/CD pipelines, automated scripts, and private GitLab multi-level subgroups. |
+| **B. Configured Shorthand Slug** *(Zero-Guessing Host Expansion)* | `--repo fintech/refund`<br>`--create-repo fintech/refund` | **Deterministic Global Expansion.** If `git.default_host` is configured in `~/.asdlc/config.yaml` (e.g. `gitlab.corp.company.com`), expands strictly to `git@gitlab.corp.company.com:fintech/refund.git`. Never queries public networks. | Daily developer terminal usage on corporate laptops. |
+| **C. Ambient Context Shorthand** | `#42` or bare slug in working tree | Extracts host and upstream namespace directly from local `git remote get-url origin` or ambient CI env (`$GITHUB_SERVER_URL` / `$CI_SERVER_URL`). | Developers working inside locally cloned projects. |
+
+#### 3. Intranet Fail-Fast Disambiguation Guard (`ASDLC_ERR_AMBIGUOUS_HOST`)
+If a user passes a shorthand slug (e.g. `--repo dept/project` or `--create-repo dept/project`) but:
+1. No protocol or domain is included in the string;
+2. `git.default_host` is NOT configured in `~/.asdlc/config.yaml`;
+3. The current directory is not an existing Git clone, and no ambient CI environment is present;
+4. The system detects an enterprise intranet environment (e.g. enterprise proxy, custom CA cert, or non-public network):
+
+**The orchestrator immediately fails fast before launching containers, outputting `ASDLC_ERR_AMBIGUOUS_HOST`**:
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  [ERROR] ASDLC_ERR_AMBIGUOUS_HOST: Cannot resolve Git host for shorthand slug│
+├──────────────────────────────────────────────────────────────────────────────┤
+│  Input Provided: "dept/project"                                              │
+│  In enterprise environments, fallback guessing to github.com is strictly     │
+│  prohibited to prevent private repository metadata and token exfiltration.   │
+│                                                                              │
+│  Remediation Options (Choose one):                                           │
+│  1. Provide the canonical full URL (Recommended for CI/headless):            │
+│     $ asdlc run --repo https://gitlab.corp.com/dept/project.git --container  │
+│                                                                              │
+│  2. Configure your enterprise default host once globally:                    │
+│     $ asdlc config set git.default_host gitlab.corp.company.com              │
+│     $ asdlc config set git.protocol ssh                                      │
+│     Then rerun with shorthand: $ asdlc run --repo dept/project --container   │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -1162,6 +1213,12 @@ Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
 引入机器级全局配置 `~/.asdlc/config.yaml`（权限强制 `0600`），所有配置项统一收敛至 `asdlc config`（不单设 `asdlc auth`；命中 `*key/*token/*secret/*password` 在 `list` 时自动脱敏）：
 
 - **`workflow_mode` 权威支持两档**（在本地 IDE 与容器沙箱中表现 100% 严格对称一致）：
+- **企业内网 Git 默认主机配置**：
+  ```bash
+  asdlc config set git.default_host gitlab.corp.company.com # 默认: github.com
+  asdlc config set git.protocol ssh                         # ssh (默认) | https
+  asdlc config set git.provider gitlab                      # github (默认) | gitlab
+  ```
 
 | `workflow_mode` | 治理定位与 PR 拓扑 | 本地 IDE 交互模式 (Track 1) | 容器沙箱自动化流水线 (Track 2) |
 | :--- | :--- | :--- | :--- |
@@ -1342,6 +1399,53 @@ flowchart LR
        - **CI/CD 原生注解**：在 GitHub Actions 环境下自动输出工作流指令：
          `::error title=ASDLC_ERR_NO_REPOSITORY::无法解析目标 GitHub 代码仓。请传入 --repo 或 --create-repo。`
        - **机器可读 JSON**：支持 `--json` 输出结构化错误诊断 `{ "code": "ASDLC_ERR_NO_REPOSITORY", "verdict": "FAIL", "message": "...", "remedies": [...] }`。
+
+### 3.6.1 完整 Canonical URL 与相对简写对比，以及企业内网“零猜测”防泄密策略
+
+在企业内网与私有云环境下，代码仓目标的解析是容器自动化流水线最容易发生歧义与安全事故的环节：**究竟必须传完整 URL，还是可以传部分简写（Shorthand）？在外网或许可以默认猜测 `github.com`，但在企业私网内盲目猜测不仅完全行不通，更是严重的安全红线！**
+
+#### 1. 真实企业内网的核心痛点分析
+* **多宿主与多代码平台并存**：企业内网普遍同时运行多种 Git 平台：自建 GitHub Enterprise Server（GHES，如 `https://github.corp.company.com`）、自建私有 GitLab（如 `https://gitlab.internal.corp`）、Bitbucket Server、Gitea、或云厂商专有云托管（阿里云 Codeup、腾讯云 CNB）。
+* **深层嵌套命名空间（Multi-Level Subgroups）**：不同于公网 GitHub 固定只有两层的 `owner/repo`，企业 GitLab 或自建系统往往采用 3–5 级群组：`fintech/core-banking/settlement/refund-service`。若只写简写 `refund-service` 甚至 `settlement/refund-service`，在全局数以万计的项目中根本无法唯一锁定！
+* **防越界与防数据外泄铁律（Anti-Data-Exfiltration Invariant）**：如果一个内网开发者输入了 `--repo fintech/refund`，**系统坚决杜绝私自回退猜测 `github.com`！** 带着企业内部的项目命名与潜在凭证向公网 GitHub 发起探测，将直接触发企业合规风控红线与内网数据泄漏事件。
+
+#### 2. 双格式支持矩阵与确定性解析规则
+
+`asdlc run` 确立了严格的三级解析规范，做到“零猜测、防越界、高体验”：
+
+| 格式分类 | 命令语法示例 | 确定性解析逻辑 | 推荐使用场景 |
+| :--- | :--- | :--- | :--- |
+| **A. 完整 Canonical URL** *(最高优先级，绝对零歧义)* | `https://gitlab.corp.company.com/fintech/settlement/refund.git`<br>`git@github.corp.company.com:infra/runner.git` | **100% 绝对精确。** 协议、域名、端口、多级 Namespace 与 Repo Slug 完全由 URL 自包含决定。完全绕过所有配置兜底与任何猜测。 | 企业 CI/CD 流水线、生产自动化脚本、以及跨多级群组的 GitLab 项目。 |
+| **B. 企业全局绑定简写** *(基于配置的确定性展开，绝不外泄)* | `--repo fintech/refund`<br>`--create-repo fintech/refund` | **显式映射展开。** 优先读取 `~/.asdlc/config.yaml` 中由管理员或开发者预先配置的 `git.default_host` 与 `git.protocol`，确定性展开为内网地址。未配置绝不盲目请求公网。 | 开发者日常在企业内网工位电脑上的高效终端交互。 |
+| **C. 本地上下文简写** | `asdlc run #42 --container` 或本地分支运行 | 直接从本地既有 `git remote get-url origin` 或当前 CI 环境变量（`$GITHUB_SERVER_URL` / `$CI_SERVER_URL`）继承宿主及群组上下文。 | 开发者在已有 Git 仓库目录下的日常迭代开发。 |
+
+#### 3. 内网歧义阻断与 Fail-Fast 报错规范 (`ASDLC_ERR_AMBIGUOUS_HOST`)
+若开发者传入了简写（如 `--repo dept/project` 或 `--create-repo dept/project`），但：
+1. 字符串中未包含协议（`http://`、`https://`、`git@`）或域名；
+2. 宿主机全局未配置 `git.default_host`；
+3. 当前工作目录不是已有 Git 代码仓，且无 CI 环境变量注入；
+4. 系统检测到当前处于内网环境（命中企业内网代理、私有 CA 根证书、或内网专用网段）：
+
+**编排器在启动 Docker 容器或消耗 Token 前立即 Fail-Fast 阻断，返回退出码 `1`，绝不盲目探测公网！**
+* **控制台诊断卡片**：
+  ```text
+  ┌──────────────────────────────────────────────────────────────────────────────┐
+  │  [ERROR] ASDLC_ERR_AMBIGUOUS_HOST: 无法确定内网 Git 代码仓的主机与命名空间   │
+  ├──────────────────────────────────────────────────────────────────────────────┤
+  │  输入参数: "dept/project"                                                    │
+  │  在企业/内网环境下，系统坚决杜绝向公网 github.com 盲目猜测回退，以防内网数据 │
+  │  与代码元数据发生外泄风险。                                                 │
+  │                                                                              │
+  │  解决方案 (任选其一):                                                        │
+  │  1. 传入完整 Canonical URL (推荐用于 CI 自动化与深层命名空间):               │
+  │     $ asdlc run --repo https://gitlab.corp.com/dept/project.git --container  │
+  │                                                                              │
+  │  2. 一次性配置企业内网默认 Host:                                             │
+  │     $ asdlc config set git.default_host gitlab.corp.company.com              │
+  │     $ asdlc config set git.protocol ssh                                      │
+  │     配置后即可直接使用简写: $ asdlc run --repo dept/project --container      │
+  └──────────────────────────────────────────────────────────────────────────────┘
+  ```
 
 ---
 
