@@ -665,8 +665,24 @@ Enforced internally on every container launch without exposing CLI flags to weak
        - **Layer 2 (Uncommitted Working Delta)**: If the host tree has uncommitted staged or unstaged changes, host pipes `git diff -p HEAD` into container `git apply --whitespace=nowarn`.
        - **Layer 3 (Untracked Non-Ignored Files)**: Untracked files (e.g. newly created configs, local `.env.example`) resolved via `git ls-files --others --exclude-standard` are streamed into `/workspace`.
        - Container `/workspace` sets ownership strictly to `10001:10001` and initializes an isolated Git tree targeting the remote origin.
-       - Git push operations execute using the ephemeral `gh auth token` / `GH_TOKEN` injected into the process memory, completely eliminating host workspace bind-mount hazards.
-- **Kernel-Level Read-Only Spec Lock (`0444`)**: During Phase 2 (`READY_FOR_IMPL`), `proposal.md` and `specs/**` are owned by `0:0` with mode `0444`, blocking unauthorized writes at the OS filesystem layer alongside `asdlc verify`'s `spec-tamper` check.
+       - Git push operations execute using the injected service token (GitHub App installation token or scoped PAT) via in-memory `git credential.helper`, completely eliminating host workspace bind-mount hazards.
+        - **Pre-Ingestion Secret Scanning Guard**: Before streaming uncommitted or untracked host files into the container sandbox or passing them to the AI engine, host `asdlc` runs a deterministic pre-flight secret scan (using local `gitleaks` or embedded regex rules). If unencrypted API tokens, private keys, or credentials are found in dirty diffs, execution halts with `ASDLC_ERR_UNCOMMITTED_SECRET`.
+- **Egress Firewall & Container Network Whitelist**:
+  - The runner container MUST NOT run with unrestricted default bridge internet egress.
+  - In enterprise deployment, the runner's outbound traffic is locked via container network policy or an egress proxy whitelist restricted strictly to:
+    1. Authorized AI Gateway / LLM endpoints (`agent.base_url`);
+    2. Corporate Git host (GitHub Enterprise / GitLab);
+    3. Internal package registries (npm/pip/maven mirror).
+  - All direct outbound traffic to public arbitrary IP addresses is blocked at the network layer, neutralizing prompt-injection-driven exfiltration attempts.
+- **Defense-in-Depth Spec Immutability (Volume `:ro` + Server-Side `specSha` Check)**:
+  - *Unix Permission Reality*: Under standard Linux filesystem semantics, setting a file to `0:0 0444` inside a writable parent directory does not prevent deletion (`unlink`), because `unlink` authority is governed by parent directory write permissions.
+  - *Robust Multi-Layer Protection*:
+    1. **Container Sandbox Layer**: During Stage 2 (Implementation), the runner mounts `proposal.md` and `specs/**` as a **Read-Only Volume (`:ro`)**, preventing container processes from modifying or unlinking the approved specifications.
+    2. **Server-Side CI Required Gate**: The true authority lives outside the container on the CI server. CI executes an immutable pre-merge check:
+       ```bash
+       git diff specSha..HEAD -- openspec/changes/<id>/specs/ openspec/changes/<id>/proposal.md
+       ```
+       If the diff is non-empty, CI blocks the PR with a fatal status check. The agent cannot attest to its own compliance.e OS filesystem layer alongside `asdlc verify`'s `spec-tamper` check.
 
 ### 5.3 Tri-State Repository Lifecycle & Ingestion Matrix (Greenfield, Brownfield, Established)
 
@@ -964,10 +980,11 @@ query PullRequestReviewThreads($owner: String!, $repo: String!, $number: Int!) {
   }
 }
 ```
-Anti-Infinite-Loop Invariants:
-- **Temporal Invariant ($T_{\text{comment}} > T_{\text{commit}}$)**: Only comments created *after* the latest commit on the PR branch are considered unaddressed. Any comment preceding the latest commit is deemed already addressed or outdated.
+Anti-Infinite-Loop & Threat-Hardened Invariants:
+- **Thread State Invariant ($\text{isResolved} == \text{false} \land \text{threadId} \notin \text{CommitTrailers}$)**: A review thread is evaluated if and only if it is currently unresolved (`isResolved == false`) AND has not already been addressed in a prior commit trailer (`ref: #threadId`). This completely eliminates the bug where rebases, main branch merges, or CI bot commits falsely drop unaddressed comments due to timestamp updates.
+- **Authorized Reviewer Invariant ($\text{Author} \in \{\text{CODEOWNERS}, \text{RequestedReviewers}, \text{PRAuthor}\}$)**: To prevent untrusted prompt injection attacks via public PR comments, only comments authored by authorized stakeholders can trigger automated code/spec changes. Unvetted third-party comments are ignored.
 - **Author Invariant ($\text{Author} \ne \text{Agent}$)**: The agent's own automated comments, bot summaries, and CI notifications are strictly filtered out to prevent self-triggering feedback loops.
-- **Resolution Invariant ($\text{isResolved} == \text{false}$)**: Only unresolved review threads are evaluated. Threads marked resolved by humans are respected as closed.
+- **Conservative Intent Invariant (Zero Dropped Feedback)**: When an ambiguous review comment contains mixed signals (e.g. "LGTM, but please fix X"), the classifier strictly defaults to Category A (Action Required) or escalates to human review, guaranteeing zero silent drops of blocking feedback.
 
 ##### 2. Tier 2: 4-Way Semantic Intent Classification
 Each candidate comment is parsed with repository AST grounding and classified into one of four distinct intent categories:
@@ -1054,15 +1071,32 @@ flowchart TD
 | **Phase 4: SPEC_REVIEW** | $P_{\text{spec}} = 1 \land N_{\text{open}} = 0 \land L_{\text{target}} = 0 \land R_{\text{stage}} \ne \text{spec}$ | Spawns fresh Session 2 (`asdlc-spec-review`), runs `asdlc lint` gate, marks PR Ready with label `asdlc:spec-review`. | Moves to Phase 5. |
 | **Phase 4b: SPEC_HUMAN_REVIEW_FIX** | $\text{PR}_{\text{label}} = \text{spec-review} \land \text{PR}_{\text{state}} = \text{OPEN} \land H_{\text{feedback}} = 1$ | Pulls human review comments; Session A amends specs; runs `lint`; Session B re-evaluates; pushes fix commit and replies to threads. | Moves back to Phase 5 for human re-review. |
 | **Phase 5: AWAITING_SPEC_MERGE** | $\text{PR}_{\text{label}} = \text{spec-review} \land L_{\text{target}} = 0 \land H_{\text{feedback}} = 0$ | Logs waiting prompt for Human Tech Lead merge approval. | Exits cleanly 0 (zero idle container compute). |
-| **Phase 6: APPLY_TDD** | $L_{\text{target}} = 1 \land U_{\text{tasks}} > 0$ | Locks specs as `0:0 0444`; authors `tasks.md` if missing; executes task-level TDD loop on unchecked tasks. | Moves to Phase 7 when $U_{\text{tasks}} = 0$. |
-| **Phase 7: IMPL_REVIEW_AND_VERIFY** | $L_{\text{target}} = 1 \land U_{\text{tasks}} = 0 \land (\text{verify} \ne \text{PASS} \lor R_{\text{stage}} \ne \text{impl})$ | Spawns fresh Session 2 (`asdlc-impl-review`); runs `asdlc verify` (deterministic security & test gates); up to 3 fix rounds. | Moves to Phase 8 when verify & review pass. |
+| **Phase 6: APPLY_TDD** | $L_{\text{target}} = 1 \land (N_{\text{tasks}} = 0 \lor U_{\text{tasks}} > 0)$ | Scaffolds `tasks.md` if missing; executes task-level TDD loop (Red -> Green -> Refactor) on unchecked tasks. | Moves to Phase 7 when $N_{\text{tasks}} > 0 \land U_{\text{tasks}} = 0$. |
+| **Phase 7: IMPL_REVIEW_AND_VERIFY** | $L_{\text{target}} = 1 \land N_{\text{tasks}} > 0 \land U_{\text{tasks}} = 0 \land (\text{verify} \ne \text{PASS} \lor R_{\text{stage}} \ne \text{impl})$ | Spawns fresh Session 2 (`asdlc-impl-review`); runs `asdlc verify` (deterministic security & test gates); up to 3 fix rounds. | Moves to Phase 8 when verify & review pass. |
 | **Phase 7b: IMPL_HUMAN_REVIEW_FIX** | $\text{PR}_{\text{label}} = \text{impl-review} \land \text{PR}_{\text{state}} = \text{OPEN} \land H_{\text{feedback}} = 1$ | Pulls line-by-line review comments; Session A fixes code & tests; runs `npm test` & `asdlc verify`; pushes fix commit. | Moves back to Phase 8 for human re-review. |
 | **Phase 8: OPEN_IMPL_PR** | All verification gates pass $\land\ H_{\text{feedback}} = 0 \land \text{PR}_{\text{label}} \ne \text{impl-review}$ | Opens Implementation PR (`asdlc:impl-review`), attaches verification report and test summary. | Mission Complete. |
 
-### 6.4 Governance Hardening
-1. **`Player != Referee` Process Isolation**: Author/Implementer and Reviewer always execute as separate fresh processes with zero shared transcript, bounded by a **3-round** convergence cap.
-2. **Deterministic `[OPEN]` Clarification Gate**: `asdlc lint` blocks Ready Spec PRs whenever `clarifications.md` has non-empty `## Open questions` or `[OPEN]` markers.
-3. **Truthful Approval Provenance**: Updates `src/commands/approve.js` so `review.md` records actual merge SHA and approver provenance rather than synthetic six-dimension human PASS scores when no prior `review.md` exists.
+### 6.4 Governance Hardening & Enterprise Threat Defense
+
+1. **`Player != Referee` & 3-Round Circuit Breaker Escalation**:
+   - Author/Implementer and Reviewer execute as separate fresh processes with zero shared transcripts.
+   - **Anti-Thrashing Circuit Breaker**: If an unresolved review comment or verification flaw persists after **3 automated rounds**, the agent halts automated code modification, posts a structured synthesis report to the PR thread detailing the divergent opinions, attaches the label `asdlc:needs-human-arbitration`, and terminates cleanly with exit code `0` to await Human Tech Lead adjudication.
+2. **Server-Enforced Governance & Path Protection (CODEOWNERS)**:
+   - The agent is strictly barred from self-modifying `.sdlc/**`, `.github/**`, or `openspec/specs/**`.
+   - Repositories configure GitHub/GitLab `CODEOWNERS` and Branch Rulesets requiring human approval on these paths. If an agent PR touches governance configuration, CI immediately blocks merge.
+   - **Monotonic Policy Tightening**: Configuration precedence chains only allow tightening security rules (e.g., forcing `spec-first`); client-side flags can never downgrade an enterprise repository's governance tier.
+3. **Defense-in-Depth Spec Immutability (Volume `:ro` + CI Server-Side SHA Check)**:
+   - Eliminates client-side file permission vulnerabilities by mounting `specs/` as volume `:ro` during implementation, backed by a required CI status check verifying `git diff specSha..HEAD -- openspec/changes/<id>/specs/` is empty.
+4. **Anti-Test-Weakening Verification Gate**:
+   - `asdlc verify` enforces test integrity: detects and rejects any attempts by the AI agent to weaken test suites (e.g. deleting test files, commenting out assertions, adding `@pytest.mark.skip` / `it.skip`, or reducing code coverage).
+5. **Immutable Audit Trail & WORM Logging**:
+   - Before ephemeral container destruction (`--rm`), all session transcripts, tool invocations, prompts, model hashes, image digests, and skill revisions are exported to CI build artifacts or corporate WORM (Write Once Read Many) compliant object storage for regulatory auditability (SOX / SOC2 / DORA).
+6. **Per-Change Concurrency Mutex**:
+   - Creates an atomic lock (`.openspec/changes/<slug>/.lock`) with process ID, host identifier, and heartbeats, preventing race conditions or split-brain commits when multiple developers or CI webhooks invoke `asdlc run` concurrently on the same change.
+7. **Deterministic `[OPEN]` Clarification Gate**:
+   - `asdlc lint` blocks Ready Spec PRs whenever `clarifications.md` has non-empty `## Open questions` or `[OPEN]` markers.
+8. **Truthful Approval Provenance**:
+   - Updates `src/commands/approve.js` so `review.md` records actual merge SHA and approver provenance rather than synthetic six-dimension human PASS scores when no prior `review.md` exists.
 
 ---
 
@@ -1558,8 +1592,20 @@ flowchart LR
      - **第 1 层（提交基线）**：宿主机提取当前分支快照 (`git archive HEAD | docker cp`) 灌入容器 `/workspace` 并赋权 `10001:10001`；
      - **第 2 层（脏工作区增量）**：若宿主机存在暂存区或未暂存改动，自动采集 `git diff -p HEAD` 在容器内执行 `git apply`，100% 还原开发者当前屏幕现场；
      - **第 3 层（未跟踪文件）**：采集 `git ls-files --others --exclude-standard` 仅注入新建代码，严格尊重 `.gitignore`；
-     - 容器推送依靠内存注入的短期 Token（`gh auth token` / `GH_TOKEN`）。
-   - **实现阶段内核级只读锁死 Spec**：将容器内 `proposal.md` 与 `specs/**` 置为 `0:0`（`0444` 只读），从 Linux 内核层物理封锁篡改。
+     - 容器推送依靠内存注入的服务令牌（GitHub App 或细粒度 PAT），配合 `git credential.helper`。
+     - **流式注入前置密钥扫描（Secret Scan Guard）**：在将本地未提交改动或文件灌入容器沙箱前，宿主机自动执行轻量级 Secret 扫描（内置核心正则与本地 `gitleaks`），若检测到未加密 Private Key 或 Token，立即拦截并报 `ASDLC_ERR_UNCOMMITTED_SECRET`。
+   - **出口网络白名单防御（Egress Firewall Whitelist）**：
+     - 容器沙箱**严禁采用无限制的默认 Bridge 全网出网**；
+     - 企业级部署下，容器仅允许访问受信任白名单：1) 指定 AI Gateway 网关；2) 企业内部 Git 代码托管服务；3) 内部制品代理源（npm/pip/maven）。全量阻断访问任意公网不可信 IP，从底层阻断 Prompt Injection 窃取 Token 外泄的路径。
+   - **纵深防御 Spec 不可篡改保障（Volume `:ro` + 服务端 SHA 强校验）**：
+     - *Unix 文件系统 unlink 权限真相*：Linux 文件系统中能否删除文件（`unlink`）由父目录写权限决定，若父目录可写，`0:0 0444` 文件仍可被 `rm` 后重建；
+     - *多层立体物理防御*：
+       1. **容器沙箱层**：在 Stage 2（实现阶段），宿主机将 `proposal.md` 与 `specs/**` 以 **Docker Volume 只读挂载（`:ro`）**，容器内进程从 OS 层物理无法写入或删除；
+       2. **服务端 CI 独立门禁（服务端真凭据）**：治理的真正执行点在沙箱之外的 GitHub/GitLab CI 服务器上。CI 独立 Job 执行严格 Diff 校验：
+          ```bash
+          git diff specSha..HEAD -- openspec/changes/<id>/specs/ openspec/changes/<id>/proposal.md
+          ```
+          若 Diff 非空，CI 直接红灯阻断 PR 合入，杜绝 Agent 在沙箱内“自己证明自己合规”。
 3. **三种项目生命周期适配矩阵（Greenfield、Brownfield 与成熟项目）与双向同步闭环**：
    - 工业级容器执行器不能假定所有项目均已规范初始化。`asdlc run --container` 在宿主机侧动态检测项目状态并执行对应的流式注入与结果物化：
      - **场景一：Greenfield 全新项目（无 Git 仓库、零代码自举与宿主反向物化）**：
@@ -1846,10 +1892,11 @@ query PullRequestReviewThreads($owner: String!, $repo: String!, $number: Int!) {
   }
 }
 ```
-**三重防死循环不变量约束**：
-- **时序不变量 ($T_{\text{comment}} > T_{\text{commit}}$)**：仅筛选**晚于当前 PR 分支最新 Commit 提交时间戳**的评论。凡是在当前 Commit 之前的评论，一律视为历史已解决或已过期项。
+**三重防死循环与安全加固不变量约束**：
+- **解决状态与未关联不变量 ($\text{isResolved} == \text{false} \land \text{threadId} \notin \text{CommitTrailers}$)**：当且仅当该 Review 线程当前未解决（`isResolved == false`）且其 ID 尚未出现在已有的提交 Trailer（`ref: #threadId`）中时才判定为待处理。彻底根除因主干合入、Rebase 或 CI Bot 提交导致时间戳更新而错误吞掉未处理评论的漏洞。
+- **授权评审人不变量 ($\text{Author} \in \{\text{CODEOWNERS}, \text{RequestedReviewers}, \text{PRAuthor}\}$)**：为防范不可信公网评论注入攻击（Prompt Injection），仅响应由仓库 CODEOWNERS、被指定的 Reviewer 或 PR 作者发表的意见，未授权的外部评论一律忽略。
 - **作者不变量 ($\text{Author} \ne \text{Agent}$)**：严格剔除 Agent 自身账号、CI/CD Bot 与自动化汇总账号发表的评论，杜绝"Agent 回复自己触发死循环"。
-- **解决状态不变量 ($\text{isResolved} == \text{false}$)**：在 GraphQL 线程中已被人工标记为 Resolved 的线程直接跳过，仅处理处于活跃争议状态的线程。
+- **保守分类不变量（零静默漏报）**：当意图分类存在歧义（如“LGTM, 但请改下 X”）时，分类器严格偏向保守，默认归入 Category A（行动项）或升级交由人工处理，严禁静默吞掉阻塞意见。
 
 ##### 2. Tier 2: 语义意图四分类路由器
 抓取到的有效评论与上下文 AST 代码行进行联合解析，归入四个互斥类别：
@@ -1908,15 +1955,33 @@ query PullRequestReviewThreads($owner: String!, $repo: String!, $number: Int!) {
 | **阶段 4: SPEC_REVIEW** | $P_{\text{spec}} = 1 \land N_{\text{open}} = 0 \land L_{\text{target}} = 0 \land R_{\text{stage}} \ne \text{spec}$ | 派生独立进程执行 `asdlc-spec-review` 与 `asdlc lint`，标记 PR Ready | 推进至阶段 5 |
 | **阶段 4b: SPEC_HUMAN_REVIEW_FIX** | $\text{PR}_{\text{label}} = \text{spec-review} \land \text{PR}_{\text{state}} = \text{OPEN} \land H_{\text{feedback}} = 1$ | 抓取人工评审意见；Session A 修改 Spec；通过 `lint` 与 Session B 重评；推送修复提交并回复 Review | 推进回阶段 5 等待人工复审 |
 | **阶段 5: AWAITING_SPEC_MERGE** | $\text{PR}_{\text{label}} = \text{spec-review} \land L_{\text{target}} = 0 \land H_{\text{feedback}} = 0$ | 打印等待人类 Tech Lead 审核合入指引 | 干净退出 0（容器即刻销毁零空转） |
-| **阶段 6: APPLY_TDD** | $L_{\text{target}} = 1 \land U_{\text{tasks}} > 0$ | 内核锁死规范为 `0:0 0444`；生成 `tasks.md`；执行任务级 TDD 红绿重构循环 | 当 $U_{\text{tasks}} = 0$ 时自动跃迁至阶段 7 |
-| **阶段 7: IMPL_REVIEW_AND_VERIFY** | $L_{\text{target}} = 1 \land U_{\text{tasks}} = 0 \land (\text{verify} \ne \text{PASS} \lor R_{\text{stage}} \ne \text{impl})$ | 派生独立进程执行 `asdlc-impl-review` 与 `asdlc verify` 门禁（最多 3 轮修复） | 验证全 PASS 后推进至阶段 8 |
+| **阶段 6: APPLY_TDD** | $L_{\text{target}} = 1 \land (N_{\text{tasks}} = 0 \lor U_{\text{tasks}} > 0)$ | 若缺少 `tasks.md` 自动生成；挂载 Spec 只读卷；执行任务级 TDD 红绿重构循环 | 当 $N_{\text{tasks}} > 0 \land U_{\text{tasks}} = 0$ 时自动跃迁至阶段 7 |
+| **阶段 7: IMPL_REVIEW_AND_VERIFY** | $L_{\text{target}} = 1 \land N_{\text{tasks}} > 0 \land U_{\text{tasks}} = 0 \land (\text{verify} \ne \text{PASS} \lor R_{\text{stage}} \ne \text{impl})$ | 派生独立进程执行 `asdlc-impl-review` 与 `asdlc verify` 门禁（最多 3 轮修复） | 验证全 PASS 后推进至阶段 8 |
 | **阶段 7b: IMPL_HUMAN_REVIEW_FIX** | $\text{PR}_{\text{label}} = \text{impl-review} \land \text{PR}_{\text{state}} = \text{OPEN} \land H_{\text{feedback}} = 1$ | 抓取行内代码评审意见；Session A 修改源码与测试；执行 `asdlc verify`；推送修复提交并回复 Review | 推进回阶段 8 等待人工复审 |
 | **阶段 8: OPEN_IMPL_PR** | 所有验证门禁 PASS $\land\ H_{\text{feedback}} = 0 \land \text{PR}_{\text{label}} \ne \text{impl-review}$ | 开启正式 Implementation PR，附带全套测试与门禁凭据报告 | 流水线大功告成 |
 
-### 6.4 治理合规门禁补强
-1. **`Player != Referee` 裁判会话完全物理隔离**：编写/实现与审查强制拆分为独立进程执行，支持配置 `agent.review_model` 异构审查模型，修复循环上限 3 轮。
-2. **确定性 `[OPEN]` 决议阻塞门禁**：`asdlc lint` 在发现 `clarifications.md` 仍含有未解决的 `[OPEN]` 标记或非空开放式问题时强行阻断提单。
-3. **真实审批溯源**：更新 `src/commands/approve.js`，如实记录合入 SHA 与审批来源凭据。
+### 6.4 治理合规门禁补强与企业威胁防御
+
+1. **`Player != Referee` 裁判会话隔离与 3 轮硬熔断升级（Circuit Breaker）**：
+   - 编写/实现与审查强制拆分为独立进程执行，支持配置 `agent.review_model` 异构审查模型。
+   - **防颠簸 3 轮硬熔断机制**：任何未决问题若在经历 **3 轮自动化修复** 后仍未收敛（如 Reviewer 意见反复或与架构规范冲突），Agent **立即停止自动修改代码**，在 PR 根 Thread 发表结构化仲裁报告（Synthesis Report），打上标签 `asdlc:needs-human-arbitration`，并以退出码 `0` 干净退出容器，交由 Human Tech Lead 人工裁决，彻底杜绝无限死循环。
+2. **服务端强制治理与受保护路径防御（CODEOWNERS）**：
+   - Agent 严格禁止修改 `.sdlc/**`、`.github/**`、`openspec/specs/**` 等治理目录。
+   - 治理约束的强制力部署在 GitHub/GitLab 服务端（Branch Rulesets + CODEOWNERS），若 Agent 发起的 PR 变动了受保护路径，服务端 CI 直接报错阻断合入。
+   - **单调收紧原则（Monotonic Tightening）**：客户端配置仅能收紧治理等级（如强制 `spec-first`），绝无权将服务端的治理规则降级为宽松模式。
+3. **纵深防御 Spec 不可篡改保障（Volume `:ro` + 服务端 SHA 校验）**：
+   - 规避 Unix 文件系统父目录写权限导致 `0444` 文件仍可被删除的漏洞，实现阶段将 `specs/` 作为 Volume 只读挂载（`:ro`）；
+   - 服务端 CI 作为独立第三方法官，执行 `git diff specSha..HEAD` 强校验，不采信容器内的自证结果。
+4. **防测试降级门禁（Anti-Test-Weakening Gate）**：
+   - `asdlc verify` 内置测试完整性校验：严禁 Agent 在 TDD 过程中删除测试用例、注释断言、注入跳过标记（如 `@pytest.mark.skip` / `it.skip`），且要求行覆盖率与分支覆盖率不可发生负向倒退。
+5. **不可变审计证据链与 WORM 合规归档**：
+   - 容器在销毁（`--rm`）前，宿主编排器自动将该次运行的 Prompt、响应、Tool Calls、模型版本、镜像 Digest 与 Skill 版本快照打包，流式归档至 CI Artifacts 或企业合规 WORM（一次写入多次读取）对象存储中，满足金融级（SOX / SOC2 / DORA）严格可审计要求。
+6. **变更级并发互斥锁（Per-Change Mutex Lock）**：
+   - 自动在 `.openspec/changes/<slug>/.lock` 写入带进程 ID、主机标识与心跳周期的原子锁文件，防止多名开发者或 CI Webhook 同时对同一个 Change 发起并发 `asdlc run` 导致 Git 分裂与数据损坏。
+7. **确定性 `[OPEN]` 决议阻塞门禁**：
+   - `asdlc lint` 在发现 `clarifications.md` 仍含有未解决的 `[OPEN]` 标记或非空开放式问题时强行阻断提单。
+8. **真实审批溯源**：
+   - 更新 `src/commands/approve.js`，如实记录合入 SHA 与审批来源凭据。
 
 ---
 
