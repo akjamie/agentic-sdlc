@@ -3,7 +3,8 @@ import { exists } from './fs.js';
 
 export function git(args, cwd = process.cwd(), { allowFail = false } = {}) {
   try {
-    return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    const fullArgs = ['-c', 'core.quotepath=off', ...args];
+    return execFileSync('git', fullArgs, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   } catch (err) {
     if (allowFail) return null;
     const detail = err.stderr ? String(err.stderr).trim() : err.message;

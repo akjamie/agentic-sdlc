@@ -21,6 +21,7 @@ export { HARNESS_RULES_VERSION, ENGINE_VERSION, DEFAULT_GOVERNANCE } from './rul
 export function assess({
   stage = 'new',
   changeId,
+  baseRef = null,
   baseSha = 'HEAD',
   headSha = null,
   requirement = '',
@@ -60,7 +61,7 @@ export function assess({
 
     // 1. Evaluate Three Risk Vectors
     const v1 = evaluateV1Intent({ requirement: effectiveReq, changedFiles, changeType, agentContext });
-    const v2 = evaluateV2Security({ requirement: effectiveReq, changedFiles, repoRoot });
+    const v2 = evaluateV2Security({ requirement: effectiveReq, changedFiles, repoRoot, baseRef: baseRef || baseSha });
     const v3 = evaluateV3Topology({ requirement: effectiveReq, changedFiles, repoRoot, changeId });
 
     // Inferred or provided Change Type

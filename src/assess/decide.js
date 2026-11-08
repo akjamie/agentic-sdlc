@@ -1,4 +1,4 @@
-import { LEVEL_RANK, DEFAULT_GOVERNANCE, L0_DETERMINISTIC_PATTERNS, isChangeMetadataFile } from './rules/builtin.js';
+import { LEVEL_RANK, DEFAULT_GOVERNANCE, L0_DETERMINISTIC_PATTERNS, isPureL0File, isPureTestFile, isChangeMetadataFile } from './rules/builtin.js';
 import { judgeChangeSemantics } from './ai_judge.js';
 
 /**
@@ -64,8 +64,8 @@ export function decideAssessment({
       .map((f) => f.replace(/\\/g, '/'))
       .filter((f) => !isChangeMetadataFile(f));
     if (substantiveFiles.length > 0) {
-      const allDoc = substantiveFiles.every((f) => L0_DETERMINISTIC_PATTERNS.some((p) => p.test(f)));
-      if (allDoc || aiJudgment.is_pure_doc || aiJudgment.is_pure_test) {
+      const allDocOrTest = substantiveFiles.every((f) => isPureL0File(f) || isPureTestFile(f));
+      if (allDocOrTest && (aiJudgment.is_pure_doc || aiJudgment.is_pure_test || substantiveFiles.every((f) => isPureL0File(f)))) {
         calculatedLevel = 'L0';
       }
     } else if (aiJudgment.is_pure_test || aiJudgment.is_pure_doc || (v1.level === 'L0' && v2.no_signal && v3.no_signal)) {

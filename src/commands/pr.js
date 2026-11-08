@@ -77,8 +77,12 @@ export function stageImplementationChanges(repoRoot, opts = {}) {
       }
     } catch { /* ignore stat race */ }
 
-    git(['add', '--', rel], repoRoot, { allowFail: true });
-    staged.push(norm);
+    try {
+      git(['add', '--', rel], repoRoot);
+      staged.push(norm);
+    } catch (err) {
+      log.warn(`[WARN] Failed to stage file: ${norm} (${err.message})`);
+    }
   }
 
   return { staged, skipped };

@@ -1,9 +1,11 @@
 import path from 'node:path';
 import { exists, readText } from '../../lib/fs.js';
+import { git } from '../../lib/git.js';
 import { HARD_RULES, isTestOrDocFile, CANONICAL_DESTRUCTIVE_PATTERN } from '../rules/builtin.js';
+import { scanDiffForSecrets } from '../secrets.js';
 import { judgeChangeSemantics } from '../ai_judge.js';
 
-export function evaluateV2Security({ requirement = '', changedFiles = [], repoRoot = null } = {}) {
+export function evaluateV2Security({ requirement = '', changedFiles = [], repoRoot = null, baseRef = null, diffText = null } = {}) {
   const req = String(requirement || '').toLowerCase();
   const evidence = [];
   const unresolved = [];
@@ -12,7 +14,68 @@ export function evaluateV2Security({ requirement = '', changedFiles = [], repoRo
   let mandatory_human_review = false;
   let no_signal = true;
 
-  // 1. Check Hard Rules against physical files
+  // 1a. Scan diff or changed files for plaintext secrets
+  let secretFindings = [];
+  if (diffText) {
+    secretFindings = scanDiffForSecrets(diffText);
+  } else if (repoRoot) {
+    for (const f of changedFiles) {
+      const fullPath = path.isAbsolute(f) ? f : path.join(repoRoot, f);
+      if (exists(fullPath)) {
+        try {
+          const content = readText(fullPath);
+          const sf = scanDiffForSecrets(content);
+          if (sf.length > 0) secretFindings.push(...sf.map((s) => ({ ...s, file: f })));
+        } catch { /* ignore binary / unreadable */ }
+      }
+    }
+  }
+
+  if (secretFindings.length > 0) {
+    level = 'L3';
+    no_signal = false;
+    mandatory_human_review = true;
+    evidence.push({
+      id: 'V2_HARD_SECRET_LEAK',
+      kind: 'secret_leak',
+      rule_id: 'HARD_SECURITY_CREDENTIALS',
+      signal: 'hard',
+      summary: `Plaintext credential detected in changed code (${secretFindings.map((s) => `${s.rule}:${s.redacted}`).slice(0, 3).join(', ')})`,
+      source: secretFindings[0].file || 'diff'
+    });
+  }
+
+  // 1b. Check for deleted sensitive files (fallback to baseRef)
+  if (repoRoot && baseRef) {
+    for (const f of changedFiles) {
+      const fullPath = path.isAbsolute(f) ? f : path.join(repoRoot, f);
+      const norm = f.replace(/\\/g, '/');
+      if (!exists(fullPath)) {
+        try {
+          const oldContent = git(['show', `${baseRef}:${norm}`], repoRoot, { allowFail: true });
+          if (oldContent) {
+            const isSecurity = /@EnableWebSecurity|SecurityConfig|JwtAuthenticationFilter|jwt\.sign|passport|fastapi\.security/i.test(oldContent);
+            const isDestructive = CANONICAL_DESTRUCTIVE_PATTERN.test(oldContent);
+            if (isSecurity || isDestructive || /(auth|security|session|mfa|kms)/i.test(norm)) {
+              level = 'L3';
+              no_signal = false;
+              mandatory_human_review = true;
+              evidence.push({
+                id: 'V2_DELETED_SECURITY',
+                kind: 'deleted_security',
+                rule_id: 'HARD_SECURITY_CREDENTIALS',
+                signal: 'hard',
+                summary: `Deleted high-risk security configuration or destructive migration from base: ${norm}`,
+                source: norm
+              });
+            }
+          }
+        } catch { /* ignore */ }
+      }
+    }
+  }
+
+  // 1c. Check Hard Rules against physical files
   const securityRules = HARD_RULES.filter((r) =>
     ['HARD_GOV_PLANE', 'HARD_SECURITY_CREDENTIALS', 'HARD_FINANCIAL_ASSETS', 'HARD_DESTRUCTIVE_DDL'].includes(r.id)
   );
