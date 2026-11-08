@@ -104,3 +104,4 @@ test('T3 (P0): extractJson enforces fail-closed validation for invalid verdict e
   const missingVerdict = extractJson('{"summary": "looks good"}');
   assert.equal(missingVerdict, null, 'Missing verdict field must return null');
 });
+
