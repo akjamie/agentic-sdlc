@@ -73,6 +73,24 @@ export function decideAssessment({
     }
   }
 
+  // 3b. Bounded L1 Positive Safety Envelope (§10.2 7b):
+  // When calculatedLevel is L1, verify it remains within bounded local code envelope:
+  // - Substantive production source files <= 5
+  // - Did not modify root export entrypoints (index.ts/js, lib.rs)
+  // If unbounded (> 5 source files or touching root entrypoints), escalate to L2
+  if (calculatedLevel === 'L1' && !hasMandatoryHumanReview) {
+    const substantiveFiles = changedFiles
+      .map((f) => f.replace(/\\/g, '/'))
+      .filter((f) => !isChangeMetadataFile(f));
+    const productionFiles = substantiveFiles.filter((f) => !isPureL0File(f) && !isPureTestFile(f));
+
+    if (productionFiles.length > 5) {
+      calculatedLevel = 'L2';
+    } else if (productionFiles.some((f) => /(?:^|\/)(?:index\.(?:ts|js|mjs)|lib\.rs)$/i.test(f))) {
+      calculatedLevel = 'L2';
+    }
+  }
+
   // 4. Determine Confidence & Unresolved
   const allUnresolved = [
     ...(v1.unresolved || []),

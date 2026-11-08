@@ -196,17 +196,41 @@ export function judgeChangeSemantics({ requirement = '', changedFiles = [], repo
     const isPureTest = allTestFiles || (substantiveFiles.length === 0 && isTestIntent);
     const isPureDoc = allDocFiles || (substantiveFiles.length === 0 && isDocIntent);
 
+    const hasHighRiskSecurity = !isPureDoc && !isPureTest &&
+      /\b(?:access[-\s_]?token|auth[-\s_]?token|bearer[-\s_]?token|session[-\s_]?token|jwt|oauth|private[-\s_]?key|secret[-\s_]?key|password\s+(?:encryption|hash|leak)|password|mfa|rbac|kms|pii|gdpr|tax[-_]?id|ssn|payment\s+refund|payment\s+ledger|refund\s+ledger|clearing\s+settlement|credit\s+card)\b/i.test(req);
+
+    const genericSecWords = [
+      'auth', 'authentication', 'password', 'credential', 'crypto',
+      'payment', 'payout', 'refund', 'billing', 'ledger', 'wallet', 'clearing'
+    ];
+    const secWordCount = genericSecWords.filter((w) => new RegExp(`\\b${w}\\b`, 'i').test(req)).length;
+
+    const isSecurityL3 = hasHighRiskSecurity || secWordCount >= 2;
+    const isSecurityL2 = secWordCount === 1;
+
+    const hasApiSignal = !isPureDoc && !isPureTest && (
+      hasProductionTarget ||
+      isSecurityL2 ||
+      /\b(?:api|endpoint|openapi|swagger|grpc|protobuf|graphql|webhook|controller|router|database|migration|schema|fastapi|springboot|spring\s+boot|helm|kubernetes|k8s|dependencies|dependency)\b/i.test(req)
+    );
+
+    let heuristicClass = 'internal_code';
+    if (isPureTest) heuristicClass = 'test_only';
+    else if (isPureDoc) heuristicClass = 'doc_only';
+    else if (hasDestructiveAction || isSecurityL3) heuristicClass = 'destructive';
+    else if (hasApiSignal) heuristicClass = 'api_contract';
+
     rawAiOutput = {
       is_pure_test: isPureTest,
       is_pure_doc: isPureDoc,
-      contains_destructive_ops: CANONICAL_DESTRUCTIVE_PATTERN.test(req),
-      contains_api_changes: false,
-      classification: isPureTest ? 'test_only' : (isPureDoc ? 'doc_only' : 'internal_code'),
+      contains_destructive_ops: hasDestructiveAction,
+      contains_api_changes: Boolean(hasApiSignal),
+      classification: heuristicClass,
       confidence: 'high',
       evaluator_mode: 'heuristic_seed',
       rationale: isPureTest
         ? 'Deterministic Heuristic Baseline: Change is strictly confined to test suites, mocks, and test assertions.'
-        : (isPureDoc ? 'Deterministic Heuristic Baseline: Change is purely documentation, typo fix, comments, or non-executable text.' : 'Deterministic Heuristic Baseline: General code change')
+        : (isPureDoc ? 'Deterministic Heuristic Baseline: Change is purely documentation, typo fix, comments, or non-executable text.' : (hasDestructiveAction || isSecurityL3 ? 'Deterministic Heuristic Baseline: Critical auth/security credentials, password, or destructive operations.' : (hasApiSignal ? 'Deterministic Heuristic Baseline: Cross-boundary api contracts or database schema changes.' : 'Deterministic Heuristic Baseline: General code change')))
     };
   } else {
     rawAiOutput.evaluator_mode = rawAiOutput.evaluator_mode || 'llm_classifier';

@@ -77,15 +77,11 @@ test('WS-2: Chinese high-risk requirement classifies as L3 spec-first and maps E
   assert.equal(rec.governance.workflow_mode, 'spec-first');
   assert.equal(rec.governance.implementation_review, 'ai+human');
 
-  // 2. Slug derivation produces readable domain slug instead of opaque hash
-  const slug = deriveChangeSlug(req);
-  assert.doesNotMatch(slug, /^change-[a-z0-9]+$/, `Expected semantic domain slug, got ${slug}`);
-  assert.match(slug, /payment|clearing|settlement|ledger/);
-
-  // 3. Requirement term extraction bridges Chinese domain concepts to English code symbols for Graphify
-  const terms = extractRequirementTerms(req);
-  assert.match(terms, /payment/);
-  assert.match(terms, /settlement|clearing|ledger/);
+  // 2. C4 De-lexiconization: slug derivation uses explicit --id or falls back to deterministic hash
+  const slugWithId = deriveChangeSlug(req, { id: 'payment-settlement-purge' });
+  assert.equal(slugWithId, 'payment-settlement-purge');
+  const slugDefault = deriveChangeSlug(req);
+  assert.match(slugDefault, /^change-[a-z0-9]+$/);
 });
 
 test('WS-2: Escalate-Only Ratchet prevents .agent-assess.json from downgrading L1/L2/L3 requirements', () => {
@@ -472,15 +468,13 @@ test('PE Finding 3: asdlc archive --merged protects newly merged Spec PRs withou
   }
 });
 
-test('PE Finding 4: mixed Chinese-English slugs combine domain tokens, and Invariant 4 blocks code mutations masked with doc words', () => {
-  // 1. Mixed Chinese-English slug generation
-  const slug1 = deriveChangeSlug('修复微信支付 V3 回调逻辑');
-  assert.ok(slug1.includes('wechat') && slug1.includes('payment') && slug1.includes('callback') && slug1.includes('v3'),
-    `Slug1 expected rich mixed tokens, got: ${slug1}`);
+test('PE Finding 4: C4 de-lexiconization respects explicit --id or extracts ASCII tokens, and Invariant 4 blocks code mutations masked with doc words', () => {
+  // 1. C4: Explicit slug via --id or ASCII tokens without static translation lexicon
+  const slug1 = deriveChangeSlug('修复微信支付 V3 回调逻辑', { id: 'wechat-payment-v3-callback' });
+  assert.equal(slug1, 'wechat-payment-v3-callback');
 
   const slug2 = deriveChangeSlug('重构清结算 RPC 接口');
-  assert.ok(slug2.includes('settlement') && slug2.includes('rpc') && slug2.includes('api'),
-    `Slug2 expected rich mixed tokens, got: ${slug2}`);
+  assert.equal(slug2, 'rpc', 'Should extract ASCII token rpc without hardcoded CJK lexicon');
 
   // 2. Invariant 4: "重构订单状态机并补充注释" cannot be downgraded to L0 by claiming is_pure_doc
   const assessed = assess({

@@ -41,36 +41,35 @@ export function evaluateV1Intent({ requirement = '', specDelta = '', changedFile
   const evalMode = aiJudgment.evaluator_mode || 'heuristic_seed';
   const isAiMode = evalMode !== 'heuristic_seed';
 
-  // 2a. Agent / LLM Semantic Escalation (Bidirectional — never triggered by offline regex heuristic_seed):
-  if (isAiMode) {
-    if (aiJudgment.classification === 'api_contract' || aiJudgment.contains_api_changes) {
-      if (level === 'L1') {
-        level = 'L2';
-        inferredType = inferredType === 'chore' ? 'change' : inferredType;
-        evidence.push({
-          id: 'V1_AI_API_CONTRACT_INTENT',
-          kind: 'semantic_intent',
-          signal: 'hard',
-          summary: aiJudgment.rationale || 'Agent Semantic Evaluation: Change modifies cross-boundary API contracts'
-        });
-      }
-    } else if (aiJudgment.classification === 'destructive' || aiJudgment.contains_destructive_ops) {
-      level = 'L3';
-      mandatory_human_review = true;
+  // 2a. Semantic Escalation:
+  const idPrefix = isAiMode ? 'V1_AI_' : 'V1_';
+  if (aiJudgment.classification === 'destructive' || aiJudgment.contains_destructive_ops) {
+    level = 'L3';
+    mandatory_human_review = true;
+    evidence.push({
+      id: `${idPrefix}DESTRUCTIVE_INTENT`,
+      kind: 'semantic_intent',
+      signal: 'hard',
+      summary: aiJudgment.rationale || 'Task involves critical security credentials or destructive data operations'
+    });
+  } else if (aiJudgment.classification === 'governance_plane') {
+    level = 'L3';
+    mandatory_human_review = true;
+    evidence.push({
+      id: `${idPrefix}GOVERNANCE_INTENT`,
+      kind: 'semantic_intent',
+      signal: 'hard',
+      summary: aiJudgment.rationale || 'Task modifies core repository governance'
+    });
+  } else if (aiJudgment.classification === 'api_contract' || aiJudgment.contains_api_changes) {
+    if (level === 'L1') {
+      level = 'L2';
+      inferredType = inferredType === 'chore' ? 'change' : inferredType;
       evidence.push({
-        id: 'V1_AI_DESTRUCTIVE_INTENT',
+        id: `${idPrefix}API_CONTRACT_INTENT`,
         kind: 'semantic_intent',
         signal: 'hard',
-        summary: aiJudgment.rationale || 'Agent Semantic Evaluation: Task involves destructive data purge or drop'
-      });
-    } else if (aiJudgment.classification === 'governance_plane') {
-      level = 'L3';
-      mandatory_human_review = true;
-      evidence.push({
-        id: 'V1_AI_GOVERNANCE_INTENT',
-        kind: 'semantic_intent',
-        signal: 'hard',
-        summary: aiJudgment.rationale || 'Agent Semantic Evaluation: Task modifies core repository governance'
+        summary: aiJudgment.rationale || 'Change modifies cross-boundary API contracts'
       });
     }
   }

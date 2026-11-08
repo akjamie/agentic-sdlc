@@ -9,6 +9,7 @@ import { readYaml } from '../lib/yaml.js';
 import { git } from '../lib/git.js';
 import { log, dim } from '../lib/log.js';
 import { detectTools, checkToolHealth, installSkills, installCommands } from '../lib/tools.js';
+import { jsonOut } from '../lib/cliutil.js';
 
 // Environment + setup health. Exit non-zero only on a critical failure
 // (no OpenSpec project, or the managed schema is not installed / is overridden).
@@ -94,10 +95,22 @@ export function doctor(opts = {}) {
   }
 
   let failed = 0;
+  for (const r of rows) {
+    if (r.status === 'fail') failed += 1;
+  }
+
+  if (opts.json) {
+    jsonOut({
+      ok: failed === 0,
+      failed,
+      checks: rows,
+    });
+    return failed ? 1 : 0;
+  }
+
   log.info('');
   for (const r of rows) {
     const badge = { pass: 'PASS', warn: 'WARN', fail: 'FAIL' }[r.status];
-    if (r.status === 'fail') failed += 1;
     log.plain(`  [${badge}] ${r.name}`);
     if (r.detail) log.plain(`        ${dim(r.detail)}`);
   }
@@ -174,6 +187,7 @@ export function register(program) {
     .description('check the environment + repo setup health (with optional --fix)')
     .option('-g, --global', 'check global toolchain and agent skills only (for CI/headless environments)')
     .option('--fix', 'automatically remediate fixable environment and configuration drift')
+    .option('--json', 'output machine-readable JSON')
     .option('--repo-root <path>')
     .action((opts) => {
       process.exitCode = doctor(opts);
