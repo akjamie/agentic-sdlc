@@ -420,18 +420,32 @@ flowchart LR
 ```
 
 1. **Host-to-Container Ingestion (Ephemeral In-Memory Pipe)**:
-   - When running on a developer workstation, `asdlc run` queries the host OS keychain via `gh auth token` (Windows Credential Manager, macOS Keychain, or Linux Secret Service).
+   - When running on a developer workstation, `asdlc run` queries the host OS keychain via `gh auth token` (Windows Credential Manager, macOS Keychain, or Linux Secret Service) or consumes a configured scoped Personal Access Token (PAT via `git.token`).
    - The token is passed to the container exclusively via ephemeral container environment (`--env GH_TOKEN=...`) or an in-memory stream into `/dev/shm` (RAM disk), strictly owned by `10001:10001` with permissions `0600`.
    - The container Git environment is pre-configured with an in-memory credential helper:
      ```bash
      git config --global credential.helper '!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f'
      ```
    - When the container terminates (`--rm`), process memory and `/dev/shm` are completely destroyed.
-2. **CI/CD Execution Context (Zero Interactive Prompts)**:
-   - In GitHub Actions / GitLab CI, `asdlc run` automatically consumes the native ambient token:
-     `$GITHUB_TOKEN`, `$GH_TOKEN`, or `$CI_JOB_TOKEN`.
-   - Git commits pushed by the pipeline are attributed to the official automation identity:
-     `name: github-actions[bot]`, `email: 41898282+github-actions[bot]@users.noreply.github.com`.
+2. **CI/CD Execution Identity: GitHub App / Project Access Token / Scoped PAT (Uncompromised Auto-PR)**:
+   - **Deprecation of Individual Human Credentials in CI**: Running unattended CI pipelines using an individual developer's personal interactive `gh auth` session is deprecated to prevent broad account blast radiuses and satisfy Separation of Duties (SoD / SOX / SOC2).
+   - **First-Class Auto-PR Invariant**: The pipeline strictly guarantees **100% autonomous Auto-PR capability**. The containerized runner retains full authority to push `change/<slug>` branches, open Spec PRs, update Impl PRs, reply to review threads, and request human lead reviews—with zero manual human git-push overhead.
+   - **Supported Enterprise Service Identities**:
+     - **Option A: GitHub App Installation Token (Recommended for Enterprise GitHub)**:
+       - Generates a short-lived (1-hour) token scoped strictly to the single target repository with permissions `contents: write`, `pull_requests: write`, and `issues: write`.
+       - **Overcomes GitHub Actions Downstream CI Deadlock**: Standard GitHub Actions `GITHUB_TOKEN` deliberately blocks recursive workflow triggers—meaning fix commits pushed by a container runner using `GITHUB_TOKEN` leave required status checks permanently pending. Pushing via a **GitHub App identity (`asdlc-bot[bot]`)** ensures that all downstream CI test suites and branch protection checks **trigger and execute automatically on the auto-created PR**!
+     - **Option B: Scoped Fine-Grained PAT / GitLab Project Access Token**:
+       - Fully supported across both GitHub and GitLab for teams that manage project-scoped service accounts without GitHub App infrastructure.
+       - Configured in CI secrets (`ASDLC_GIT_TOKEN: ${{ secrets.ASDLC_PROJECT_TOKEN }}`).
+   - **Commit Attribution & Audit Trail**:
+     - Automated commits pushed during the autonomous PR lifecycle are attributed cleanly to the bot identity with co-author trailers:
+       ```git
+       commit b7e3f21
+       Author: asdlc-bot[bot] <asdlc-bot@users.noreply.github.com>
+       Co-authored-by: Alice Engineer <alice@company.com>
+       
+       feat(auth): implement token rotation spec (closes #42)
+       ```
 3. **Enterprise VPC & Private Trackers (Jira / Confluence / Private Git)**:
    - Secrets defined in `~/.asdlc/config.yaml` (`env.JIRA_API_TOKEN`, `env.GITLAB_TOKEN`) are injected into the container via explicit passthrough (`runner.env_passthrough: "JIRA_*,GITLAB_*"`).
 4. **Enterprise SSH Authentication & Zero-Leak Ingestion**:
@@ -1329,16 +1343,28 @@ flowchart LR
 ```
 
 1. **宿主机到容器无痕注入（内存管道传输）**：
-   - 开发者在本地工作站执行 `asdlc run` 时，系统直接调用宿主机 OS 凭据库（Windows Credential Manager、macOS Keychain 或 Linux Secret Service）提取 `gh auth token`；
+   - 开发者在本地工位工作站执行 `asdlc run` 时，系统优先调用宿主机 OS 凭据库提取 `gh auth token` 或读取开发者配置的细粒度个人令牌（PAT，配置项 `git.token`）；
    - 凭据仅通过单向临时进程环境变量（`--env GH_TOKEN=...`）或写入 `/dev/shm` 内存临时文件（权限 `0600`、属主 `10001:10001`）注入容器；
    - 容器内全局 Git 预置内存级 Credential Helper：
      ```bash
      git config --global credential.helper '!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f'
      ```
    - 容器执行完毕退出即销毁（`--rm`），内存盘与环境变量即刻蒸发，**宿主机与容器磁盘零密钥残留**。
-2. **CI/CD 无人值守环境（零交互全自动接入）**：
-   - 在 GitHub Actions / GitLab CI 中，`asdlc run` 自动侦测并透传原生环境变量：`$GITHUB_TOKEN`、`$GH_TOKEN` 或 `$CI_JOB_TOKEN`；
-   - 容器流水线推送的所有 Commit 与 PR 统一署名合规的官方自动化账号：`name: github-actions[bot]`, `email: 41898282+github-actions[bot]@users.noreply.github.com`。
+2. **CI/CD 执行身份：全面升级 GitHub App / Project Access Token / 细粒度 PAT（坚决保留全自动 Auto-PR 能力）**：
+   - **废除在无人值守 CI 中使用个人交互式 gh token 的做法**：防止以个人超大权限 Token 运行导致 Blast Radius 扩大，并满足职责分离（SoD / SOX / 金融合规审计）要求。
+   - **全自动 Auto-PR 能力坚决保留（First-Class Invariant）**：系统在架构上**100% 完整保留容器全自动推分支、开 PR、更新 PR 与回复 Review 线程的核心能力**，绝不降级为人工手动推拉。
+   - **双轨服务账号支持（兼顾合规与 CI 触发）**：
+     - **方案 A：GitHub App Installation Token（企业 GitHub 官方推荐）**：
+       - 在 CI 中通过 App ID 与私钥动态签发，有效期 1 小时，权限严格限制在单仓（`contents: write`, `pull_requests: write`）；
+       - **彻底解决 Actions 下游 CI 触发死锁问题**：GitHub Actions 原生默认的 `GITHUB_TOKEN` 出于防递归死循环设计，**其推送的提交和提的 PR 不会触发下游的 CI 工作流**（导致 Required Status Checks 一直挂起卡死）。而通过专用的 **GitHub App 身份（`asdlc-bot[bot]`）** 推送，能够**完美正常触发下游的测试流水线与分支保护门禁**，使自动化 Auto-PR 真正形成闭环！
+     - **方案 B：细粒度 PAT / GitLab Project Access Token（项目级服务令牌）**：
+       - 针对使用 GitLab 或未搭建 GitHub App 的企业，完全原生支持项目级 Token（PAT / Project Access Token）；
+       - 在 CI 环境变量中直接注入 `ASDLC_GIT_TOKEN: ${{ secrets.ASDLC_PROJECT_TOKEN }}`，实现同样的仓库级最小权限隔离与全自动 Auto-PR。
+   - **提交审计与归因**：流水线提交统一附加署名与触发者联合署名，兼顾自动化与合规追溯：
+     ```git
+     Author: asdlc-bot[bot] <asdlc-bot@users.noreply.github.com>
+     Co-authored-by: 张三 <zhangsan@corp.company.com>
+     ```
 3. **企业内网与私有工单鉴权（Jira / Confluence / 私有 GitLab）**：
    - 在 `~/.asdlc/config.yaml` 中配置的第三方服务密钥（如 `env.JIRA_API_TOKEN`）遵循严格白名单机制，通过 `runner.env_passthrough` 按需定向透传至容器，禁止宽泛全量注入。
 4. **企业级 SSH 鉴权与零泄漏沙箱注入方案**：
