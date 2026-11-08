@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { exists } from './fs.js';
-import { readYaml } from './yaml.js';
+import { readYaml, parseYaml } from './yaml.js';
+import { git } from './git.js';
 
 // Platform-owned strategy file (v6 7.3). Loaded from .sdlc/policy.yaml.
 export const POLICY_REL = '.sdlc/policy.yaml';
@@ -29,7 +30,19 @@ function deepMerge(base, over) {
   return out;
 }
 
-export function loadPolicy(repoRoot) {
+export function loadPolicyFromRef(repoRoot, ref) {
+  if (!ref) return loadPolicy(repoRoot);
+  try {
+    const raw = git(['show', `${ref}:${POLICY_REL}`], repoRoot, { allowFail: true });
+    if (!raw) return { ...DEFAULT_POLICY };
+    return deepMerge(DEFAULT_POLICY, parseYaml(raw) ?? {});
+  } catch {
+    return { ...DEFAULT_POLICY };
+  }
+}
+
+export function loadPolicy(repoRoot, { baseRef } = {}) {
+  if (baseRef) return loadPolicyFromRef(repoRoot, baseRef);
   const p = path.join(repoRoot, POLICY_REL);
   if (!exists(p)) return { ...DEFAULT_POLICY };
   try {

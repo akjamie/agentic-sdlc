@@ -1,5 +1,5 @@
 export const HARNESS_RULES_VERSION = '2026.10.0';
-export const ENGINE_VERSION = '1.6.1';
+export const ENGINE_VERSION = '1.7.0';
 
 export const RISK_LEVELS = {
   L0: 'L0',
@@ -44,10 +44,14 @@ export const HARD_RULES = [
     mandatory_human_review: true,
     patterns: [
       /(^|\/)AGENTS\.md$/i,
+      /(^|\/)(CLAUDE|GEMINI)\.md$/i,
+      /(^|\/)\.github\/(copilot-instructions|prompts)\//i,
+      /(^|\/)assets\/commands\//i,
+      /(^|\/)\.sdlc\//i,
       /(^|\/)openspec\/config\.yaml$/i,
       /(^|\/)(assets|\.agents)\/skills\/.*SKILL\.md$/i
     ],
-    summary: 'Modifies core Agent governance constitution (AGENTS.md, openspec/config.yaml, or agent skills)'
+    summary: 'Modifies core Agent governance constitution or agent instructions'
   },
   // 2. High-Risk Security, Credentials & Cryptography (L3)
   {
@@ -180,6 +184,33 @@ export const TEST_AND_DOC_PATTERNS = [
   /\.(md|txt)$/i,
   /(^|\/)assets\/(?:images|media|icons|fonts)\//i
 ];
+
+export const L0_EXCLUSION_PATTERNS = [
+  /(^|\/)requirements.*\.txt$/i,
+  /(^|\/)CMakeLists\.txt$/i,
+  /(^|\/)(src|app|pkg|internal|lib)\/.*\.md$/i,
+  /(^|\/)prompts\/.*\.md$/i,
+  /(^|\/)(CLAUDE|GEMINI|AGENTS)\.md$/i,
+  /(^|\/)\.github\//i,
+  /(^|\/)\.sdlc\//i,
+  /(^|\/)assets\/commands\//i
+];
+
+export function isPureL0File(filePath = '') {
+  const norm = String(filePath).replace(/\\/g, '/');
+  if (L0_EXCLUSION_PATTERNS.some((p) => p.test(norm))) return false;
+  return L0_DETERMINISTIC_PATTERNS.some((p) => p.test(norm));
+}
+
+export function isPureTestFile(filePath = '') {
+  const norm = String(filePath).replace(/\\/g, '/');
+  if (L0_EXCLUSION_PATTERNS.some((p) => p.test(norm))) return false;
+  return /(^|\/)(tests?|__tests__|testing)\//i.test(norm) ||
+    /\.(test|spec)\.[a-z0-9]+$/i.test(norm) ||
+    /_test\.go$/i.test(norm) ||
+    /test_[^/]+\.py$/i.test(norm) ||
+    /[^/]+_test\.py$/i.test(norm);
+}
 
 export function isChangeMetadataFile(filePath = '') {
   const norm = String(filePath).replace(/\\/g, '/');

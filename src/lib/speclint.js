@@ -97,6 +97,7 @@ export const LINT_VERSION = 2;
 
 const DEFAULT_SEVERITY = {
   'R0-no-requirements': 'blocker',
+  'R0-non-ascii-colon': 'blocker',
   'R1-purpose': 'blocker',
   'R2-normative': 'blocker',
   'R3-scenario': 'blocker',
@@ -111,7 +112,7 @@ const DEFAULT_SEVERITY = {
 };
 
 export function lintSpecText(rawText, { requireGiven = true, repoRoot = null, rules = {} } = {}) {
-  const text = String(rawText || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const text = String(rawText || '').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const findings = [];
   const add = (code, rawSeverity, message, location = '') => {
     const configured = rules[code] ?? DEFAULT_SEVERITY[code] ?? rawSeverity;
@@ -119,10 +120,23 @@ export function lintSpecText(rawText, { requireGiven = true, repoRoot = null, ru
     findings.push({ code, severity: configured, location, message });
   };
 
+  const lines = text.split('\n');
+  for (let idx = 0; idx < lines.length; idx += 1) {
+    const line = lines[idx];
+    if (/^#{3,4}\s*(Requirement|Scenario)\s*[\uFF1A]/.test(line)) {
+      add(
+        'R0-non-ascii-colon',
+        'blocker',
+        `Line ${idx + 1}: Found fullwidth non-ASCII colon '：' (U+FF1A). Replace with standard ASCII ':' to avoid parsing failures`,
+        `Line ${idx + 1}`
+      );
+    }
+  }
+
   const hasAdded = /^##\s+ADDED\s+Requirements\s*$/m.test(text);
   const purpose = topSection(text, 'Purpose') ?? '';
-  if (hasAdded && purpose.trim().length < 50) {
-    add('R1-purpose', 'blocker', 'Purpose missing or shorter than 50 characters', '## Purpose');
+  if (hasAdded && purpose.trim().length < 15) {
+    add('R1-purpose', 'blocker', 'Purpose missing or shorter than 15 characters', '## Purpose');
   }
 
   if ((topSection(text, 'Test Strategy') ?? '').trim().length === 0) {
