@@ -11,24 +11,33 @@ import {
   LEVELS
 } from '../src/lib/level.js';
 
-test('inferInitialLevel: identifies L3 sensitive keywords', () => {
-  const r1 = inferInitialLevel({ requirement: 'fix auth token expiration bug' });
+test('inferInitialLevel: identifies L3 sensitive operations or destructive intent', () => {
+  const r1 = inferInitialLevel({ requirement: 'drop table customer_sessions and purge data' });
   assert.equal(r1.level, LEVELS.L3);
-  assert.match(r1.reason, /auth/);
+  assert.match(r1.reason, /destruct/i);
 
-  const r2 = inferInitialLevel({ requirement: 'update jwt password encryption' });
+  const r2 = inferInitialLevel({
+    requirement: 'update jwt password encryption',
+    agentContext: { classification: 'destructive', contains_destructive_ops: true, rationale: 'Password encryption update' }
+  });
   assert.equal(r2.level, LEVELS.L3);
-  assert.match(r2.reason, /jwt|password|security/);
+  assert.match(r2.reason, /destruct|encryption/i);
 });
 
-test('inferInitialLevel: identifies L2 cross-boundary keywords', () => {
-  const r1 = inferInitialLevel({ requirement: 'add new customer api endpoint' });
+test('inferInitialLevel: identifies L2 cross-boundary contracts with agentContext', () => {
+  const r1 = inferInitialLevel({
+    requirement: 'add new customer api endpoint',
+    agentContext: { classification: 'api_contract', contains_api_changes: true, rationale: 'Customer API endpoint contract' }
+  });
   assert.equal(r1.level, LEVELS.L2);
-  assert.match(r1.reason, /api/);
+  assert.match(r1.reason, /contract|api/i);
 
-  const r2 = inferInitialLevel({ requirement: 'run database migration for user table' });
+  const r2 = inferInitialLevel({
+    requirement: 'run database migration for user table',
+    agentContext: { classification: 'api_contract', contains_api_changes: true, rationale: 'Database schema migration' }
+  });
   assert.equal(r2.level, LEVELS.L2);
-  assert.match(r2.reason, /database|migration/);
+  assert.match(r2.reason, /contract|migration/i);
 });
 
 test('inferInitialLevel: identifies L0 trivial keywords', () => {
@@ -58,7 +67,10 @@ test('inferInitialLevel: honors explicitLevel upgrade and rejects illegal downgr
 
   // Illegal downgrade L3 -> L1 must throw ILLEGAL_DOWNGRADE
   assert.throws(
-    () => inferInitialLevel({ requirement: 'fix auth password leak', explicitLevel: 'L1' }),
+    () => inferInitialLevel({
+      requirement: 'drop table customer_accounts and purge data',
+      explicitLevel: 'L1'
+    }),
     (err) => err.code === 'ILLEGAL_DOWNGRADE'
   );
 });

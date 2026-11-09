@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { HARD_RULES, isTestOrDocFile, isChangeMetadataFile } from '../rules/builtin.js';
 import { getGraphTopologyMetrics } from '../../lib/graphify.js';
-import { analyzeFileSemantics } from '../semantics.js';
+import { analyzeFileSemantics, batchAnalyzeFileSemantics } from '../semantics.js';
 
-export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRoot = null, changeId = null } = {}) {
+export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRoot = null, changeId = null, baseRef = null, fileSemantics = null } = {}) {
   const req = String(requirement || '').toLowerCase();
   const evidence = [];
   const unresolved = [];
@@ -12,6 +12,8 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
   let confidence = 'high';
   let mandatory_human_review = false;
   let no_signal = true;
+
+  const semanticsMap = fileSemantics || batchAnalyzeFileSemantics(changedFiles, { repoRoot, baseRef });
 
   // 1. Check Hard Rules for Topology / Contracts / Infra
   const topoRules = HARD_RULES.filter((r) =>
@@ -30,13 +32,18 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
       const norm = f.replace(/\\/g, '/');
       if (rule.patterns.some((p) => p.test(norm))) return true;
 
-      // Content-based heuristic for API handlers in source files
+      // Content-based heuristic for API handlers in source files (symmetric head/baseRef inspection)
       if (rule.id === 'HARD_API_CONTRACT' && repoRoot && /\.(java|kt|py|go|ts|js)$/i.test(norm)) {
         try {
-          const fullPath = path.isAbsolute(f) ? f : path.join(repoRoot, f);
-          if (fs.existsSync(fullPath)) {
-            const content = fs.readFileSync(fullPath, 'utf8');
-            if (API_CONTENT_PATTERNS.some((p) => p.test(content))) return true;
+          const cached = semanticsMap.get(f);
+          const contentToCheck = cached ? (cached.headContent || cached.oldContent) : null;
+          if (contentToCheck && API_CONTENT_PATTERNS.some((p) => p.test(contentToCheck))) return true;
+          if (!cached) {
+            const fullPath = path.isAbsolute(f) ? f : path.join(repoRoot, f);
+            if (fs.existsSync(fullPath)) {
+              const content = fs.readFileSync(fullPath, 'utf8');
+              if (API_CONTENT_PATTERNS.some((p) => p.test(content))) return true;
+            }
           }
         } catch { /* ignore read failure */ }
       }
@@ -167,19 +174,10 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
     }
   }
 
-  // 3. Static Semantics Engine: Check L2 server contracts, migrations, schemas, manifests
+  // 3. Static Semantics Engine: Check L2 server contracts, migrations, schemas, manifests (symmetric head/baseRef)
   for (const f of changedFiles) {
     if (isTestOrDocFile(f)) continue;
-    const fullPath = path.isAbsolute(f) ? f : (repoRoot ? path.join(repoRoot, f) : f);
-    let headContent = null;
-    if (fs.existsSync(fullPath)) {
-      try { headContent = fs.readFileSync(fullPath, 'utf8'); } catch { /* ignore */ }
-    }
-    const sem = analyzeFileSemantics({
-      filePath: f,
-      content: headContent,
-      allChangedFiles: changedFiles
-    });
+    const sem = semanticsMap.get(f) || analyzeFileSemantics({ filePath: f, allChangedFiles: changedFiles });
     if (sem && sem.level === 'L2') {
       if (level === 'L1') level = 'L2';
       no_signal = false;

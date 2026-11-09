@@ -19,6 +19,7 @@ test('assess: stage new initial evaluation and hash chain generation', () => {
       stage: 'new',
       changeId,
       requirement: 'implement jwt token session authentication',
+      agentContext: { classification: 'destructive', contains_destructive_ops: true, rationale: 'JWT token session authentication' },
       repoRoot: tmp
     });
 
@@ -38,6 +39,7 @@ test('assess: stage new initial evaluation and hash chain generation', () => {
       stage: 'spec',
       changeId,
       requirement: 'implement jwt token session authentication',
+      agentContext: { classification: 'destructive', contains_destructive_ops: true, rationale: 'JWT token session authentication' },
       repoRoot: tmp
     });
 
@@ -239,6 +241,7 @@ test('assess: P1-3 regression - tampered risk-history.jsonl fails closed on read
       stage: 'new',
       changeId,
       requirement: 'implement secure ledger',
+      agentContext: { classification: 'api_contract', contains_api_changes: true, rationale: 'Secure ledger' },
       repoRoot: tmp
     });
 

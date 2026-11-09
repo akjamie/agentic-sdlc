@@ -16,38 +16,56 @@ test('assessRisk - Stage 1 (asdlc new): Demotion Guards for pure docs', () => {
 });
 
 test('assessRisk - Stage 1 (asdlc new): High-Risk Regulatory and Security (L3)', () => {
-  // Financial domain
-  const r1 = assessRisk({ requirement: 'implement payment refund ledger clearing' });
+  // Financial domain via agentContext
+  const r1 = assessRisk({
+    requirement: 'implement payment refund ledger clearing',
+    agentContext: { classification: 'destructive', contains_destructive_ops: true, rationale: 'Financial payment ledger clearing' }
+  });
   assert.equal(r1.level, RISK_LEVELS.L3);
   assert.equal(r1.requiresHumanReview, true);
   assert.equal(r1.isSinglePr, false);
 
-  // Auth / Security domain
-  const r2 = assessRisk({ requirement: 'add oauth jwt session authentication' });
+  // Auth / Security domain via agentContext
+  const r2 = assessRisk({
+    requirement: 'add oauth jwt session authentication',
+    agentContext: { classification: 'destructive', contains_destructive_ops: true, rationale: 'OAuth JWT authentication credentials' }
+  });
   assert.equal(r2.level, RISK_LEVELS.L3);
   assert.equal(r2.requiresHumanReview, true);
 
-  // Compliance / PII domain
-  const r3 = assessRisk({ requirement: 'process user pii tax id for gdpr compliance' });
+  // Compliance / PII domain via agentContext
+  const r3 = assessRisk({
+    requirement: 'process user pii tax id for gdpr compliance',
+    agentContext: { classification: 'destructive', contains_destructive_ops: true, rationale: 'GDPR PII compliance' }
+  });
   assert.equal(r3.level, RISK_LEVELS.L3);
 
-  // Destructive operations
+  // Destructive operations (canonical syntax detected offline)
   const r4 = assessRisk({ requirement: 'drop table obsolete_orders and purge data' });
   assert.equal(r4.level, RISK_LEVELS.L3);
 });
 
 test('assessRisk - Stage 1 (asdlc new): Cross-Boundary Architectural (L2)', () => {
-  // API contracts
-  const r1 = assessRisk({ requirement: 'update openapi specification for orders api' });
+  // API contracts via agentContext
+  const r1 = assessRisk({
+    requirement: 'update openapi specification for orders api',
+    agentContext: { classification: 'api_contract', contains_api_changes: true, rationale: 'OpenAPI contract specification' }
+  });
   assert.equal(r1.level, RISK_LEVELS.L2);
   assert.equal(r1.isSinglePr, false);
 
-  // Database / Schemas
-  const r2 = assessRisk({ requirement: 'create database migration for products table schema' });
+  // Database / Schemas via agentContext
+  const r2 = assessRisk({
+    requirement: 'create database migration for products table schema',
+    agentContext: { classification: 'api_contract', contains_api_changes: true, rationale: 'Database schema migration' }
+  });
   assert.equal(r2.level, RISK_LEVELS.L2);
 
-  // Infra / Supply Chain
-  const r3 = assessRisk({ requirement: 'update kubernetes helm chart and package.json dependencies' });
+  // Infra / Supply Chain via agentContext
+  const r3 = assessRisk({
+    requirement: 'update kubernetes helm chart and package.json dependencies',
+    agentContext: { classification: 'api_contract', contains_api_changes: true, rationale: 'Kubernetes Helm and supply chain dependencies' }
+  });
   assert.equal(r3.level, RISK_LEVELS.L2);
 });
 

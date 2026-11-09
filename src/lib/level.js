@@ -9,12 +9,13 @@ import { fail } from './errors.js';
 
 export const LEVELS = RISK_LEVELS;
 
-export function inferInitialLevel({ requirement = '', explicitLevel, repoRoot, changeId } = {}) {
+export function inferInitialLevel({ requirement = '', explicitLevel, repoRoot, changeId, agentContext = null } = {}) {
   // Always run assessment to establish immutable baseline in history
   const result = assess({
     stage: 'new',
     changeId: changeId || 'provisional',
     requirement,
+    agentContext,
     repoRoot,
     persist: Boolean(repoRoot && changeId)
   });

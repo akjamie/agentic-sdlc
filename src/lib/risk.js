@@ -6,7 +6,7 @@ export { RISK_LEVELS, LEVEL_RANK };
 /**
  * Backward-compatible adapter for legacy callers/tests, delegating to unified assess engine.
  */
-export function assessRisk({ requirement = '', changedFiles = [], currentLevel = null, repoRoot = null } = {}) {
+export function assessRisk({ requirement = '', changedFiles = [], currentLevel = null, repoRoot = null, agentContext = null } = {}) {
   const result = assess({
     stage: changedFiles.length > 0 ? 'impl' : 'new',
     requirement,
@@ -14,6 +14,7 @@ export function assessRisk({ requirement = '', changedFiles = [], currentLevel =
     previous: currentLevel ? { risk: { level: currentLevel } } : null,
     baseline: currentLevel ? { risk: { level: currentLevel } } : null,
     repoRoot,
+    agentContext,
     persist: false
   });
 

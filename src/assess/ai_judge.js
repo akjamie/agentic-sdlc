@@ -8,7 +8,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { CANONICAL_DESTRUCTIVE_PATTERN, isTestOrDocFile, isChangeMetadataFile } from './rules/builtin.js';
+import { CANONICAL_DESTRUCTIVE_PATTERN, isTestOrDocFile, isChangeMetadataFile, isPureTestFile, isPureL0File } from './rules/builtin.js';
 
 export const AI_CLASSIFICATION_SCHEMA = {
   type: 'object',
@@ -163,74 +163,50 @@ export function judgeChangeSemantics({ requirement = '', changedFiles = [], repo
   }
 
   // 3. Validated baseline heuristic seed (deterministic fallback for standalone CLI execution)
+  // Per Hardening Spec C3/C4: CLI maintains ZERO human natural language dictionaries for risk escalation.
+  // Pre-code risk escalation relies strictly on CANONICAL_DESTRUCTIVE_PATTERN, target files, or host agentContext.
+  // Pure doc / test intent allows L0 routine classification guarded by Invariant 4.
   if (!rawAiOutput) {
-    const hasProductionTarget = /\b(create|add|implement|build)\b.*\b(api|endpoint|service|table|database|schema|handler|router)\b/i.test(req) ||
-      /(?:创建|新增|实现|开发)\b.*(?:接口|服务|路由|数据表|表结构|控制器)/i.test(req);
     const hasDestructiveAction = CANONICAL_DESTRUCTIVE_PATTERN.test(req);
 
-    const isDocIntent = /(?:\b(?:typo|typos|readme|docs?|documentation|comments?|whitespace|markdown|license|changelog)\b|错别字|文档|注释|说明文档)/i.test(req) &&
-      !hasProductionTarget && !hasDestructiveAction;
-
-    const isTestIntent = /(?:\b(?:tests?|testing|mocks?|fixtures?|suites?|unittests?|integrationtests?)\b|单元测试|集成测试|测试用例)/i.test(req) &&
-      !hasProductionTarget && !hasDestructiveAction;
-
-    // Few-shot file pattern seeds (illustrative samples)
-    const testPatternSamples = [
-      /(^|\/)(tests?|__tests__|testing|fixtures?|mocks?)\//i,
-      /\.(test|spec)\.[a-z0-9]+$/i,
-      /_test\.go$/i,
-      /test_[^/]+\.py$/i,
-      /[^/]+_test\.py$/i
-    ];
-
-    const docPatternSamples = [
-      /(^|\/)docs?\//i,
-      /\.(md|txt)$/i,
-      /^license$/i
-    ];
-
     const substantiveFiles = normFiles.filter((f) => !isChangeMetadataFile(f));
-    const allTestFiles = substantiveFiles.length > 0 && substantiveFiles.every((f) => testPatternSamples.some((p) => p.test(f)));
-    const allDocFiles = substantiveFiles.length > 0 && substantiveFiles.every((f) => docPatternSamples.some((p) => p.test(f)));
+    const allTestFiles = substantiveFiles.length > 0 && substantiveFiles.every((f) => isPureTestFile(f));
+    const allDocFiles = substantiveFiles.length > 0 && substantiveFiles.every((f) => isPureL0File(f));
 
-    const isPureTest = allTestFiles || (substantiveFiles.length === 0 && isTestIntent);
-    const isPureDoc = allDocFiles || (substantiveFiles.length === 0 && isDocIntent);
+    let isPureTest = allTestFiles;
+    let isPureDoc = allDocFiles;
 
-    const hasHighRiskSecurity = !isPureDoc && !isPureTest &&
-      /\b(?:access[-\s_]?token|auth[-\s_]?token|bearer[-\s_]?token|session[-\s_]?token|jwt|oauth|private[-\s_]?key|secret[-\s_]?key|password\s+(?:encryption|hash|leak)|password|mfa|rbac|kms|pii|gdpr|tax[-_]?id|ssn|payment\s+refund|payment\s+ledger|refund\s+ledger|clearing\s+settlement|credit\s+card)\b/i.test(req);
+    if (substantiveFiles.length === 0 && !hasDestructiveAction) {
+      const hasDocSignal = /(?:\b(?:docs?|documentation|readme|typo|typos|comments?|whitespace|changelog|markdown|license)\b|文档|注释|错别字|说明文档)/i.test(req);
+      const hasTestSignal = /(?:\b(?:unit\s+tests?|integration\s+tests?|e2e\s+tests?|test\s+suites?|test\s+cases?|tests?|testing|mocks?|fixtures?)\b|单元测试|集成测试|测试用例)/i.test(req);
+      const hasCodeRefactorOrMutation = /(?:\b(?:refactor|rewrite|redesign|state\s+machine)\b|重构|重写|状态机)/i.test(req) ||
+        /\b(?:implement|build|create)\b.*\b(?:api|endpoint|service|controller|router|table|database|schema|handler)\b/i.test(req) ||
+        /(?:实现|开发|创建|新增)\b.*(?:接口|服务|路由|数据表|表结构|控制器)/i.test(req);
 
-    const genericSecWords = [
-      'auth', 'authentication', 'password', 'credential', 'crypto',
-      'payment', 'payout', 'refund', 'billing', 'ledger', 'wallet', 'clearing'
-    ];
-    const secWordCount = genericSecWords.filter((w) => new RegExp(`\\b${w}\\b`, 'i').test(req)).length;
-
-    const isSecurityL3 = hasHighRiskSecurity || secWordCount >= 2;
-    const isSecurityL2 = secWordCount === 1;
-
-    const hasApiSignal = !isPureDoc && !isPureTest && (
-      hasProductionTarget ||
-      isSecurityL2 ||
-      /\b(?:api|endpoint|openapi|swagger|grpc|protobuf|graphql|webhook|controller|router|database|migration|schema|fastapi|springboot|spring\s+boot|helm|kubernetes|k8s|dependencies|dependency)\b/i.test(req)
-    );
+      if (hasDocSignal && !hasCodeRefactorOrMutation) {
+        isPureDoc = true;
+      }
+      if (hasTestSignal && !hasCodeRefactorOrMutation) {
+        isPureTest = true;
+      }
+    }
 
     let heuristicClass = 'internal_code';
     if (isPureTest) heuristicClass = 'test_only';
     else if (isPureDoc) heuristicClass = 'doc_only';
-    else if (hasDestructiveAction || isSecurityL3) heuristicClass = 'destructive';
-    else if (hasApiSignal) heuristicClass = 'api_contract';
+    else if (hasDestructiveAction) heuristicClass = 'destructive';
 
     rawAiOutput = {
       is_pure_test: isPureTest,
       is_pure_doc: isPureDoc,
       contains_destructive_ops: hasDestructiveAction,
-      contains_api_changes: Boolean(hasApiSignal),
+      contains_api_changes: false,
       classification: heuristicClass,
       confidence: 'high',
       evaluator_mode: 'heuristic_seed',
       rationale: isPureTest
         ? 'Deterministic Heuristic Baseline: Change is strictly confined to test suites, mocks, and test assertions.'
-        : (isPureDoc ? 'Deterministic Heuristic Baseline: Change is purely documentation, typo fix, comments, or non-executable text.' : (hasDestructiveAction || isSecurityL3 ? 'Deterministic Heuristic Baseline: Critical auth/security credentials, password, or destructive operations.' : (hasApiSignal ? 'Deterministic Heuristic Baseline: Cross-boundary api contracts or database schema changes.' : 'Deterministic Heuristic Baseline: General code change')))
+        : (isPureDoc ? 'Deterministic Heuristic Baseline: Change is purely documentation, typo fix, comments, or non-executable text.' : (hasDestructiveAction ? 'Deterministic Heuristic Baseline: Irreversible destructive data operations detected in task statement.' : 'Deterministic Heuristic Baseline: General code change (evaluated via static code semantics)'))
     };
   } else {
     rawAiOutput.evaluator_mode = rawAiOutput.evaluator_mode || 'llm_classifier';

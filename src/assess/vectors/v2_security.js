@@ -3,10 +3,9 @@ import { exists, readText } from '../../lib/fs.js';
 import { git } from '../../lib/git.js';
 import { HARD_RULES, isTestOrDocFile, CANONICAL_DESTRUCTIVE_PATTERN } from '../rules/builtin.js';
 import { scanDiffForSecrets } from '../secrets.js';
-import { judgeChangeSemantics } from '../ai_judge.js';
-import { analyzeFileSemantics } from '../semantics.js';
+import { analyzeFileSemantics, batchAnalyzeFileSemantics } from '../semantics.js';
 
-export function evaluateV2Security({ requirement = '', changedFiles = [], repoRoot = null, baseRef = null, diffText = null } = {}) {
+export function evaluateV2Security({ requirement = '', changedFiles = [], repoRoot = null, baseRef = null, diffText = null, fileSemantics = null } = {}) {
   const req = String(requirement || '').toLowerCase();
   const evidence = [];
   const unresolved = [];
@@ -14,6 +13,8 @@ export function evaluateV2Security({ requirement = '', changedFiles = [], repoRo
   let confidence = 'high';
   let mandatory_human_review = false;
   let no_signal = true;
+
+  const semanticsMap = fileSemantics || batchAnalyzeFileSemantics(changedFiles, { repoRoot, baseRef });
 
   // 1a. Scan diff or changed files for plaintext secrets
   let secretFindings = [];
@@ -53,7 +54,8 @@ export function evaluateV2Security({ requirement = '', changedFiles = [], repoRo
       const norm = f.replace(/\\/g, '/');
       if (!exists(fullPath)) {
         try {
-          const oldContent = git(['show', `${baseRef}:${norm}`], repoRoot, { allowFail: true });
+          const cached = semanticsMap.get(f);
+          const oldContent = cached ? cached.oldContent : git(['show', `${baseRef}:${norm}`], repoRoot, { allowFail: true });
           if (oldContent) {
             const isSecurity = /@EnableWebSecurity|SecurityConfig|JwtAuthenticationFilter|jwt\.sign|passport|fastapi\.security/i.test(oldContent);
             const isDestructive = CANONICAL_DESTRUCTIVE_PATTERN.test(oldContent);
@@ -119,21 +121,7 @@ export function evaluateV2Security({ requirement = '', changedFiles = [], repoRo
   // 2. Static Semantics Engine: Check L3 security / credentials / middleware / auth
   for (const f of changedFiles) {
     if (isTestOrDocFile(f)) continue;
-    const fullPath = path.isAbsolute(f) ? f : (repoRoot ? path.join(repoRoot, f) : f);
-    let headContent = null;
-    let baseContent = null;
-    if (exists(fullPath)) {
-      try { headContent = readText(fullPath); } catch { /* ignore */ }
-    }
-    if (repoRoot && baseRef) {
-      try { baseContent = git(['show', `${baseRef}:${f.replace(/\\/g, '/')}`], repoRoot, { allowFail: true }); } catch { /* ignore */ }
-    }
-    const sem = analyzeFileSemantics({
-      filePath: f,
-      content: headContent,
-      oldContent: baseContent,
-      allChangedFiles: changedFiles
-    });
+    const sem = semanticsMap.get(f) || analyzeFileSemantics({ filePath: f, allChangedFiles: changedFiles });
     if (sem && sem.level === 'L3') {
       level = 'L3';
       no_signal = false;
