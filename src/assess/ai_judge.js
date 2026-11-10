@@ -163,9 +163,10 @@ export function judgeChangeSemantics({ requirement = '', changedFiles = [], repo
   }
 
   // 3. Validated baseline heuristic seed (deterministic fallback for standalone CLI execution)
-  // Per Hardening Spec C3/C4: CLI maintains ZERO human natural language dictionaries for risk escalation.
-  // Pre-code risk escalation relies strictly on CANONICAL_DESTRUCTIVE_PATTERN, target files, or host agentContext.
-  // Pure doc / test intent allows L0 routine classification guarded by Invariant 4.
+  // Per Hardening Spec C3/C4 & R2 Review: CLI maintains ZERO human natural language dictionaries for risk escalation.
+  // Pre-code risk escalation relies strictly on CANONICAL_DESTRUCTIVE_PATTERN, target files (explore.md), or host agentContext.
+  // Explicit documented exception: Safe L0-only doc/test intent tokens are retained exclusively for pre-code routine
+  // classification (guarded by Invariant 4 against refactoring/code masking), and can NEVER escalate risk or bypass gates.
   if (!rawAiOutput) {
     const hasDestructiveAction = CANONICAL_DESTRUCTIVE_PATTERN.test(req);
 

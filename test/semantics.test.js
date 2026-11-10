@@ -127,6 +127,16 @@ test('Semantics: Layer 1 Python & Node.js signatures and frontend client noise r
   assert.equal(scanImports('src/middleware.ts', middleware)?.level, 'L3');
   assert.equal(scanImports('middleware.js', middleware)?.level, 'L3');
   assert.equal(scanImports('packages/lib/middleware.ts', middleware), null, 'Non-root middleware.ts must not trigger L3');
+
+  // 5. Prisma schema file (.prisma) -> L2
+  const prismaSchema = `datasource db {\n  provider = "postgresql"\n  url = env("DATABASE_URL")\n}\nmodel User {\n  id Int @id\n}`;
+  assert.equal(scanSchemaHeaders('prisma/schema.prisma', prismaSchema)?.level, 'L2');
+  assert.equal(scanSchemaHeaders('prisma/schema.prisma', prismaSchema)?.id, 'SEM_PRISMA_SCHEMA');
+
+  // 6. Prisma client import in TypeScript -> L2
+  const prismaClient = `import { PrismaClient } from '@prisma/client';\nexport const prisma = new PrismaClient();`;
+  assert.equal(scanImports('src/db.ts', prismaClient)?.level, 'L2');
+  assert.equal(scanImports('src/db.ts', prismaClient)?.id, 'SEM_NODE_PERSISTENCE');
 });
 
 test('Semantics: Multi-line YAML manifests, deleted contracts, and engine performance', () => {
@@ -213,5 +223,14 @@ test('Semantics: L1 Bounded Positive Safety Envelope and De-lexiconization', () 
     persist: false
   });
   assert.equal(assessedEntrypoint.risk.level, 'L2', 'Touching root export index.ts escalates to L2');
+
+  // 4. Nested barrel file (src/utils/index.ts) stays L1, does NOT false-positive as root export
+  const assessedNestedBarrel = assess({
+    stage: 'impl',
+    requirement: 're-export utility helpers',
+    changedFiles: ['src/utils/index.ts'],
+    persist: false
+  });
+  assert.equal(assessedNestedBarrel.risk.level, 'L1', 'Nested barrel index.ts must not escalate to L2');
 });
 

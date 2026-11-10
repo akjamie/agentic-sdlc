@@ -86,7 +86,7 @@ export function decideAssessment({
 
     if (productionFiles.length > 5) {
       calculatedLevel = 'L2';
-    } else if (productionFiles.some((f) => /(?:^|\/)(?:index\.(?:ts|js|mjs)|lib\.rs)$/i.test(f))) {
+    } else if (productionFiles.some((f) => /^(?:(?:packages\/[^/]+\/)?(?:src\/|lib\/)?)?(?:index\.(?:ts|js|mjs)|lib\.rs)$/i.test(f))) {
       calculatedLevel = 'L2';
     }
   }

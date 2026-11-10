@@ -131,10 +131,10 @@ export function scanImports(filePath, content) {
       return { level: 'L2', id: 'SEM_NODE_CONTRACT', summary: `Node.js server routing/actions in ${norm}` };
     }
 
-    // DB Schema (L2)
-    const nodeDbRegex = /\bfrom\s+['"]drizzle-orm\/(?:pg-core|mysql-core|sqlite-core)['"]/;
-    if (nodeDbRegex.test(content) || ext === '.prisma') {
-      return { level: 'L2', id: 'SEM_NODE_PERSISTENCE', summary: `Node.js DB schema in ${norm}` };
+    // DB Schema / Client (L2)
+    const nodeDbRegex = /\b(?:from\s+['"](?:drizzle-orm\/(?:pg-core|mysql-core|sqlite-core)|@prisma\/client)['"]|require\(['"]@prisma\/client['"]\))/;
+    if (nodeDbRegex.test(content)) {
+      return { level: 'L2', id: 'SEM_NODE_PERSISTENCE', summary: `Node.js DB schema/client in ${norm}` };
     }
   }
 
@@ -208,7 +208,12 @@ export function scanSchemaHeaders(filePath, content, { allChangedFiles = [] } = 
     }
   }
 
-  // 5. Core Configuration Keys
+  // 5. Prisma Database Schema
+  if (ext === '.prisma') {
+    return { level: 'L2', id: 'SEM_PRISMA_SCHEMA', summary: `Prisma database schema definition in ${norm}` };
+  }
+
+  // 6. Core Configuration Keys
   if (['.properties', '.yaml', '.yml', '.json', '.toml'].includes(ext)) {
     // High-risk security config (L3)
     if (/(?:quarkus\.oidc\.|server\.ssl\.|spring\.security\.)/i.test(content)) {
