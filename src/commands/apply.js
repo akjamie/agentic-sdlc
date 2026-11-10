@@ -6,6 +6,7 @@ import { lastCommitTouching, git } from '../lib/git.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
 import { isSinglePrLevel, readEffectiveLevel } from '../lib/level.js';
+import { resolveWorkflowMode } from '../lib/config.js';
 import { assess } from '../assess/index.js';
 
 // Guard before implementing: the spec must be APPROVED on the target branch
@@ -25,12 +26,16 @@ export function applyGuard(changeId, opts = {}) {
     const tb = text.match(/^\s*targetBranch:\s*['"]?([^\s'"]+)['"]?\s*$/m);
     const apr = text.match(/^\s*autoPr:\s*['"]?([^\s'"]+)['"]?\s*$/m);
     const lvl = text.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+    const wm = text.match(/^\s*workflowMode:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+    const gm = text.match(/^\s*governanceMode:\s*['"]?([^\s'"]+)['"]?\s*$/m);
     meta = {
       specSha: sha ? sha[1] : null,
       status: status ? status[1] : null,
       targetBranch: tb ? tb[1] : null,
       autoPr: apr ? apr[1] : null,
       level: lvl ? lvl[1].toUpperCase() : null,
+      workflowMode: wm ? wm[1].toLowerCase() : null,
+      governanceMode: gm ? gm[1].toLowerCase() : null,
     };
   }
 
@@ -39,6 +44,7 @@ export function applyGuard(changeId, opts = {}) {
     ?? meta.targetBranch
     ?? resolveDefaultBranch(repoRoot);
 
+  const resolvedMode = resolveWorkflowMode({ cliMode: opts.mode, repoRoot, baseRef: branch });
   const locked = [`openspec/changes/${slug}/proposal.md`, `openspec/changes/${slug}/specs`];
 
   const levelInfo = readEffectiveLevel(repoRoot, slug, { baseRef: branch });
@@ -56,6 +62,7 @@ export function applyGuard(changeId, opts = {}) {
       stage: 'spec',
       changeId: slug,
       repoRoot,
+      mode: resolvedMode,
       persist: true
     });
     const assessedLevel = assessment.risk.level;
@@ -75,7 +82,7 @@ export function applyGuard(changeId, opts = {}) {
     }
   }
 
-  const isSinglePr = isSinglePrLevel(effectiveLevel);
+  const isSinglePr = isSinglePrLevel(effectiveLevel) && resolvedMode !== 'spec-first' && meta.workflowMode !== 'spec-first';
   let approvedSha = null;
 
   if (isSinglePr) {
@@ -201,6 +208,7 @@ export function register(program) {
     .description('guard before implementing: the spec must be approved on the protected branch')
     .option('--protected-branch <ref>', 'branch the approved spec must be merged into', 'origin/main')
     .option('--target-branch <ref>', 'target branch to merge into')
+    .option('--mode <mode>', 'workflow mode: supervised (default) | spec-first | auto')
     .option('--auto-pr', 'explicitly delegate authority to automatically open Implementation PR after verification passes')
     .option('--no-auto-pr', 'disable automatic Implementation PR creation (default)')
     .option('--repo-root <path>')

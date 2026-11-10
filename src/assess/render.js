@@ -19,7 +19,11 @@ export function renderPRComment(record) {
   if (isEscalated) {
     actionHighlight = `> ⚠️ **【治理动作：实施阶段升级 · 必须人工终审】**\n> 🎯 **最终治理等级**：\`${lvl}\`（由 \`${record.transition.from_level || 'L1'}\` 原地升级）\n> 🚨 **流转执行**：保持单 PR 流水线，**自动合并已关闭 (Auto-Merge DENIED)**，必须由人类 Lead 审核批准后方可合入。`;
   } else if (isHumanReview) {
-    actionHighlight = `> 🛑 **【治理动作：高风险改动 · 必须人工终审】**\n> 🎯 **最终治理等级**：\`${lvl}\`\n> 🚨 **流转执行**：**自动合并已关闭 (Auto-Merge DENIED)**，必须由人类 Lead 审核批准后方可合入主干。`;
+    if (lvl === 'L0' || lvl === 'L1') {
+      actionHighlight = `> 🛡️ **【治理动作：受控单 PR 模式 (Supervised) · 需人工确认合入】**\n> 🎯 **最终治理等级**：\`${lvl}\`\n> 📋 **流转执行**：保留单 PR 敏捷流转，**自动合并已关闭 (Auto-Merge DENIED)**，AI 评审已完成，需由人类工程师/Lead 确认合入。`;
+    } else {
+      actionHighlight = `> 🛑 **【治理动作：高风险改动 · 必须人工终审】**\n> 🎯 **最终治理等级**：\`${lvl}\`\n> 🚨 **流转执行**：**自动合并已关闭 (Auto-Merge DENIED)**，必须由人类 Lead 审核批准后方可合入主干。`;
+    }
   } else {
     actionHighlight = `> ⚡ **【治理动作：低风险改动 · AI 自动合入 (Auto-Merge Eligible)】**\n> 🎯 **最终治理等级**：\`${lvl}\`\n> 🚀 **流转执行**：CI 门禁与自动化测试全绿后，**系统将自动 Approve 并执行合并**，无需人工审批阻断。`;
   }

@@ -73,7 +73,10 @@ test('assessRisk - Stage 1 (asdlc new): Bounded Local Changes (L1)', () => {
   const r1 = assessRisk({ requirement: 'refactor sort algorithm for product catalogue' });
   assert.equal(r1.level, RISK_LEVELS.L1);
   assert.equal(r1.isSinglePr, true);
-  assert.equal(r1.requiresHumanReview, false);
+  assert.equal(r1.requiresHumanReview, true); // default supervised mode requires human merge confirmation
+
+  const r1Auto = assessRisk({ requirement: 'refactor sort algorithm for product catalogue', mode: 'auto' });
+  assert.equal(r1Auto.requiresHumanReview, false); // auto mode permits unattended merge
 });
 
 test('assessRisk - Stage 6 (asdlc verify): Physical blast radius and level escape guard', () => {

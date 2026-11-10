@@ -24,6 +24,7 @@ export function runAssessCommand(changeId, opts = {}) {
     baseSha: opts.base || 'HEAD',
     headSha: opts.head || null,
     repoRoot,
+    mode: opts.mode,
     persist: Boolean(slug)
   });
 
@@ -47,6 +48,7 @@ export function register(program) {
     .option('--requirement <text>', 'requirement description (for stage: new)')
     .option('--base <ref>', 'base ref for diff (for stage: impl)', 'origin/main')
     .option('--head <ref>', 'head ref for diff (for stage: impl)', 'HEAD')
+    .option('--mode <mode>', 'workflow mode: supervised (default) | spec-first | auto')
     .option('--json', 'output raw assessment JSON')
     .action((changeId, opts) => {
       const code = runAssessCommand(changeId, opts);

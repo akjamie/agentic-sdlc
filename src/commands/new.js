@@ -9,6 +9,7 @@ import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
 import { Option } from 'commander';
 import { inferInitialLevel, isSinglePrLevel } from '../lib/level.js';
+import { resolveWorkflowMode } from '../lib/config.js';
 
 // STAGE 1 of the spec (v10: explore + propose are ONE step).
 //   1) scaffold the change through OpenSpec (derives canonical slug from requirement)
@@ -96,24 +97,32 @@ _(unavailable - graph query error)_
     }
   }
 
+  // Resolve workflow mode across precedence hierarchy (CLI > Env > Repo > Global > Default)
+  const resolvedMode = resolveWorkflowMode({ cliMode: opts.mode, repoRoot });
+
   // Infer governance level (L0, L1, L2, L3) via unified assessment engine (grounded in explore.md)
   const { level, changeType, workflowMode, reason: levelReason } = inferInitialLevel({
     requirement,
     explicitLevel: opts.level,
     agentContext: opts.agentContext,
     repoRoot,
-    changeId: slug
+    changeId: slug,
+    mode: resolvedMode
   });
 
   // Record requirement, grill mode, and governance level in change metadata (.openspec.yaml)
   const metaPath = path.join(cdir, '.openspec.yaml');
   if (exists(metaPath)) {
     const existing = readText(metaPath).trimEnd();
-    writeText(metaPath, `${existing}\nrequirement: ${JSON.stringify(requirement)}\ngrillMode: "${grillMode}"\nchangeType: "${changeType}"\nworkflowMode: "${workflowMode}"\nlevel: "${level}"\nlevelReason: ${JSON.stringify(levelReason)}\n`);
+    writeText(metaPath, `${existing}\nrequirement: ${JSON.stringify(requirement)}\ngrillMode: "${grillMode}"\nchangeType: "${changeType}"\nworkflowMode: "${workflowMode}"\ngovernanceMode: "${resolvedMode}"\nlevel: "${level}"\nlevelReason: ${JSON.stringify(levelReason)}\n`);
   }
 
   if (workflowMode === 'single-pr') {
-    log.ok(`assigned governance level: ${level} [Type: ${changeType}] (${levelReason}) - [Single PR mode: code & specs in one PR]`);
+    if (resolvedMode === 'supervised') {
+      log.ok(`assigned governance level: ${level} [Type: ${changeType}] (${levelReason}) - [Supervised Single PR mode: code & specs in one PR, human merge confirmation required]`);
+    } else {
+      log.ok(`assigned governance level: ${level} [Type: ${changeType}] (${levelReason}) - [Single PR mode: code & specs in one PR, auto-merge eligible]`);
+    }
   } else {
     log.ok(`assigned governance level: ${level} [Type: ${changeType}] (${levelReason}) - [Spec-first mode: Spec PR required before implementation]`);
   }
@@ -243,6 +252,7 @@ export function register(program) {
     .option('--no-design', 'skip generating technical design (design.md)')
     .option('--batch-grill', 'use batch-grill-me (present entire decision frontier in structured batches)')
     .option('--no-grill', 'skip interactive grilling interview (self-settle decisions in clarifications.md)')
+    .option('--mode <mode>', 'workflow mode: supervised (default) | spec-first | auto')
     .addOption(new Option('--level <level>', 'internal governance level override (hidden)').hideHelp())
     .option('--repo-root <path>')
     .action((requirement, opts) => {

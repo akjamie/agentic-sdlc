@@ -12,6 +12,7 @@ import { checkSchema } from '../lib/schema.js';
 import { loadPolicy, isAdvisory, DEFAULT_POLICY, matchesAny } from '../lib/policy.js';
 import { classifyPR } from '../lib/prtype.js';
 import { isSinglePrLevel, requiresHumanReview, readChangeLevel, readEffectiveLevel } from '../lib/level.js';
+import { resolveWorkflowMode } from '../lib/config.js';
 import { assess, renderCheckSummary, loadRiskHistory } from '../assess/index.js';
 import { checkTestPresence, checkTaskEvidence } from '../lib/tdd.js';
 import { runTests, parseSpecAcceptanceCriteria } from './test.js';
@@ -30,6 +31,7 @@ function meta(repoRoot, changeId) {
       specSha: data.specSha ? String(data.specSha) : null,
       status: data.status ? String(data.status) : null,
       level: data.level ? String(data.level).toUpperCase() : null,
+      workflowMode: data.workflowMode ? String(data.workflowMode).toLowerCase() : null,
       escalatedInImpl: data.escalatedInImpl === true || String(data.escalatedInImpl).toLowerCase() === 'true',
     };
   } catch {
@@ -37,11 +39,13 @@ function meta(repoRoot, changeId) {
     const sha = text.match(/^\s*specSha:\s*['"]?([^\s'"]+)['"]?\s*$/m);
     const status = text.match(/^\s*status:\s*['"]?([^\s'"]+)['"]?\s*$/m);
     const lvl = text.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+    const wm = text.match(/^\s*workflowMode:\s*['"]?([^\s'"]+)['"]?\s*$/m);
     const esc = text.match(/^\s*escalatedInImpl:\s*['"]?([^\s'"]+)['"]?\s*$/m);
     return {
       specSha: sha ? sha[1] : null,
       status: status ? status[1] : null,
       level: lvl ? lvl[1].toUpperCase() : null,
+      workflowMode: wm ? wm[1].toLowerCase() : null,
       escalatedInImpl: esc ? esc[1].toLowerCase() === 'true' : false,
     };
   }
@@ -239,7 +243,11 @@ export function runVerify(changeId, opts = {}) {
       preImplRecords.every((r) => isSinglePrLevel(r.risk?.level)) &&
       history.some((r) => r.stage === 'impl' && !isSinglePrLevel(r.risk?.level)))
   );
-  const isSinglePr = Boolean(isSinglePrLevel(changeLevel) || escalatedOnlyInImpl);
+  const resolvedMode = resolveWorkflowMode({ cliMode: opts.mode, repoRoot, baseRef: base });
+  const isSinglePr = Boolean(
+    (isSinglePrLevel(changeLevel) && resolvedMode !== 'spec-first') ||
+    escalatedOnlyInImpl
+  );
 
   const pr = classifyPR({ changedFiles, changeOnMain, policy, emergency: opts.emergency, level: changeLevel, repoRoot, singlePr: isSinglePr });
   add('pr-type', pr.type === 'invalid' ? 'fail' : 'pass', `type=${pr.type} (${pr.reason})`);
@@ -291,6 +299,7 @@ export function runVerify(changeId, opts = {}) {
     headSha: head,
     changedFiles,
     repoRoot,
+    mode: resolvedMode,
     persist: Boolean(repoRoot && changeId && exists(cdir) && !opts.openingPr && !isCI)
   });
 
@@ -441,6 +450,7 @@ export function register(program) {
     .option('--protected-branch <ref>', 'branch the approved spec must be merged into', 'origin/main')
     .option('--base <ref>', 'base ref for the PR diff (default: protected branch)')
     .option('--head <ref>', 'head ref (default: HEAD)')
+    .option('--mode <mode>', 'workflow mode: supervised (default) | spec-first | auto')
     .option('--approved', 'flag indicating human lead approval is verified on PR / platform')
     .option('--emergency', 'emergency mode bypassing standard branch checks')
     .option('--required', 'require AI verification gate to pass')
