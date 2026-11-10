@@ -316,9 +316,13 @@ test('verify: outputs human-gate based on level (L1 auto-merge allowed vs L3 man
   execFileSync('git', ['add', '-A'], { cwd: repo });
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'impl(quick-1)'], { cwd: repo });
 
-  // Verify L1 passes all gates including approved-spec and flow-state in Single PR mode
-  const exitL1 = runVerify('QUICK-1', { repoRoot: repo, skipOpenspec: true, protectedBranch: 'main' });
-  assert.equal(exitL1, 0, 'L1 should pass verify in single-PR mode');
+  // In auto mode, L1 passes verify with auto-merge permitted
+  const exitL1Auto = runVerify('QUICK-1', { repoRoot: repo, skipOpenspec: true, protectedBranch: 'main', mode: 'auto' });
+  assert.equal(exitL1Auto, 0, 'L1 should pass verify in single-PR mode with auto mode');
+
+  // In default supervised mode, local verify passes with auto-merge denied; CI requires approval
+  const exitL1SupervisedLocal = runVerify('QUICK-1', { repoRoot: repo, skipOpenspec: true, protectedBranch: 'main', ci: false });
+  assert.equal(exitL1SupervisedLocal, 0, 'L1 passes local verify in supervised mode');
 
   // Verify L3 requires human gate
   const dirL3 = scaffold(repo, 'SEC-1');
