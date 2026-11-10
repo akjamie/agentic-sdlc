@@ -41,20 +41,9 @@ export function evaluateV1Intent({ requirement = '', specDelta = '', changedFile
   const evalMode = aiJudgment.evaluator_mode || 'heuristic_seed';
   const isAiMode = evalMode !== 'heuristic_seed';
 
-  // 2a. Agent / LLM Semantic Escalation (Bidirectional — never triggered by offline regex heuristic_seed):
+  // 2a. Agent / LLM Semantic Escalation (Bidirectional — reserved for agent_native or llm_classifier):
   if (isAiMode) {
-    if (aiJudgment.classification === 'api_contract' || aiJudgment.contains_api_changes) {
-      if (level === 'L1') {
-        level = 'L2';
-        inferredType = inferredType === 'chore' ? 'change' : inferredType;
-        evidence.push({
-          id: 'V1_AI_API_CONTRACT_INTENT',
-          kind: 'semantic_intent',
-          signal: 'hard',
-          summary: aiJudgment.rationale || 'Agent Semantic Evaluation: Change modifies cross-boundary API contracts'
-        });
-      }
-    } else if (aiJudgment.classification === 'destructive' || aiJudgment.contains_destructive_ops) {
+    if (aiJudgment.classification === 'destructive' || aiJudgment.contains_destructive_ops) {
       level = 'L3';
       mandatory_human_review = true;
       evidence.push({
@@ -72,6 +61,17 @@ export function evaluateV1Intent({ requirement = '', specDelta = '', changedFile
         signal: 'hard',
         summary: aiJudgment.rationale || 'Agent Semantic Evaluation: Task modifies core repository governance'
       });
+    } else if (aiJudgment.classification === 'api_contract' || aiJudgment.contains_api_changes) {
+      if (level === 'L1') {
+        level = 'L2';
+        inferredType = inferredType === 'chore' ? 'change' : inferredType;
+        evidence.push({
+          id: 'V1_AI_API_CONTRACT_INTENT',
+          kind: 'semantic_intent',
+          signal: 'hard',
+          summary: aiJudgment.rationale || 'Agent Semantic Evaluation: Change modifies cross-boundary API contracts'
+        });
+      }
     }
   }
 

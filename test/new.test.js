@@ -124,10 +124,10 @@ test('newChange: supports --no-grill option to bypass interactive grilling', () 
 
 test('newChange: assigns and records governance level in .openspec.yaml', () => {
   const repo = tmpRepo();
-  const slug = newChange('fix authentication password leak', { repoRoot: repo, openspec: false });
+  const slug = newChange('drop table customer_accounts and purge data', { repoRoot: repo, openspec: false });
   const metaPath = path.join(repo, 'openspec', 'changes', slug, '.openspec.yaml');
   const meta = fs.readFileSync(metaPath, 'utf8');
-  assert.match(meta, /level:\s*"L3"/, 'should infer L3 for auth password leak');
+  assert.match(meta, /level:\s*"L3"/, 'should infer L3 for destructive data purge');
   assert.match(meta, /levelReason:/, 'should record levelReason');
 });
 

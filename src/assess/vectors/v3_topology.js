@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { HARD_RULES, isTestOrDocFile, isChangeMetadataFile } from '../rules/builtin.js';
 import { getGraphTopologyMetrics } from '../../lib/graphify.js';
+import { analyzeFileSemantics, batchAnalyzeFileSemantics } from '../semantics.js';
 
-export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRoot = null, changeId = null } = {}) {
+export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRoot = null, changeId = null, baseRef = null, fileSemantics = null } = {}) {
   const req = String(requirement || '').toLowerCase();
   const evidence = [];
   const unresolved = [];
@@ -11,6 +12,8 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
   let confidence = 'high';
   let mandatory_human_review = false;
   let no_signal = true;
+
+  const semanticsMap = fileSemantics || batchAnalyzeFileSemantics(changedFiles, { repoRoot, baseRef });
 
   // 1. Check Hard Rules for Topology / Contracts / Infra
   const topoRules = HARD_RULES.filter((r) =>
@@ -29,13 +32,18 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
       const norm = f.replace(/\\/g, '/');
       if (rule.patterns.some((p) => p.test(norm))) return true;
 
-      // Content-based heuristic for API handlers in source files
+      // Content-based heuristic for API handlers in source files (symmetric head/baseRef inspection)
       if (rule.id === 'HARD_API_CONTRACT' && repoRoot && /\.(java|kt|py|go|ts|js)$/i.test(norm)) {
         try {
-          const fullPath = path.isAbsolute(f) ? f : path.join(repoRoot, f);
-          if (fs.existsSync(fullPath)) {
-            const content = fs.readFileSync(fullPath, 'utf8');
-            if (API_CONTENT_PATTERNS.some((p) => p.test(content))) return true;
+          const cached = semanticsMap.get(f);
+          const contentToCheck = cached ? (cached.headContent || cached.oldContent) : null;
+          if (contentToCheck && API_CONTENT_PATTERNS.some((p) => p.test(contentToCheck))) return true;
+          if (!cached) {
+            const fullPath = path.isAbsolute(f) ? f : path.join(repoRoot, f);
+            if (fs.existsSync(fullPath)) {
+              const content = fs.readFileSync(fullPath, 'utf8');
+              if (API_CONTENT_PATTERNS.some((p) => p.test(content))) return true;
+            }
           }
         } catch { /* ignore read failure */ }
       }
@@ -166,46 +174,23 @@ export function evaluateV3Topology({ requirement = '', changedFiles = [], repoRo
     }
   }
 
-  // 3. Check Requirement Semantics for Architecture / Schema / Infra (English + Chinese)
-  const topoKeywords = [
-    'api', 'endpoint', 'openapi', 'swagger', 'grpc', 'protobuf', 'graphql', 'webhook',
-    'fastapi', 'springboot', 'spring boot', 'controller', 'rest api', 'router',
-    'database', 'migration', 'schema', 'db table', 'database table', 'sql table', 'ddl', 'model', 'docker', 'k8s', 'helm'
-  ];
-
-  const cjkTopoKeywords = [
-    '接口', '路由', '协议', '网关', '控制器', '出入参', '字段变更',
-    '数据库', '数据表', '表结构', '数据库迁移', '索引变更', '容器编排'
-  ];
-
-  let matchedTopoKw = null;
-  for (const kw of topoKeywords) {
-    const re = new RegExp(`\\b${kw.replace(/-/g, '[-\\s]')}\\b`, 'i');
-    if (re.test(req)) {
-      matchedTopoKw = kw;
-      break;
-    }
-  }
-  if (!matchedTopoKw) {
-    for (const cjkKw of cjkTopoKeywords) {
-      if (req.includes(cjkKw)) {
-        matchedTopoKw = cjkKw;
-        break;
+  // 3. Static Semantics Engine: Check L2 server contracts, migrations, schemas, manifests (symmetric head/baseRef)
+  for (const f of changedFiles) {
+    if (isTestOrDocFile(f)) continue;
+    const sem = semanticsMap.get(f) || analyzeFileSemantics({ filePath: f, allChangedFiles: changedFiles });
+    if (sem && sem.level === 'L2') {
+      if (level === 'L1') level = 'L2';
+      no_signal = false;
+      for (const sig of sem.signals.filter((s) => s.level === 'L2')) {
+        evidence.push({
+          id: `V3_${sig.id}`,
+          kind: 'static_semantics',
+          signal: 'hard',
+          summary: sig.summary,
+          source: f
+        });
       }
     }
-  }
-
-  if (matchedTopoKw) {
-    no_signal = false;
-    if (level === 'L1') {
-      level = 'L2';
-    }
-    evidence.push({
-      id: 'V3_TOPOLOGY_KEYWORD',
-      kind: 'task_statement',
-      signal: 'soft',
-      summary: `Requirement touches cross-boundary architectural keyword: '${matchedTopoKw}'`
-    });
   }
 
   return {

@@ -5,6 +5,7 @@ import { HARNESS_RULES_VERSION, ENGINE_VERSION } from './rules/builtin.js';
 import { evaluateV1Intent } from './vectors/v1_intent.js';
 import { evaluateV2Security } from './vectors/v2_security.js';
 import { evaluateV3Topology } from './vectors/v3_topology.js';
+import { batchAnalyzeFileSemantics } from './semantics.js';
 import { decideAssessment } from './decide.js';
 import { deriveGovernance } from './governance.js';
 import { appendAssessmentRecord, loadLatestAssessment, loadInitialAssessment } from './store.js';
@@ -31,7 +32,8 @@ export function assess({
   baseline = null,
   actor = { type: 'system', id: 'asdlc' },
   repoRoot = null,
-  persist = true
+  persist = true,
+  agentContext = null
 } = {}) {
   try {
     const prev = previous || (repoRoot && changeId ? loadLatestAssessment(repoRoot, changeId) : null);
@@ -39,7 +41,7 @@ export function assess({
 
     // If requirement is empty or for spec stage, load proposal.md and design.md from change dir
     let effectiveReq = requirement || '';
-    let agentContext = null;
+    let effectiveAgentContext = agentContext;
     if (repoRoot && changeId) {
       try {
         const cdir = changeDir(repoRoot, changeId);
@@ -50,19 +52,24 @@ export function assess({
         }
 
         // Check if change contains agent assessment context (.agent-assess.json or .openspec.yaml assessment)
-        const agentCtxPath = path.join(cdir, '.agent-assess.json');
-        if (fs.existsSync(agentCtxPath)) {
-          try {
-            agentContext = JSON.parse(fs.readFileSync(agentCtxPath, 'utf8'));
-          } catch { /* ignore parse error */ }
+        if (!effectiveAgentContext) {
+          const agentCtxPath = path.join(cdir, '.agent-assess.json');
+          if (fs.existsSync(agentCtxPath)) {
+            try {
+              effectiveAgentContext = JSON.parse(fs.readFileSync(agentCtxPath, 'utf8'));
+            } catch { /* ignore parse error */ }
+          }
         }
       } catch { /* ignore read failure */ }
     }
 
+    const effectiveBase = baseRef || baseSha;
+    const fileSemantics = batchAnalyzeFileSemantics(changedFiles, { repoRoot, baseRef: effectiveBase });
+
     // 1. Evaluate Three Risk Vectors
-    const v1 = evaluateV1Intent({ requirement: effectiveReq, changedFiles, changeType, agentContext });
-    const v2 = evaluateV2Security({ requirement: effectiveReq, changedFiles, repoRoot, baseRef: baseRef || baseSha });
-    const v3 = evaluateV3Topology({ requirement: effectiveReq, changedFiles, repoRoot, changeId });
+    const v1 = evaluateV1Intent({ requirement: effectiveReq, changedFiles, changeType, agentContext: effectiveAgentContext });
+    const v2 = evaluateV2Security({ requirement: effectiveReq, changedFiles, repoRoot, baseRef: effectiveBase, fileSemantics });
+    const v3 = evaluateV3Topology({ requirement: effectiveReq, changedFiles, repoRoot, changeId, baseRef: effectiveBase, fileSemantics });
 
     // Inferred or provided Change Type
     const effectiveType = changeType || v1.inferredType || 'change';

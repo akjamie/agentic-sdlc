@@ -100,6 +100,7 @@ _(unavailable - graph query error)_
   const { level, changeType, workflowMode, reason: levelReason } = inferInitialLevel({
     requirement,
     explicitLevel: opts.level,
+    agentContext: opts.agentContext,
     repoRoot,
     changeId: slug
   });

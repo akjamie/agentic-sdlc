@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { exists, readText, walkFiles, listDir } from '../lib/fs.js';
 import { changeDir, openspecDir, CHANGES_DIR } from '../lib/paths.js';
-import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
+import { requireRepo, toChangeSlug, jsonOut } from '../lib/cliutil.js';
 import { lastCommitTouching } from '../lib/git.js';
 import { verdictOf } from './lint.js';
 import { countUncheckedTasks } from './verify.js';
@@ -18,11 +18,11 @@ export function statusChange(changeId, opts = {}) {
 
   if (!exists(cdir)) {
     if (opts.json) {
-      log.plain(JSON.stringify({
+      jsonOut({
         change: slug,
         exists: false,
         next: `asdlc new ${changeId}`
-      }, null, 2));
+      });
       return 0;
     }
     log.plain(`change: ${slug}`);
@@ -61,13 +61,20 @@ export function statusChange(changeId, opts = {}) {
   else next = `asdlc verify ${changeId}`;
 
   if (opts.json) {
-    log.plain(JSON.stringify({
+    jsonOut({
       change: slug,
       exists: true,
       level,
       stage: stage.map(([name, ok]) => ({ name, ok })),
-      next
-    }, null, 2));
+      next,
+      checks: {
+        explore: has('explore.md'),
+        proposal: has('proposal.md'),
+        specs: specFiles.length,
+        approvedSha,
+        tasksComplete: unchecked === 0,
+      }
+    });
     return 0;
   }
 
@@ -186,10 +193,10 @@ export function statusPortfolio(opts = {}) {
   }
 
   if (opts.json) {
-    log.plain(JSON.stringify({
+    jsonOut({
       total: active.length,
       active
-    }, null, 2));
+    });
     return 0;
   }
 

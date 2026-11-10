@@ -3,9 +3,9 @@ import { exists, readText } from '../../lib/fs.js';
 import { git } from '../../lib/git.js';
 import { HARD_RULES, isTestOrDocFile, CANONICAL_DESTRUCTIVE_PATTERN } from '../rules/builtin.js';
 import { scanDiffForSecrets } from '../secrets.js';
-import { judgeChangeSemantics } from '../ai_judge.js';
+import { analyzeFileSemantics, batchAnalyzeFileSemantics } from '../semantics.js';
 
-export function evaluateV2Security({ requirement = '', changedFiles = [], repoRoot = null, baseRef = null, diffText = null } = {}) {
+export function evaluateV2Security({ requirement = '', changedFiles = [], repoRoot = null, baseRef = null, diffText = null, fileSemantics = null } = {}) {
   const req = String(requirement || '').toLowerCase();
   const evidence = [];
   const unresolved = [];
@@ -13,6 +13,8 @@ export function evaluateV2Security({ requirement = '', changedFiles = [], repoRo
   let confidence = 'high';
   let mandatory_human_review = false;
   let no_signal = true;
+
+  const semanticsMap = fileSemantics || batchAnalyzeFileSemantics(changedFiles, { repoRoot, baseRef });
 
   // 1a. Scan diff or changed files for plaintext secrets
   let secretFindings = [];
@@ -52,7 +54,8 @@ export function evaluateV2Security({ requirement = '', changedFiles = [], repoRo
       const norm = f.replace(/\\/g, '/');
       if (!exists(fullPath)) {
         try {
-          const oldContent = git(['show', `${baseRef}:${norm}`], repoRoot, { allowFail: true });
+          const cached = semanticsMap.get(f);
+          const oldContent = cached ? cached.oldContent : git(['show', `${baseRef}:${norm}`], repoRoot, { allowFail: true });
           if (oldContent) {
             const isSecurity = /@EnableWebSecurity|SecurityConfig|JwtAuthenticationFilter|jwt\.sign|passport|fastapi\.security/i.test(oldContent);
             const isDestructive = CANONICAL_DESTRUCTIVE_PATTERN.test(oldContent);
@@ -115,94 +118,23 @@ export function evaluateV2Security({ requirement = '', changedFiles = [], repoRo
     }
   }
 
-  // 2. Check Requirement Semantics for Security/Financial/Regulatory (English + Chinese)
-  const highRiskCompounds = [
-    'access token', 'refresh token', 'bearer token', 'session token', 'auth token', 'security token',
-    'jwt', 'oauth', 'private key', 'secret key', 'password hash', 'password encryption',
-    'mfa', 'rbac', 'kms', 'pii', 'gdpr', 'tax id', 'ssn', 'payment refund', 'payment ledger',
-    'refund ledger', 'clearing settlement', 'credit card'
-  ];
-
-  const cjkHighRiskCompounds = [
-    '清结算', '资金清算', '账务清算', '资金账本', '核心账务', '对账', '打款', '提现',
-    '私钥', '密钥轮换', '密码哈希', '密码加密', '鉴权绕过', '越权', '隐私合规', '实名认证', '数据脱敏'
-  ];
-
-  const genericSecWords = [
-    'auth', 'authentication', 'password', 'credential', 'crypto',
-    'payment', 'payout', 'refund', 'billing', 'ledger', 'wallet', 'clearing'
-  ];
-
-  const cjkGenericSecWords = [
-    '支付', '结算', '账务', '账本', '钱包', '计费', '账单', '退款',
-    '鉴权', '认证', '权限', '密钥', '令牌', '加密', '登录态'
-  ];
-
-  let compoundHit = null;
-  for (const compound of highRiskCompounds) {
-    const re = new RegExp(`\\b${compound.replace(/-/g, '[-\\s]')}\\b`, 'i');
-    if (re.test(req)) {
-      compoundHit = compound;
-      break;
-    }
-  }
-  if (!compoundHit) {
-    for (const cjkCompound of cjkHighRiskCompounds) {
-      if (req.includes(cjkCompound)) {
-        compoundHit = cjkCompound;
-        break;
-      }
-    }
-  }
-
-  const matchedGenerics = [];
-  for (const word of genericSecWords) {
-    const re = new RegExp(`\\b${word}\\b`, 'i');
-    if (re.test(req)) {
-      matchedGenerics.push(word);
-    }
-  }
-  for (const cjkWord of cjkGenericSecWords) {
-    if (req.includes(cjkWord)) {
-      matchedGenerics.push(cjkWord);
-    }
-  }
-
-  const aiJudgment = judgeChangeSemantics({ requirement: req, changedFiles });
-  const isDocOrTest = aiJudgment.is_pure_test || aiJudgment.is_pure_doc;
-
-  if (!isDocOrTest) {
-    if (compoundHit) {
-      no_signal = false;
+  // 2. Static Semantics Engine: Check L3 security / credentials / middleware / auth
+  for (const f of changedFiles) {
+    if (isTestOrDocFile(f)) continue;
+    const sem = semanticsMap.get(f) || analyzeFileSemantics({ filePath: f, allChangedFiles: changedFiles });
+    if (sem && sem.level === 'L3') {
       level = 'L3';
-      mandatory_human_review = true;
-      evidence.push({
-        id: 'V2_SECURITY_COMPOUND_KEYWORD',
-        kind: 'task_statement',
-        signal: 'hard',
-        summary: `Task requirement touches critical security/regulatory compound phrase: '${compoundHit}'`
-      });
-    } else if (matchedGenerics.length >= 2) {
       no_signal = false;
-      level = 'L3';
       mandatory_human_review = true;
-      evidence.push({
-        id: 'V2_SECURITY_MULTI_KEYWORD',
-        kind: 'task_statement',
-        signal: 'soft',
-        summary: `Task requirement touches multiple security/financial domains: '${matchedGenerics.join(', ')}'`
-      });
-    } else if (matchedGenerics.length === 1) {
-      no_signal = false;
-      if (level === 'L1') {
-        level = 'L2'; // Capped at L2 for single soft generic keyword
+      for (const sig of sem.signals.filter((s) => s.level === 'L3')) {
+        evidence.push({
+          id: `V2_${sig.id}`,
+          kind: 'static_semantics',
+          signal: 'hard',
+          summary: sig.summary,
+          source: f
+        });
       }
-      evidence.push({
-        id: 'V2_SECURITY_SINGLE_KEYWORD',
-        kind: 'task_statement',
-        signal: 'soft',
-        summary: `Task requirement touches security/financial domain keyword: '${matchedGenerics[0]}'`
-      });
     }
   }
 

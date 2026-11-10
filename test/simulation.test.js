@@ -69,11 +69,12 @@ test('Simulation 1: Multi-language API modifications (Spring Boot, FastAPI, Go, 
   assert.equal(nestApi.risk.level, 'L2');
   assert.equal(nestApi.governance.workflow_mode, 'spec-first');
 
-  // 5. Semantic Requirement text triggers L2 for FastAPI & Spring Boot
+  // 5. Semantic Requirement text triggers L2 for FastAPI & Spring Boot via agentContext
   const reqFastApi = assess({
     stage: 'new',
     changeId: 'new-fastapi',
     requirement: 'add FastAPI router for customer address verification',
+    agentContext: { classification: 'api_contract', contains_api_changes: true, rationale: 'FastAPI router contract' },
     persist: false
   });
   assert.equal(reqFastApi.risk.level, 'L2');
@@ -83,6 +84,7 @@ test('Simulation 1: Multi-language API modifications (Spring Boot, FastAPI, Go, 
     stage: 'new',
     changeId: 'new-springboot',
     requirement: 'refactor Spring Boot controller for shipment tracking',
+    agentContext: { classification: 'api_contract', contains_api_changes: true, rationale: 'Spring Boot controller contract' },
     persist: false
   });
   assert.equal(reqSpringBoot.risk.level, 'L2');

@@ -81,3 +81,45 @@ export function lastCommitTouching(cwd, ref, paths = []) {
 export function changeOnRef(cwd, ref, slug) {
   return Boolean(git(['log', '-1', '--format=%H', ref, '--', `openspec/changes/${slug}/proposal.md`], cwd, { allowFail: true }));
 }
+
+/**
+ * Batch-reads file contents from a git ref in a single subprocess using `git cat-file --batch`.
+ * Returns a Map of filePath -> content string (or null if file does not exist on ref).
+ */
+export function getBatchGitFiles(cwd = process.cwd(), ref = 'HEAD', filePaths = []) {
+  const result = new Map();
+  if (!ref || !Array.isArray(filePaths) || filePaths.length === 0 || !isGitRepo(cwd)) return result;
+  try {
+    const input = filePaths.map((f) => `${ref}:${f.replace(/\\/g, '/')}\n`).join('');
+    const raw = execFileSync('git', ['-c', 'core.quotepath=off', 'cat-file', '--batch'], {
+      cwd,
+      input: Buffer.from(input, 'utf8'),
+      maxBuffer: 50 * 1024 * 1024,
+      stdio: ['pipe', 'pipe', 'ignore']
+    });
+
+    let offset = 0;
+    for (const f of filePaths) {
+      const headerEnd = raw.indexOf(0x0a, offset);
+      if (headerEnd === -1) break;
+      const header = raw.subarray(offset, headerEnd).toString('utf8');
+      offset = headerEnd + 1;
+
+      if (header.endsWith('missing')) {
+        result.set(f, null);
+        continue;
+      }
+
+      const parts = header.split(' ');
+      if (parts.length >= 3 && parts[1] === 'blob') {
+        const size = parseInt(parts[2], 10);
+        const contentBuf = raw.subarray(offset, offset + size);
+        result.set(f, contentBuf.toString('utf8'));
+        offset += size + 1;
+      }
+    }
+  } catch {
+    // If batch cat-file fails, return empty map
+  }
+  return result;
+}
