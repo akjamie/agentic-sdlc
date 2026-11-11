@@ -12,6 +12,7 @@ import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
 import { assess, renderLabels, renderPRComment } from '../assess/index.js';
 import { readEffectiveLevel } from '../lib/level.js';
+import { resolveWorkflowMode } from '../lib/config.js';
 
 const SAFE_ENV_TEMPLATE_RE = /(^|\/)\.env\.(example|sample|template|defaults|schema)$/i;
 const SENSITIVE_OR_DUMP_PATTERNS = [
@@ -173,7 +174,8 @@ export async function createPR(changeId, targetBranch, opts = {}) {
 
   const lvlMatch = metaText.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
   const changeLevel = lvlMatch ? lvlMatch[1].toUpperCase() : null;
-  const isSinglePr = changeLevel === 'L0' || changeLevel === 'L1';
+  const resolvedMode = resolveWorkflowMode({ cliMode: opts.mode, repoRoot, baseRef: targetBranch });
+  const isSinglePr = (changeLevel === 'L0' || changeLevel === 'L1') && resolvedMode !== 'spec-first' && !metaText.match(/^\s*workflowMode:\s*['"]?spec-first['"]?/m);
 
   let prType;
   if (opts.type) {
@@ -234,6 +236,7 @@ export async function createPR(changeId, targetBranch, opts = {}) {
       base: targetBranch,
       protectedBranch: targetBranch,
       openingPr: true,
+      mode: resolvedMode,
       ...opts,
     });
     if (verifyExit !== 0) {
@@ -301,6 +304,7 @@ ${proposalText}
     headSha: 'HEAD',
     changedFiles: diffFiles,
     repoRoot,
+    mode: resolvedMode,
     persist: false
   });
   const assessLabels = renderLabels(assessment);
@@ -596,6 +600,7 @@ export function register(program) {
   program
     .command('pr <changeId> <targetBranch>')
     .description('automatically open a Spec or Implementation PR: auto-detects stage, pre-flight checks, pushes branch, and attaches labels for CI AI review')
+    .option('--mode <mode>', 'workflow mode: supervised (default) | spec-first | auto')
     .option('--repo-root <path>')
     .action(async (changeId, targetBranch, opts) => {
       await createPR(changeId, targetBranch, opts);

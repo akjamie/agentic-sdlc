@@ -7,6 +7,7 @@ import { verdictOf } from './lint.js';
 import { countUncheckedTasks } from './verify.js';
 import { log } from '../lib/log.js';
 import { isSinglePrLevel } from '../lib/level.js';
+import { resolveWorkflowMode } from '../lib/config.js';
 
 // "Where am I?" for a change - a read-only view of the 7 stages from the working
 // tree + git. Useful for humans and for an agent deciding the next command.
@@ -45,18 +46,21 @@ export function statusChange(changeId, opts = {}) {
   const levelMatch = metaText.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
   const level = levelMatch ? levelMatch[1].toUpperCase() : 'L1';
 
+  const resolvedMode = resolveWorkflowMode({ cliMode: opts.mode, repoRoot, baseRef: branch });
+  const isSinglePr = isSinglePrLevel(level) && resolvedMode !== 'spec-first' && !metaText.match(/^\s*workflowMode:\s*['"]?spec-first['"]?/m);
+
   const stage = [
     ['1 explore (draft)', has('explore.md')],
     ['2 proposal.md', has('proposal.md')],
     ['2 spec delta', specFiles.length > 0],
-    ['3 spec approved on ' + branch, Boolean(approvedSha)],
+    ['3 spec approved on ' + branch, isSinglePr ? true : Boolean(approvedSha)],
     ['4 tasks complete', unchecked === 0],
   ];
 
   let next;
   if (!has('explore.md') && !has('proposal.md')) next = `asdlc new ${changeId}`;
   else if (!has('proposal.md') || specFiles.length === 0) next = 'author proposal.md + specs/**';
-  else if (!approvedSha) next = `run: asdlc lint ${changeId} && asdlc pr ${changeId} (after independent spec review & merge, run: asdlc approve ${changeId})`;
+  else if (!isSinglePr && !approvedSha) next = `run: asdlc lint ${changeId} && asdlc pr ${changeId} (after independent spec review & merge, run: asdlc approve ${changeId})`;
   else if (unchecked !== 0) next = `asdlc apply ${changeId}, then complete tasks in tasks.md`;
   else next = `asdlc verify ${changeId}`;
 
@@ -130,7 +134,8 @@ export function statusPortfolio(opts = {}) {
     const locked = [`openspec/changes/${slug}/proposal.md`, `openspec/changes/${slug}/specs`];
     const approvedSha = lastCommitTouching(repoRoot, branch, locked);
     const unchecked = has('tasks.md') ? countUncheckedTasks(readText(path.join(cdir, 'tasks.md'))) : null;
-    const isSinglePr = isSinglePrLevel(level);
+    const resolvedMode = resolveWorkflowMode({ cliMode: opts.mode, repoRoot, baseRef: branch });
+    const isSinglePr = isSinglePrLevel(level) && resolvedMode !== 'spec-first' && !metaText.match(/^\s*workflowMode:\s*['"]?spec-first['"]?/m);
     const statusMatch = metaText.match(/^\s*status:\s*['"]?([^\s'"]+)['"]?\s*$/m);
     const recordedStatus = statusMatch ? statusMatch[1].toLowerCase() : null;
 
@@ -224,6 +229,7 @@ export function register(program) {
     .command('status [changeId]')
     .description('show where a change is in the 7 stages + the next command (or portfolio overview if omitted)')
     .option('--protected-branch <ref>', 'branch the approved spec must be merged into', 'origin/main')
+    .option('--mode <mode>', 'workflow mode: supervised (default) | spec-first | auto')
     .option('--repo-root <path>')
     .option('--json', 'output machine-readable JSON')
     .action((changeId, opts) => {

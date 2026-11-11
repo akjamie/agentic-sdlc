@@ -8,6 +8,7 @@ import { evaluateV3Topology } from './vectors/v3_topology.js';
 import { batchAnalyzeFileSemantics } from './semantics.js';
 import { decideAssessment } from './decide.js';
 import { deriveGovernance } from './governance.js';
+import { resolveWorkflowMode } from '../lib/config.js';
 import { appendAssessmentRecord, loadLatestAssessment, loadInitialAssessment } from './store.js';
 import { renderCheckSummary, renderPRComment, renderLabels } from './render.js';
 
@@ -33,9 +34,11 @@ export function assess({
   actor = { type: 'system', id: 'asdlc' },
   repoRoot = null,
   persist = true,
-  agentContext = null
+  agentContext = null,
+  mode = null
 } = {}) {
   try {
+    const effectiveMode = resolveWorkflowMode({ cliMode: mode, repoRoot, baseRef });
     const prev = previous || (repoRoot && changeId ? loadLatestAssessment(repoRoot, changeId) : null);
     const baseRec = baseline || (repoRoot && changeId ? loadInitialAssessment(repoRoot, changeId) : null);
 
@@ -89,7 +92,8 @@ export function assess({
     const governance = decision.governance || deriveGovernance({
       level: decision.level,
       confidence: decision.confidence,
-      mandatory_human_review: decision.mandatory_human_review
+      mandatory_human_review: decision.mandatory_human_review,
+      mode: effectiveMode
     });
 
     const recordData = {
@@ -154,6 +158,9 @@ export function assess({
 
     return recordData;
   } catch (err) {
+    if (err.code === 'ILLEGAL_MODE_DOWNGRADE' || err.code === 'INVALID_WORKFLOW_MODE') {
+      throw err;
+    }
     // Fallback to Global Default on unexpected exception (§5.5)
     const fallbackDecision = decideAssessment({ stage, error: err, previous });
     const fallbackRecord = {

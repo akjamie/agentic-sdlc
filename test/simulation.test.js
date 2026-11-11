@@ -102,7 +102,19 @@ test('Simulation 2: CI Workflows & GitHooks are routine L1 Tooling (Single PR, n
   assert.equal(ciRec.risk.level, 'L1');
   assert.equal(ciRec.governance.workflow_mode, 'single-pr');
   assert.equal(ciRec.governance.spec_approval, 'automatic');
-  assert.equal(ciRec.governance.auto_approval, 'enabled');
+  assert.equal(ciRec.governance.auto_approval, 'disabled');
+  assert.equal(ciRec.governance.implementation_review, 'ai+human');
+
+  // Explicit auto mode enables autonomous auto-approval
+  const ciAuto = assess({
+    stage: 'impl',
+    changeId: 'update-ci-auto',
+    changedFiles: ['.github/workflows/ci.yml', '.githooks/pre-commit'],
+    mode: 'auto',
+    persist: false
+  });
+  assert.equal(ciAuto.governance.auto_approval, 'enabled');
+  assert.equal(ciAuto.governance.implementation_review, 'ai');
 
   // 2. Requirement intent for CI / Workflow
   const reqCi = assess({
@@ -265,7 +277,19 @@ test('Simulation 7: AI Semantic Classifier classifies test changes as L0 with ze
   });
   assert.equal(a1.risk.level, 'L0');
   assert.equal(a1.governance.workflow_mode, 'single-pr');
-  assert.equal(a1.governance.auto_approval, 'enabled');
+  assert.equal(a1.governance.auto_approval, 'disabled');
+  assert.equal(a1.governance.implementation_review, 'ai+human');
+
+  // Explicit auto mode enables autonomous auto-approval
+  const a1Auto = assess({
+    stage: 'new',
+    changeId: 'unit-tests-auto',
+    requirement: 'add unit test suite for payment calculation',
+    mode: 'auto',
+    persist: false
+  });
+  assert.equal(a1Auto.governance.auto_approval, 'enabled');
+  assert.equal(a1Auto.governance.implementation_review, 'ai');
 
   // Pure test files modified
   const a2 = assess({
@@ -314,7 +338,7 @@ test('Simulation 9: Hidden --level option from CLI help', () => {
 });
 
 test('Simulation 10: PR Comment renders high-visibility Level and Action highlight banners', () => {
-  // L1 auto-merge change
+  // L1 supervised change (default)
   const l1Rec = assess({
     stage: 'new',
     changeId: 'helper-refactor',
@@ -323,7 +347,20 @@ test('Simulation 10: PR Comment renders high-visibility Level and Action highlig
   });
   const l1Comment = renderPRComment(l1Rec);
   assert.match(l1Comment, /最终治理等级.*L1/);
-  assert.match(l1Comment, /AI 自动合入.*Auto-Merge Eligible/);
+  assert.match(l1Comment, /受控单 PR 模式 \(Supervised\)/);
+  assert.match(l1Comment, /需人工确认合入/);
+
+  // L1 auto change (explicit autonomous mode)
+  const l1AutoRec = assess({
+    stage: 'new',
+    changeId: 'helper-refactor-auto',
+    requirement: 'refactor internal math helper',
+    mode: 'auto',
+    persist: false
+  });
+  const l1AutoComment = renderPRComment(l1AutoRec);
+  assert.match(l1AutoComment, /最终治理等级.*L1/);
+  assert.match(l1AutoComment, /AI 自动合入.*Auto-Merge Eligible/);
 
   // In-place escalated change
   const l2EscalatedRec = {

@@ -521,7 +521,7 @@ test('PE P2 Nits: verify --json rendering, truth-table bypass prevention, and ta
       return true;
     };
     try {
-      const code = runVerify(slug, { repoRoot: repo, base: 'HEAD', head: 'HEAD', json: true, skipOpenspec: true });
+      const code = runVerify(slug, { repoRoot: repo, base: 'HEAD', head: 'HEAD', json: true, skipOpenspec: true, ci: false });
       assert.equal(code, 0, 'verify --json should exit with 0 when checks pass');
       const parsed = JSON.parse(printed.trim());
       assert.equal(parsed.verdict, 'PASS');

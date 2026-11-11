@@ -12,9 +12,9 @@ test('asdlc --version prints the package version', () => {
   assert.match(out, /^\d+\.\d+\.\d+$/);
 });
 
-test('asdlc is a minimal surface: 7 stages + navigation + health + skills + assess', () => {
+test('asdlc is a minimal surface: 7 stages + navigation + health + skills + assess + config', () => {
   const names = buildCli().commands.map((c) => c.name());
-  const expected = ['init', 'new', 'lint', 'pr', 'approve', 'apply', 'test', 'verify', 'archive', 'status', 'doctor', 'update', 'upgrade', 'skills', 'assess'];
+  const expected = ['init', 'new', 'lint', 'pr', 'approve', 'apply', 'test', 'verify', 'archive', 'status', 'doctor', 'update', 'upgrade', 'skills', 'assess', 'config'];
   for (const cmd of expected) assert.ok(names.includes(cmd), `missing command: ${cmd}`);
   // Folded / removed commands must not resurface (note: no raw `openspec` escape hatch).
   for (const bad of ['explore', 'propose', 'review', 'gate', 'gap', 'supersede', 'schema', 'graph', 'merge', 'change', 'openspec']) {

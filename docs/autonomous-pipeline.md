@@ -311,8 +311,8 @@ Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
 For headless automation, scripts, and granular inspection, standard subcommands remain fully available:
 
 ```bash
-# 1. Global workflow switch: two supported operational modes
-asdlc config set workflow_mode auto           # auto (default) | spec-first
+# 1. Global workflow switch: three supported operational modes (supervised default)
+asdlc config set workflow_mode supervised     # supervised (default) | spec-first | auto
 
 # 2. Git & PR Remote Host Settings (for Enterprise Intranets / Private GitLab / GHES)
 asdlc config set git.default_host gitlab.corp.company.com # default: github.com
@@ -336,20 +336,24 @@ asdlc config get workflow_mode
 asdlc config unset env.JIRA_API_TOKEN
 ```
 
-**Exact Boundary of the Two Workflow Modes** (Strict 100% Mathematical Symmetry Across Non-Container IDE and Container Modes):
+**Exact Boundary of the Three Workflow Modes** (Strict 100% Mathematical Symmetry Across Non-Container IDE and Container Modes):
 
 | `workflow_mode` | Governance & PR Topology | Non-Container Local IDE (Track 1) | Container Runner (Track 2) |
 | :--- | :--- | :--- | :--- |
-| **`auto`** *(Default)* | **Adaptive Risk-Tiered.** Evaluates the three-vector L0–L3 risk engine: L0/L1 changes route to Single-PR topology (spec + code co-located in 1 PR for maximum velocity), while L2/L3 changes route to Dual-PR topology (mandatory Spec PR human approval before Impl PR). | Developer runs `asdlc lint`; risk engine calculates Level. If L0/L1, single PR is opened (`asdlc pr <id>`). If L2/L3, Spec PR is opened first, locked upon merge. | Container evaluates risk in Phase 3. If L0/L1, container proceeds through `apply` & `verify` and opens a single combined PR. If L2/L3, opens Spec PR, enters Phase 5 wait state. |
-| **`spec-first`** | **Mandatory Dual-PR (Max Governance).** Skips risk engine and forces strict dual-PR separation for all changes: **Spec PR (`lint` + `spec-review` + human merge locking `specSha`) $\to$ Impl PR (`verify` + `impl-review`)**. Ideal for compliance and core infrastructure. | Every change requires Spec PR creation, human TL approval & merge on GitHub, locking `specSha`, before `asdlc apply` is permitted. | Container executes `--stage spec`, opens Spec PR, and terminates or waits for merge. Implementation requires explicit `--stage apply` after Spec merge. |
+| **`supervised`** *(Default)* | **Enterprise Transition & Controlled Velocity.** L0/L1 changes route to Single-PR topology (spec + code co-located in 1 PR for maximum velocity), but **unattended AI Auto-Merge is disabled** (`implementation_review: 'ai+human'`, `auto_approval: 'disabled'`). L2/L3 changes route to Dual-PR topology (`spec-first`). Every PR requires human engineer/TL approval before merging. | Developer runs `asdlc lint`; risk engine calculates Level. If L0/L1, single PR is opened (`asdlc pr <id>`) with `asdlc:human-review-required` label. AI review completes, awaiting human sign-off. If L2/L3, Spec PR is opened first. | Container evaluates risk in Phase 3. If L0/L1, container proceeds through `apply` & `verify`, opens single PR with AI review & evidence, and terminates at "Awaiting Human Merge". If L2/L3, opens Spec PR, enters Phase 5 wait state. |
+| **`spec-first`** *(Max Compliance)* | **Mandatory Dual-PR (Max Governance).** Skips risk-based single-PR privilege and forces strict dual-PR separation for all changes (L0–L3): **Spec PR (`lint` + `spec-review` + human merge locking `specSha`) $\to$ Impl PR (`verify` + `impl-review`)**. Ideal for compliance, banking, and core infrastructure. | Every change requires Spec PR creation, human TL approval & merge on GitHub, locking `specSha`, before `asdlc apply` is permitted. | Container executes `--stage spec`, opens Spec PR, and terminates or waits for merge. Implementation requires explicit `--stage apply` after Spec merge. |
+| **`auto`** *(Full Autonomous)* | **Autonomous Velocity.** Evaluates the three-vector L0–L3 risk engine: L0/L1 changes route to Single-PR topology with **AI Auto-Merge enabled** (`implementation_review: 'ai'`, `auto_approval: 'enabled'`). L2/L3 changes route to Dual-PR topology (`spec-first`). | Developer runs `asdlc lint`; risk engine calculates Level. If L0/L1, single PR is opened, auto-merge permitted once CI & AI review pass. If L2/L3, Spec PR is opened first, locked upon merge. | Container evaluates risk in Phase 3. If L0/L1, container proceeds through `apply` & `verify`, opens single PR, and executes auto-merge when CI passes. If L2/L3, opens Spec PR, enters Phase 5 wait state. |
 
 > [!IMPORTANT]
 > **Why `single-pr` is NOT a Standalone Global Configuration**:
 > In enterprise governance, exposing a top-level `workflow_mode: single-pr` setting creates a catastrophic loophole: a developer or rogue automation could set global `single-pr` to bypass all dual-PR gates for high-risk changes (such as database schema migrations, IAM privilege escalations, or core billing logic). 
-> Therefore, in `agentic-sdlc`, `single-pr` is strictly an **internal routing topology** determined dynamically by `auto` mode when a change's risk assessment strictly evaluates to L0 or L1.
+> Therefore, in `agentic-sdlc`, `single-pr` is strictly an **internal routing topology** determined dynamically by `supervised` or `auto` mode when a change's risk assessment strictly evaluates to L0 or L1.
 
 **Precedence Chain (Highest → Lowest)**:
-`CLI Flags` > `Environment Variables (ASDLC_*)` > `Repo .sdlc/policy.yaml (optional override)` > **`Global ~/.asdlc/config.yaml`** > `Built-in Default`.
+`CLI Flags (--mode)` > `Environment Variables (ASDLC_WORKFLOW_MODE)` > `Repo .sdlc/policy.yaml (optional override)` > **`Global ~/.asdlc/config.yaml`** > `Built-in Default ('supervised')`.
+
+**Monotonic Policy Tightening**:
+Security rank ordering: `spec-first (3) > supervised (2) > auto (1)`. A higher-precedence configuration (e.g. CLI flag or env) may tighten execution to a stricter mode, but cannot downgrade below the repository's policy floor (fails closed with `ILLEGAL_MODE_DOWNGRADE`).
 
 ### 3.2 Enterprise & User-Grade AI Configuration Strategy (Zero Schema Loss)
 
@@ -1283,9 +1287,10 @@ Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
 
 引入机器级全局配置 `~/.asdlc/config.yaml`（权限强制 `0600`），所有配置项统一收敛至 `asdlc config`（不单设 `asdlc auth`；命中 `*key/*token/*secret/*password` 在 `list` 时自动脱敏）：
 
-- **`workflow_mode` 权威支持两档**（在本地 IDE 与容器沙箱中表现 100% 严格对称一致）：
+- **`workflow_mode` 权威支持三档**（系统缺省为 `supervised`，在本地 IDE 与容器沙箱中表现 100% 严格对称一致）：
 - **企业内网 Git 默认主机配置**：
   ```bash
+  asdlc config set workflow_mode supervised     # supervised (默认) | spec-first | auto
   asdlc config set git.default_host gitlab.corp.company.com # 默认: github.com
   asdlc config set git.protocol https                       # https (默认推荐) | ssh
   asdlc config set git.provider gitlab                      # github (默认) | gitlab
@@ -1293,15 +1298,17 @@ Press [Ctrl+C] or choose 'Save & Exit' at any time to finish.
 
 | `workflow_mode` | 治理定位与 PR 拓扑 | 本地 IDE 交互模式 (Track 1) | 容器沙箱自动化流水线 (Track 2) |
 | :--- | :--- | :--- | :--- |
-| **`auto`** *(默认推荐)* | **自适应风险分级拓扑**。内置 L0–L3 三维风险引擎：L0/L1 自动走单 PR 拓扑（Spec 与代码合并提 1 个 PR，保障极速流转）；L2/L3 自动升格为双 PR 拓扑（强制 Spec PR 人工合入锁定后再进 Impl PR）。 | 开发者本地运行 `asdlc lint`，引擎自动评定级别。若为 L0/L1 直接提单 PR；若为 L2/L3 则先提 Spec PR，合入锁定 `specSha` 后才准许 `asdlc apply`。 | 容器在阶段 3 评定风险。若为 L0/L1，直接连贯执行 `apply` 与 `verify` 并开单 PR；若为 L2/L3，开启 Spec PR 并挂起进入阶段 5 等待人工合入。 |
-| **`spec-first`** | **强制严格双 PR（合规顶配）**。跳过风险评估，所有变更一律强制双 PR：**Spec PR（`lint` + `spec-review` + 人工合入主干锁 `specSha`）$\to$ Impl PR（`verify` + `impl-review`）**。适合金融级核心架构与强合规团队。 | 所有变更无例外，必须先走 Spec PR、人类 Tech Lead 审查并合入主干生成锁定的 `specSha`，本地 `asdlc apply` 才能解锁。 | 容器仅执行 `--stage spec`，提 Spec PR 后安全退出；待人类合入后，通过 `--stage apply` 唤醒进入实现流水线。 |
+| **`supervised`** *(系统默认 · 推荐)* | **受控敏捷（企业转型推荐）**。L0/L1 保持单 PR 极速流转（代码与 Spec 合并提 1 个 PR），但**关闭无人值守自动合入**（`auto_approval: disabled`，强制人类点击 Merge）；L2/L3 走双 PR（`spec-first`）。保障每笔合入均有人类确认。 | 开发者本地运行 `asdlc lint`，引擎自动评定级别。若为 L0/L1 提单 PR，AI 评审通过并打上 `asdlc:human-review-required`，等待人类工程师合入；若为 L2/L3 则强制先走 Spec PR。 | 容器在阶段 3 评定风险。若为 L0/L1，连贯执行 `apply` 与 `verify` 开单 PR，并在完成 AI 评审与证据提交后在“待人类合入”安全挂起；若为 L2/L3 开 Spec PR 挂起等待。 |
+| **`spec-first`** *(合规顶配)* | **强制严格双 PR（合规顶配）**。跳过风险评估，所有变更一律强制双 PR：**Spec PR（`lint` + `spec-review` + 人工合入主干锁 `specSha`）$\to$ Impl PR（`verify` + `impl-review`）**。适合金融级核心架构与强合规团队。 | 所有变更无例外，必须先走 Spec PR、人类 Tech Lead 审查并合入主干生成锁定的 `specSha`，本地 `asdlc apply` 才能解锁。 | 容器仅执行 `--stage spec`，提 Spec PR 后安全退出；待人类合入后，通过 `--stage apply` 唤醒进入实现流水线。 |
+| **`auto`** *(全自动极速)* | **全自主风险分级拓扑**。内置 L0–L3 三维风险引擎：L0/L1 走单 PR 拓扑并**开启 AI 自动合入**（`auto_approval: enabled`，CI 门禁与 AI 评审全绿后自动合入）；L2/L3 自动升格为双 PR 拓扑。 | 开发者本地运行 `asdlc lint`，若为 L0/L1 直接提单 PR，CI 与 AI 评审通过后可自动合入；若为 L2/L3 则先提 Spec PR，合入锁定 `specSha` 后才准许 `asdlc apply`。 | 容器在阶段 3 评定风险。若为 L0/L1，直接连贯执行 `apply` 与 `verify` 并开单 PR，CI 绿后直接完成自动合入；若为 L2/L3，开启 Spec PR 并挂起进入阶段 5 等待人工合入。 |
 
 > [!IMPORTANT]
 > **为何 `single-pr` 绝不能作为全局配置开放**：
 > 在企业级研发生命周期中，若开放全局 `workflow_mode: single-pr`，将形成极其危险的治理后门：个别开发者或流水线可通过设置全局单 PR，绕过对高危 DDL 库表重构、认证改造、转账计费等 L2/L3 变更的双 PR 强审拦截。
-> 因此，在 `agentic-sdlc` 规范中，`single-pr` **纯粹是 `auto` 模式评估出 L0/L1 低风险后所授予的内部流转特权**，坚决不作为顶层全局开关暴露。
+> 因此，在 `agentic-sdlc` 规范中，`single-pr` **纯粹是 `supervised` 或 `auto` 模式评估出 L0/L1 低风险后所授予的内部流转拓扑**，坚决不作为顶层全局开关暴露。
 
-- **优先级链**：`CLI 参数` > `环境变量 ASDLC_*` > `单仓 .sdlc/policy.yaml（仅特例覆盖）` > **`全局 ~/.asdlc/config.yaml`** > `内置默认值`。
+- **优先级链**：`CLI 参数 (--mode)` > `环境变量 ASDLC_WORKFLOW_MODE` > `单仓 .sdlc/policy.yaml（特例覆盖）` > **`全局 ~/.asdlc/config.yaml`** > `内置默认值 ('supervised')`。
+- **单向严格收紧规则**：安全评级排序为 `spec-first (3) > supervised (2) > auto (1)`。CLI 或环境变量只能将策略收紧为更严格模式，绝不允许绕过代码仓 `.sdlc/policy.yaml` 的基准底线（违规尝试直接以 `ILLEGAL_MODE_DOWNGRADE` 阻断退出）。
 
 ### 3.2 行业级与用户级 AI 配置设计（整文件原子继承 + CLI 参数覆盖）
 

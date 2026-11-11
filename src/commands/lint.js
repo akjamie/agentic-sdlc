@@ -4,6 +4,7 @@ import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug, readLintConfig, jsonOut } from '../lib/cliutil.js';
 import { lintSpecText, countBlockers } from '../lib/speclint.js';
 import { assess } from '../assess/index.js';
+import { resolveWorkflowMode } from '../lib/config.js';
 import { log, dim } from '../lib/log.js';
 
 // THE spec check (v10: lint absorbed review). Deterministic:
@@ -110,10 +111,12 @@ export function runLint(changeId, opts = {}) {
   }
   const agentAssessPath = path.join(cdir, '.agent-assess.json');
   if (currLvl || exists(agentAssessPath) || exists(path.join(cdir, 'risk-history.jsonl'))) {
+    const resolvedMode = resolveWorkflowMode({ cliMode: opts.mode, repoRoot });
     const assessment = assess({
       stage: 'spec',
       changeId: slug,
       repoRoot,
+      mode: resolvedMode,
       persist: true
     });
     const effectiveLevel = assessment.risk.level;
@@ -157,6 +160,7 @@ export function register(program) {
     .command('lint <changeId>')
     .description('check the spec: artifacts + review record + BDD/acceptance criteria')
     .option('--repo-root <path>')
+    .option('--mode <mode>', 'workflow mode: supervised (default) | spec-first | auto')
     .option('--json', 'stable JSON output for CI')
     .action((changeId, opts) => {
       process.exitCode = runLint(changeId, opts);

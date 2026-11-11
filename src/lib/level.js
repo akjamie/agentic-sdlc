@@ -4,12 +4,13 @@ import { changeDir } from './paths.js';
 import { toChangeSlug } from './cliutil.js';
 import { git } from './git.js';
 import { assess, loadMaxHistoryLevel, loadRiskHistory } from '../assess/index.js';
+import { deriveGovernance } from '../assess/governance.js';
 import { RISK_LEVELS, LEVEL_RANK } from '../assess/rules/builtin.js';
 import { fail } from './errors.js';
 
 export const LEVELS = RISK_LEVELS;
 
-export function inferInitialLevel({ requirement = '', explicitLevel, repoRoot, changeId, agentContext = null } = {}) {
+export function inferInitialLevel({ requirement = '', explicitLevel, repoRoot, changeId, agentContext = null, mode = 'supervised' } = {}) {
   // Always run assessment to establish immutable baseline in history
   const result = assess({
     stage: 'new',
@@ -17,6 +18,7 @@ export function inferInitialLevel({ requirement = '', explicitLevel, repoRoot, c
     requirement,
     agentContext,
     repoRoot,
+    mode,
     persist: Boolean(repoRoot && changeId)
   });
 
@@ -35,6 +37,8 @@ export function inferInitialLevel({ requirement = '', explicitLevel, repoRoot, c
     reason = result.reason_codes[0];
   }
 
+  let finalGovernance = result.governance;
+
   if (explicitLevel) {
     const norm = String(explicitLevel).toUpperCase();
     if (LEVELS[norm]) {
@@ -48,16 +52,22 @@ export function inferInitialLevel({ requirement = '', explicitLevel, repoRoot, c
       }
       finalLevel = norm;
       reason = `explicitly specified via --level ${norm}`;
+      finalGovernance = deriveGovernance({
+        level: finalLevel,
+        confidence: result.risk.confidence,
+        mandatory_human_review: result.vectors?.v1_intent?.mandatory_human_review || result.vectors?.v2_security?.mandatory_human_review || result.vectors?.v3_topology?.mandatory_human_review,
+        mode
+      });
     }
   }
 
-  const isSpecFirst = finalLevel === 'L2' || finalLevel === 'L3';
   return {
     level: finalLevel,
     changeType: result.change_type,
     reason,
-    workflowMode: isSpecFirst ? 'spec-first' : 'single-pr',
-    implementationReview: isSpecFirst ? 'ai+human' : 'ai',
+    workflowMode: finalGovernance.workflow_mode,
+    implementationReview: finalGovernance.implementation_review,
+    autoApproval: finalGovernance.auto_approval,
     assessment: result
   };
 }

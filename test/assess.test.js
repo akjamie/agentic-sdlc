@@ -126,7 +126,19 @@ test('assess: hard signal single-veto for destructive operations and security', 
   });
   assert.equal(r2.risk.level, 'L0');
   assert.equal(r2.governance.workflow_mode, 'single-pr');
-  assert.equal(r2.governance.implementation_review, 'ai');
+  assert.equal(r2.governance.implementation_review, 'ai+human');
+  assert.equal(r2.governance.auto_approval, 'disabled');
+
+  // Under explicit auto mode, autonomous auto-merge is preserved
+  const r2Auto = assess({
+    stage: 'impl',
+    changeId: 'doc-test-auto',
+    changedFiles: ['docs/guide.md', 'README.md'],
+    mode: 'auto',
+    persist: false
+  });
+  assert.equal(r2Auto.governance.implementation_review, 'ai');
+  assert.equal(r2Auto.governance.auto_approval, 'enabled');
 });
 
 test('assess: fallback to global defaults on crash (§5.5)', () => {

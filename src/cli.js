@@ -15,6 +15,7 @@ import { register as registerUpgrade } from './commands/upgrade.js';
 import { register as registerUpdate } from './commands/update.js';
 import { register as registerSkills } from './commands/skills.js';
 import { register as registerAssess } from './commands/assess.js';
+import { register as registerConfig } from './commands/config.js';
 import { AsdlcError } from './lib/errors.js';
 import { log } from './lib/log.js';
 
@@ -45,6 +46,7 @@ export function buildCli() {
   registerUpgrade(program); // upgrade toolchain (asdlc, openspec, graphify, schema)
   registerSkills(program); // manage & install bundled agent skills (repo or global CI)
   registerAssess(program); // evaluate risk & governance requirements (CI & local tool)
+  registerConfig(program); // manage machine global configuration (~/.asdlc/config.yaml)
 
   program.addHelpText('after', `
 The flow:
@@ -65,6 +67,7 @@ Navigation, health & maintenance:
   asdlc upgrade [--global]       upgrade asdlc CLI, openspec, graphify & managed schema
   asdlc skills list              list all available bundled agent skills
   asdlc skills install --global  install skills globally for CI/headless agents (opencode, pi, dsh)
+  asdlc config <set|get|list>    manage global settings (~/.asdlc/config.yaml, workflow_mode)
 
 A bad spec is not edited: close it and run \`asdlc new\` again.`);
   return program;

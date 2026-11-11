@@ -96,6 +96,7 @@ test('runVerify: passes test-presence when source code is accompanied by test fi
     protectedBranch: 'main',
     skipOpenspec: true,
     skipExternal: true,
+    ci: false,
   });
 
   assert.equal(exitCode, 0, 'verify should pass when tests accompany code changes');
