@@ -245,7 +245,7 @@ export function runVerify(changeId, opts = {}) {
   );
   const resolvedMode = resolveWorkflowMode({ cliMode: opts.mode, repoRoot, baseRef: base });
   const isSinglePr = Boolean(
-    (isSinglePrLevel(changeLevel) && resolvedMode !== 'spec-first') ||
+    (isSinglePrLevel(changeLevel) && resolvedMode !== 'spec-first' && metaInfo.workflowMode !== 'spec-first') ||
     escalatedOnlyInImpl
   );
 

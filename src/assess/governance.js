@@ -96,6 +96,7 @@ export function deriveGovernance({ level, confidence, mandatory_human_review = f
     workflow_mode,
     spec_approval,
     implementation_review,
-    auto_approval
+    auto_approval,
+    mode: normMode
   };
 }

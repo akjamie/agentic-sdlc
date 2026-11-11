@@ -65,7 +65,7 @@ flowchart TD
         T_L0 --> SP1["Direct Implementation<br/>(Spec Delta & Code Co-Located)"]
         T_L1 --> SP1
         SP1 --> V_AUTO["Local asdlc verify<br/>12 Quality Gates"]
-        V_AUTO --> PR_AUTO["Single PR to main<br/>(CI + AI Review Auto-Merge)"]
+        V_AUTO --> PR_AUTO["Single PR to main<br/>(Supervised Human Sign-Off / Auto-Merge in auto mode)"]
     end
 
     subgraph SPEC_FIRST ["🛡️ Spec-First Track: Dual-PR Flow"]
@@ -98,14 +98,28 @@ flowchart TD
     class ESCALATE escStyle;
 ```
 
-### Governance Tier Matrix
+### Three-Tier Workflow Modes (`supervised` | `spec-first` | `auto`)
 
-| Tier | Typical Scope | Workflow Mode | Spec-First Block? | Implementation Review | Auto-Merge |
+`agentic-sdlc` decouples **PR Topology** (`single-pr` vs `spec-first` Dual-PR) from **Merge Authority** (`auto_approval: enabled` vs mandatory human approval):
+
+| Dimension | 1. `spec-first` *(Max Compliance)* | 2. `supervised` *(Default · Enterprise Transition)* | 3. `auto` *(Full Autonomous)* |
+| :--- | :--- | :--- | :--- |
+| **Target Persona** | Regulated infra, core banking, high-security repos | **Default for enterprise teams** (Single-PR speed for L0/L1, mandatory human merge) | High-maturity autonomous teams |
+| **L0 / L1 PR Topology** | **Dual-PR** (`spec-first`) | **Single-PR** (`single-pr`) | **Single-PR** (`single-pr`) |
+| **L2 / L3 PR Topology** | **Dual-PR** (`spec-first`) | **Dual-PR** (`spec-first`) | **Dual-PR** (`spec-first`) |
+| **L0 / L1 Spec Approval** | `human` (via Spec PR merge) | `not-applicable` (L0) / `automatic` (L1) | `not-applicable` (L0) / `automatic` (L1) |
+| **L0 / L1 Impl Review & Merge** | `ai+human` (`auto_approval: disabled`) | **`ai+human` (`auto_approval: disabled`)** | **`ai` (`auto_approval: enabled`, Auto-Merge)** |
+| **L2 / L3 Impl Review & Merge** | `ai+human` (`auto_approval: disabled`) | `ai+human` (`auto_approval: disabled`) | `ai+human` (`auto_approval: disabled`) |
+| **Monotonic Security Rank** | **Rank 3 (Strictest)** | **Rank 2 (Default Balanced)** | **Rank 1 (Most Permissive)** |
+
+### Governance Tier Matrix (Default: `supervised`)
+
+| Tier | Typical Scope | PR Topology | Spec-First Gate? | Implementation Review | Auto-Merge |
 | :---: | :--- | :---: | :---: | :---: | :---: |
-| **L0** | Test additions, fixtures, docs, typos, comments | **Single PR** | ❌ None | None (Pass) |  **Enabled** (once CI passes) |
-| **L1** | Internal utils, CI workflows, git hooks, local refactors | **Single PR** | ❌ None | AI Review |  **Enabled** (once AI passes) |
-| **L2** | Public APIs (FastAPI/Spring/Go), schemas, shared libs | **Dual PR** |  **Enforced** | AI + Human Lead | 🚫 **Denied** (Lead Approval required) |
-| **L3** | Destructive DDL (`DROP`), auth engines, `AGENTS.md` | **Dual PR** |  **Enforced** | AI + Human Lead | 🚫 **Denied** (Lead Approval required) |
+| **L0** | Test additions, fixtures, docs, typos, comments | **Single PR** | ❌ None | AI Review + Human Confirmation | 🛡️ **Denied** (Lead Confirmation Required; Auto-Merge in `auto` mode) |
+| **L1** | Internal utils, CI workflows, git hooks, local refactors | **Single PR** | ❌ None | AI Review + Human Confirmation | 🛡️ **Denied** (Lead Confirmation Required; Auto-Merge in `auto` mode) |
+| **L2** | Public APIs (FastAPI/Spring/Go), schemas, shared libs | **Dual PR** | 🛑 **Enforced** | AI + Human Lead | 🚫 **Denied** (Lead Approval Required) |
+| **L3** | Destructive DDL (`DROP`), auth engines, `AGENTS.md` | **Dual PR** | 🛑 **Enforced** | AI + Human Lead | 🚫 **Denied** (Lead Approval Required) |
 
 ---
 
@@ -206,7 +220,8 @@ asdlc verify memory-cache-helper
 
 # 4. Open Single PR (co-locates spec delta and code)
 asdlc pr memory-cache-helper main
-# → Auto-merge eligible once CI & AI checks pass!
+# → Supervised Single-PR: AI reviews automatically, human confirms merge
+#   (or auto-merges unattended when workflow_mode is set to 'auto')
 ```
 
 ### 3. Scenario B: High-Impact API Change (Level L2 · Dual-PR Spec-First)
@@ -235,6 +250,30 @@ asdlc verify user-auth
 asdlc pr user-auth main
 # → Mandatory Human Tech Lead approval required before trunk merge!
 ```
+
+### 4. Global Configuration (`asdlc config`) & Mode Overrides
+
+Manage global defaults in `~/.asdlc/config.yaml` or override them per execution:
+
+```bash
+# Set global default workflow mode (supervised | spec-first | auto)
+asdlc config set workflow_mode supervised
+
+# Query global settings (secrets masked automatically)
+asdlc config get workflow_mode
+asdlc config list
+asdlc config list --json
+
+# Override mode per change or command
+asdlc new "my change" --mode spec-first
+asdlc apply my-change --mode auto
+```
+
+Precedence hierarchy:
+```text
+CLI (--mode) > Env (ASDLC_WORKFLOW_MODE) > Repo (.sdlc/policy.yaml) > Global (~/.asdlc/config.yaml) > Default ('supervised')
+```
+*Note: Monotonic security rank (`spec-first (3) > supervised (2) > auto (1)`) fails closed if a lower-tier configuration attempts to relax a stricter repository policy.*
 
 ---
 

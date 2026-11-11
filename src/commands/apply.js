@@ -27,7 +27,6 @@ export function applyGuard(changeId, opts = {}) {
     const apr = text.match(/^\s*autoPr:\s*['"]?([^\s'"]+)['"]?\s*$/m);
     const lvl = text.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
     const wm = text.match(/^\s*workflowMode:\s*['"]?([^\s'"]+)['"]?\s*$/m);
-    const gm = text.match(/^\s*governanceMode:\s*['"]?([^\s'"]+)['"]?\s*$/m);
     meta = {
       specSha: sha ? sha[1] : null,
       status: status ? status[1] : null,
@@ -35,7 +34,6 @@ export function applyGuard(changeId, opts = {}) {
       autoPr: apr ? apr[1] : null,
       level: lvl ? lvl[1].toUpperCase() : null,
       workflowMode: wm ? wm[1].toLowerCase() : null,
-      governanceMode: gm ? gm[1].toLowerCase() : null,
     };
   }
 

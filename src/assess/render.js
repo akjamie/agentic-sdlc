@@ -13,13 +13,14 @@ export function renderPRComment(record) {
   const isEscalated = record.transition.direction === 'up';
   const lvl = record.risk.level;
   const isHumanReview = record.governance.implementation_review === 'ai+human';
+  const mode = record.governance.mode || (record.governance.workflow_mode === 'single-pr' ? 'supervised' : 'spec-first');
 
   // Prominent Governance Level & Action Highlight Banner
   let actionHighlight = '';
   if (isEscalated) {
     actionHighlight = `> ⚠️ **【治理动作：实施阶段升级 · 必须人工终审】**\n> 🎯 **最终治理等级**：\`${lvl}\`（由 \`${record.transition.from_level || 'L1'}\` 原地升级）\n> 🚨 **流转执行**：保持单 PR 流水线，**自动合并已关闭 (Auto-Merge DENIED)**，必须由人类 Lead 审核批准后方可合入。`;
   } else if (isHumanReview) {
-    if (lvl === 'L0' || lvl === 'L1') {
+    if ((lvl === 'L0' || lvl === 'L1') && mode === 'supervised') {
       actionHighlight = `> 🛡️ **【治理动作：受控单 PR 模式 (Supervised) · 需人工确认合入】**\n> 🎯 **最终治理等级**：\`${lvl}\`\n> 📋 **流转执行**：保留单 PR 敏捷流转，**自动合并已关闭 (Auto-Merge DENIED)**，AI 评审已完成，需由人类工程师/Lead 确认合入。`;
     } else {
       actionHighlight = `> 🛑 **【治理动作：高风险改动 · 必须人工终审】**\n> 🎯 **最终治理等级**：\`${lvl}\`\n> 🚨 **流转执行**：**自动合并已关闭 (Auto-Merge DENIED)**，必须由人类 Lead 审核批准后方可合入主干。`;

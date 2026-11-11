@@ -200,6 +200,25 @@ test('Render: PR comment banner renders Supervised Single-PR banner for L0/L1 an
   const commentAuto = renderPRComment(recL1Auto);
   assert.match(commentAuto, /低风险改动 · AI 自动合入 \(Auto-Merge Eligible\)/);
 
+  // L1 Auto with safety override (mandatory_human_review = true)
+  const recL1AutoSafetyOverride = {
+    verdict: 'ok',
+    risk: { level: 'L1', confidence: 'low' },
+    governance: {
+      workflow_mode: 'single-pr',
+      spec_approval: 'automatic',
+      implementation_review: 'ai+human',
+      auto_approval: 'disabled',
+      mode: 'auto'
+    },
+    transition: { direction: 'initial', from_level: null },
+    reason_codes: ['BOUNDED_LOCAL_CHANGE'],
+    vectors: { v1_intent: { evidence: [] }, v2_security: { evidence: [] }, v3_topology: { evidence: [] } }
+  };
+  const commentAutoOverride = renderPRComment(recL1AutoSafetyOverride);
+  assert.match(commentAutoOverride, /高风险改动 · 必须人工终审/);
+  assert.doesNotMatch(commentAutoOverride, /受控单 PR 模式 \(Supervised\)/);
+
   // Labels check
   const labelsSupervised = renderLabels(recL1Supervised);
   assert.deepEqual(labelsSupervised, ['asdlc:L1', 'asdlc:human-review-required']);
@@ -277,6 +296,10 @@ test('Integration Lifecycle: Supervised mode allows L1 direct apply while spec-f
 
     const verifyCiApproved = runVerify('sup-doc', { repoRoot: tmp, skipOpenspec: true, ci: true, approved: true });
     assert.equal(verifyCiApproved, 0, 'CI verify passes when approved flag is set');
+
+    // 5. Verify that change stamped workflowMode: spec-first is rejected in verify if not approved on main
+    const verifySpecFirst = runVerify('spec-first-doc', { repoRoot: tmp, skipOpenspec: true, ci: false });
+    assert.equal(verifySpecFirst, 1, 'Verify must reject unapproved spec-first change even when run without --mode spec-first');
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

@@ -51,6 +51,20 @@ function maskSensitive(obj, showSecrets) {
   return out;
 }
 
+function flattenConfig(obj, prefix = '') {
+  const entries = [];
+  if (!obj || typeof obj !== 'object') return entries;
+  for (const [k, v] of Object.entries(obj)) {
+    const fullKey = prefix ? `${prefix}.${k}` : k;
+    if (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length > 0) {
+      entries.push(...flattenConfig(v, fullKey));
+    } else {
+      entries.push([fullKey, typeof v === 'object' ? JSON.stringify(v) : String(v)]);
+    }
+  }
+  return entries;
+}
+
 export function register(program) {
   const configCmd = program
     .command('config')
@@ -74,13 +88,22 @@ export function register(program) {
   configCmd
     .command('get <key>')
     .description('get a global configuration key')
-    .action((key) => {
+    .option('--show-secrets', 'reveal masked secret value')
+    .action((key, opts) => {
       const cfg = loadGlobalConfig();
       const val = getNested(cfg, key);
       if (val === undefined) {
         log.plain('(unset)');
+        return;
+      }
+      const isSensitiveKey = /(?:key|token|secret|password)$/i.test(key);
+      if (isSensitiveKey && !opts.showSecrets && typeof val === 'string') {
+        log.plain('********');
+      } else if (typeof val === 'object' && val !== null) {
+        const masked = maskSensitive(val, opts.showSecrets);
+        log.plain(JSON.stringify(masked, null, 2));
       } else {
-        log.plain(typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val));
+        log.plain(String(val));
       }
     });
 
@@ -105,7 +128,14 @@ export function register(program) {
       if (opts.json) {
         log.plain(JSON.stringify(masked, null, 2));
       } else {
-        log.plain(JSON.stringify(masked, null, 2));
+        const entries = flattenConfig(masked);
+        if (entries.length === 0) {
+          log.plain('(no global configuration set)');
+        } else {
+          for (const [k, v] of entries) {
+            log.plain(`${k} = ${v}`);
+          }
+        }
       }
     });
 }
