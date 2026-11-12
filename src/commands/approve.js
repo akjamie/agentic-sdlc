@@ -3,11 +3,12 @@ import { execFileSync } from 'node:child_process';
 import { exists, readText, writeText } from '../lib/fs.js';
 import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
-import { headSha, git, isGitRepo, lastCommitTouching, changeOnRef, safeCommit } from '../lib/git.js';
+import { headSha, git, isGitRepo, lastCommitTouching, changeOnRef, safeCommit, resolveDefaultBranch } from '../lib/git.js';
 import { loadPolicy } from '../lib/policy.js';
 import { classifyPR } from '../lib/prtype.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
+import { resolveTopology } from '../lib/level.js';
 
 function upsertKey(text, key, value) {
   const re = new RegExp(`^\\s*${key}:\\s*.*$`, 'm');
@@ -83,6 +84,53 @@ export function mergeChange(changeId, opts = {}) {
     return [];
   }
 
+  // Single-PR optimization (Stage 4 decoupling):
+  // When explicitly invoked for a Single-PR change, spec approval is co-located with the
+  // final implementation PR. We idempotently mark status: ready_for_impl without requiring
+  // a separate merged Spec PR, without stamping specSha or tagging, and without writing review.md.
+  if (changeId) {
+    const branch = opts.targetBranch ?? opts.protectedBranch ?? opts.branch ?? resolveDefaultBranch(repoRoot);
+    const topology = resolveTopology({ repoRoot, slug, baseRef: branch, cliMode: opts.mode });
+
+    if (topology.tampered) {
+      fail(`cannot approve '${slug}': ${topology.reason}. Manual level downgrading or history tampering is strictly forbidden.`, {
+        code: 'LEVEL_TAMPERED',
+        hint: 'Revert unauthorized level edits in .openspec.yaml or restore risk-history.jsonl.'
+      });
+    }
+
+    if (topology.isSinglePr) {
+      const meta = path.join(changeDir(repoRoot, slug), '.openspec.yaml');
+      if (!exists(meta)) fail(`${slug}: no .openspec.yaml`);
+
+      const preImplStatuses = [null, '', 'draft', 'spec_review'];
+      if (preImplStatuses.includes(topology.declaredStatus)) {
+        let text = readText(meta);
+        text = upsertKey(text, 'status', 'ready_for_impl');
+        writeText(meta, text);
+        log.ok('marked status=ready_for_impl in-place (no separate Spec PR required).');
+      } else {
+        log.info(`${slug}: status=${topology.declaredStatus} preserved (no status regression).`);
+      }
+
+      log.ok(`${slug}: Single-PR mode (${topology.effectiveLevel}) - spec approval is co-located with implementation PR.`);
+      log.info('final approval = human Approve on the single PR (NOT waived).');
+      log.info('note: final governance level is re-assessed by `asdlc apply` when implementation context is available.');
+      return [slug];
+    }
+
+    // Track A (Dual-PR / Spec-First / unlevelled):
+    // Require physical merge evidence on target branch before stamping approval.
+    const trackALocked = [`openspec/changes/${slug}/proposal.md`, `openspec/changes/${slug}/specs`];
+    const mergedSha = lastCommitTouching(repoRoot, branch, trackALocked);
+    if (!mergedSha) {
+      fail(`cannot approve '${slug}': no commit touching ${trackALocked.join(' or ')} is merged into ${branch}. Spec PR must be approved and merged before running asdlc approve.`, {
+        code: 'SPEC_NOT_MERGED',
+        hint: `Open a Spec PR targeting ${branch}, merge it, then run: asdlc approve ${changeId}`
+      });
+    }
+  }
+
   const changedFiles = (git(['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD^1', 'HEAD'], repoRoot, { allowFail: true }) ?? '')
     .split(/\r?\n/).filter(Boolean);
   // was the change already on main BEFORE this merge?
@@ -156,6 +204,9 @@ export function register(program) {
     .command('approve [changeId]')
     .description('record the approved spec after the spec PR merges (tags approved/<ID> + marks READY_FOR_IMPL)')
     .option('--sha <sha>', 'merge commit (default: HEAD)')
+    .option('--protected-branch <ref>', 'branch the approved spec must be merged into')
+    .option('--target-branch <ref>', 'target branch to check for spec merge')
+    .option('--mode <mode>', 'workflow mode override (supervised, spec-first, auto)')
     .option('--no-tag', 'skip the approved/<ID> git tag')
     .option('--no-commit', 'stamp without committing')
     .option('--repo-root <path>')

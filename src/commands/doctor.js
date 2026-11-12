@@ -4,7 +4,7 @@ import { openspecDir, resolveRepoRoot } from '../lib/paths.js';
 import { openspecVersion, OPENSPEC_PINNED, findOpenspec } from '../lib/openspec.js';
 import { graphifyAvailable, graphStatus, GITIGNORE_LINE, ensureGraphify } from '../lib/graphify.js';
 import { checkSchema, builtinSchemaVersion, localOverride, installSchema } from '../lib/schema.js';
-import { refreshAgents } from '../lib/agents.js';
+import { refreshAgents, hasCurrentRouting } from '../lib/agents.js';
 import { readYaml } from '../lib/yaml.js';
 import { git } from '../lib/git.js';
 import { log, dim } from '../lib/log.js';
@@ -70,8 +70,10 @@ export function doctor(opts = {}) {
     } catch { /* ignore */ }
 
     const agents = path.join(repoRoot, 'AGENTS.md');
-    hasRouting = exists(agents) && readText(agents).includes('<!-- asdlc:routing -->');
-    add('AGENTS.md routing', hasRouting ? 'pass' : 'warn', hasRouting ? '' : 'missing (run `asdlc init`)');
+    const agentsText = exists(agents) ? readText(agents) : '';
+    hasRouting = hasCurrentRouting(agentsText);
+    add('AGENTS.md routing', hasRouting ? 'pass' : 'warn',
+      hasRouting ? '' : (agentsText.includes('<!-- asdlc:routing -->') ? 'outdated (run `asdlc doctor --fix`)' : 'missing (run `asdlc init`)'));
 
     const gstatus = graphStatus(repoRoot);
     add('knowledge graph', gstatus === 'fresh' ? 'pass' : 'warn', gstatus);

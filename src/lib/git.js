@@ -123,3 +123,11 @@ export function getBatchGitFiles(cwd = process.cwd(), ref = 'HEAD', filePaths = 
   }
   return result;
 }
+
+export function resolveDefaultBranch(repoRoot) {
+  for (const candidate of ['origin/main', 'origin/master', 'main', 'master']) {
+    const existsRef = git(['rev-parse', '--verify', candidate], repoRoot, { allowFail: true });
+    if (existsRef) return candidate;
+  }
+  return 'main';
+}

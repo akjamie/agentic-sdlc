@@ -124,9 +124,11 @@ test('applyGuard fails fast if Spec PR is not merged into targetBranch, passes a
   execFileSync('git', ['add', '-A'], { cwd: repo });
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'spec(auth-1): add spec'], { cwd: repo });
 
-  // In-place approve on feature branch
-  const approved = mergeChange('AUTH-1', { repoRoot: repo });
-  assert.deepEqual(approved, ['auth-1']);
+  // Track A approve MUST fail before Spec PR is merged into main
+  assert.throws(
+    () => mergeChange('AUTH-1', { repoRoot: repo }),
+    /Spec PR must be approved and merged/
+  );
 
   // Fail-fast guard: applyGuard MUST fail if not merged into main
   assert.throws(
@@ -137,6 +139,11 @@ test('applyGuard fails fast if Spec PR is not merged into targetBranch, passes a
   // Merge feature branch to main (simulating Spec PR merge)
   execFileSync('git', ['checkout', 'main'], { cwd: repo });
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'merge', 'feat/auth-1', '--no-ff', '-m', 'merge: spec pr'], { cwd: repo });
+
+  // Now approve succeeds on main
+  const approved = mergeChange('AUTH-1', { repoRoot: repo });
+  assert.deepEqual(approved, ['auth-1']);
+
   execFileSync('git', ['checkout', 'feat/auth-1'], { cwd: repo });
 
   // Now applyGuard succeeds!

@@ -7,6 +7,11 @@ description: "Execute Stage 4 of Agentic SDLC: approve spec intent, lock specSha
 
 This skill executes **Stage 4 (Approve)** of the Agentic SDLC. It transitions a change from approved intent into the implementation stage (`READY_FOR_IMPL`), locking the spec to a path-limited approved commit SHA (`specSha`).
 
+> [!IMPORTANT]
+> **Two-Track Lifecycle Routing (Track A vs. Track B)**:
+> - **Track A (Dual-PR / Spec-First — L2/L3 or forced `spec-first`)**: Separate Spec PR + merge + `asdlc approve <ID>` is **strictly required** before implementation (`apply`).
+> - **Track B (Single-PR / Fast-Path — L0/L1 under supervised/auto)**: Standalone Spec PR and `asdlc approve` are **waived**. You may proceed directly to `asdlc apply <ID>` to start TDD. If `asdlc approve <ID>` is run in Single-PR mode, it idempotently marks `status: ready_for_impl` in-place without generating a fake `specSha`, without git tags, and **without modifying `review.md`** (final human sign-off happens on the combined PR).
+
 ---
 
 ## Core Concept: The Spec SHA Freeze Gate

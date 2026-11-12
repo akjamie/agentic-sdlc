@@ -2,19 +2,18 @@ import path from 'node:path';
 import { exists, readText, walkFiles, listDir } from '../lib/fs.js';
 import { changeDir, openspecDir, CHANGES_DIR } from '../lib/paths.js';
 import { requireRepo, toChangeSlug, jsonOut } from '../lib/cliutil.js';
-import { lastCommitTouching } from '../lib/git.js';
+import { lastCommitTouching, resolveDefaultBranch } from '../lib/git.js';
 import { verdictOf } from './lint.js';
 import { countUncheckedTasks } from './verify.js';
 import { log } from '../lib/log.js';
-import { isSinglePrLevel } from '../lib/level.js';
-import { resolveWorkflowMode } from '../lib/config.js';
+import { resolveTopology } from '../lib/level.js';
 
 // "Where am I?" for a change - a read-only view of the 7 stages from the working
 // tree + git. Useful for humans and for an agent deciding the next command.
 export function statusChange(changeId, opts = {}) {
   const repoRoot = requireRepo(opts);
   const slug = toChangeSlug(changeId);
-  const branch = opts.protectedBranch ?? 'origin/main';
+  const branch = opts.protectedBranch ?? resolveDefaultBranch(repoRoot);
   const cdir = changeDir(repoRoot, slug);
 
   if (!exists(cdir)) {
@@ -43,33 +42,44 @@ export function statusChange(changeId, opts = {}) {
 
   const metaPath = path.join(cdir, '.openspec.yaml');
   let metaText = exists(metaPath) ? readText(metaPath) : '';
-  const levelMatch = metaText.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
-  const level = levelMatch ? levelMatch[1].toUpperCase() : 'L1';
 
-  const resolvedMode = resolveWorkflowMode({ cliMode: opts.mode, repoRoot, baseRef: branch });
-  const isSinglePr = isSinglePrLevel(level) && resolvedMode !== 'spec-first' && !metaText.match(/^\s*workflowMode:\s*['"]?spec-first['"]?/m);
+  const topology = resolveTopology({ repoRoot, slug, baseRef: branch, cliMode: opts.mode });
+  const isSinglePr = topology.isSinglePr;
+  const level = topology.effectiveLevel || 'unlevelled';
+
+  const stage3Label = isSinglePr
+    ? '3 spec approval (co-located in single PR; human sign-off at merge)'
+    : `3 spec approved on ${branch}`;
 
   const stage = [
     ['1 explore (draft)', has('explore.md')],
     ['2 proposal.md', has('proposal.md')],
     ['2 spec delta', specFiles.length > 0],
-    ['3 spec approved on ' + branch, isSinglePr ? true : Boolean(approvedSha)],
+    [stage3Label, isSinglePr ? '~' : Boolean(approvedSha)],
     ['4 tasks complete', unchecked === 0],
   ];
 
   let next;
   if (!has('explore.md') && !has('proposal.md')) next = `asdlc new ${changeId}`;
   else if (!has('proposal.md') || specFiles.length === 0) next = 'author proposal.md + specs/**';
-  else if (!isSinglePr && !approvedSha) next = `run: asdlc lint ${changeId} && asdlc pr ${changeId} (after independent spec review & merge, run: asdlc approve ${changeId})`;
-  else if (unchecked !== 0) next = `asdlc apply ${changeId}, then complete tasks in tasks.md`;
-  else next = `asdlc verify ${changeId}`;
+  else if (isSinglePr) {
+    if (!has('tasks.md')) next = `author tasks.md, then run: asdlc apply ${changeId}`;
+    else if (unchecked !== 0) next = `asdlc apply ${changeId}, then complete tasks in tasks.md`;
+    else next = `asdlc verify ${changeId} && asdlc pr ${changeId} ${branch}`;
+  } else if (!approvedSha) {
+    next = `run: asdlc lint ${changeId} && asdlc pr ${changeId} (after independent spec review & merge, run: asdlc approve ${changeId})`;
+  } else if (unchecked !== 0) {
+    next = `asdlc apply ${changeId}, then complete tasks in tasks.md`;
+  } else {
+    next = `asdlc verify ${changeId}`;
+  }
 
   if (opts.json) {
-    jsonOut({
+    const payload = {
       change: slug,
       exists: true,
       level,
-      stage: stage.map(([name, ok]) => ({ name, ok })),
+      stage: stage.map(([name, ok]) => ({ name, ok: ok === '~' ? true : Boolean(ok) })),
       next,
       checks: {
         explore: has('explore.md'),
@@ -78,12 +88,20 @@ export function statusChange(changeId, opts = {}) {
         approvedSha,
         tasksComplete: unchecked === 0,
       }
-    });
+    };
+    if (isSinglePr) {
+      payload.mode = 'single-pr';
+      payload.approvalTrack = 'colocated';
+    }
+    jsonOut(payload);
     return 0;
   }
 
   log.plain(`change: ${slug}`);
-  for (const [name, ok] of stage) log.plain(`  [${ok ? 'x' : ' '}] ${name}`);
+  for (const [name, ok] of stage) {
+    const mark = ok === '~' ? '~' : (ok ? 'x' : ' ');
+    log.plain(`  [${mark}] ${name}`);
+  }
   log.plain('');
   log.plain(`next: ${next}`);
   return 0;
@@ -93,7 +111,7 @@ export function statusChange(changeId, opts = {}) {
 // Deliberately excludes completed/archived changes to keep output compact and scannable.
 export function statusPortfolio(opts = {}) {
   const repoRoot = requireRepo(opts);
-  const branch = opts.protectedBranch ?? 'origin/main';
+  const branch = opts.protectedBranch ?? resolveDefaultBranch(repoRoot);
   const cdirRoot = path.join(openspecDir(repoRoot), CHANGES_DIR);
 
   if (!exists(cdirRoot)) {
@@ -122,8 +140,9 @@ export function statusPortfolio(opts = {}) {
     const specFiles = exists(path.join(cdir, 'specs'))
       ? walkFiles(path.join(cdir, 'specs')).filter((f) => f.endsWith('spec.md')) : [];
 
-    const levelMatch = metaText.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
-    const level = levelMatch ? levelMatch[1].toUpperCase() : 'L1';
+    const topology = resolveTopology({ repoRoot, slug, baseRef: branch, cliMode: opts.mode });
+    const isSinglePr = topology.isSinglePr;
+    const level = topology.effectiveLevel || 'unlevelled';
 
     const reqMatch = metaText.match(/^\s*requirement:\s*([^\r\n]+)/m);
     let requirement = reqMatch ? reqMatch[1].trim() : null;
@@ -134,10 +153,7 @@ export function statusPortfolio(opts = {}) {
     const locked = [`openspec/changes/${slug}/proposal.md`, `openspec/changes/${slug}/specs`];
     const approvedSha = lastCommitTouching(repoRoot, branch, locked);
     const unchecked = has('tasks.md') ? countUncheckedTasks(readText(path.join(cdir, 'tasks.md'))) : null;
-    const resolvedMode = resolveWorkflowMode({ cliMode: opts.mode, repoRoot, baseRef: branch });
-    const isSinglePr = isSinglePrLevel(level) && resolvedMode !== 'spec-first' && !metaText.match(/^\s*workflowMode:\s*['"]?spec-first['"]?/m);
-    const statusMatch = metaText.match(/^\s*status:\s*['"]?([^\s'"]+)['"]?\s*$/m);
-    const recordedStatus = statusMatch ? statusMatch[1].toLowerCase() : null;
+    const recordedStatus = topology.declaredStatus;
 
     let stage = '';
     let next = '';
@@ -149,7 +165,10 @@ export function statusPortfolio(opts = {}) {
       stage = 'Drafting Specs';
       next = `author proposal.md + specs/**`;
     } else if (isSinglePr) {
-      if (unchecked === null) {
+      if (!has('tasks.md')) {
+        stage = 'Ready for Impl';
+        next = `author tasks.md, then run: asdlc apply ${slug}`;
+      } else if (unchecked === null) {
         stage = 'Ready for Impl';
         next = `asdlc apply ${slug}`;
       } else if (unchecked > 0) {

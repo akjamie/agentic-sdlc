@@ -112,6 +112,10 @@ shape, scenario-to-AC coverage (`R5-scenario-coverage`), and AC→test mapping. 
 
 ### 3. Approve — merge the spec PR, then `asdlc approve <ID>`
 
+> **Single-PR mode (L0 / L1 under `supervised` or `auto`)**: A separate Spec PR and `asdlc approve` are **waived** — spec and code are submitted together in a single PR, and human approval happens at the final PR merge. Proceed directly to `asdlc apply <ID>` (running `asdlc approve <ID>` manually is an idempotent no-op that marks `status: ready_for_impl` without bypassing human review).
+
+For **Track A (L2 / L3 or `--mode spec-first`)**:
+
 ```bash
 git checkout -b asdlc/tech-1234
 git add openspec/changes/tech-1234 && git commit -m "spec(TECH-1234): ..."
@@ -120,9 +124,10 @@ gh pr create --fill
 ```
 
 The pre-push hook triggers Jenkins (`asdlc lint`), which posts a commit status.
-A human merges the spec PR — **the merge is the approval**. On main:
+A human merges the spec PR — **the merge is the approval**. Run `git fetch` first so your local repo sees the merged spec on the target branch (e.g. `origin/main`), then run:
 
 ```bash
+git fetch origin
 asdlc approve TECH-1234
 ```
 
