@@ -53,7 +53,10 @@ If `pass` is false:
 
 ### Step 3: Lint Complete (Self-Review Passed)
 When `pass` is true (`0 blockers`):
-Report to the author that the spec is structurally valid, fully traceable, and passes all BDD/acceptance criteria checks:
+Report to the author that the spec is structurally valid, fully traceable, and passes all BDD/acceptance criteria checks, then guide them based on the change's governance track (`asdlc status <CHANGE_ID>`):
 
-> "Spec lint passed with 0 blocking issues. The spec is ready for PR. When you are ready to submit it for review, use `asdlc pr <CHANGE_ID> <targetBranch>`."
+- **Track A (Dual-PR — L2 / L3 or `spec-first`)**:
+  > "Spec lint passed with 0 blocking issues. Open the Spec PR with `asdlc pr <CHANGE_ID> [targetBranch]`."
+- **Track B (Single-PR — L0 / L1 under `supervised` or `auto`)**:
+  > "Spec lint passed with 0 blocking issues. In Single-PR mode, no separate Spec PR or `asdlc approve` is needed — draft `tasks.md` and run `asdlc apply <CHANGE_ID>` to start TDD."
 

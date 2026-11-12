@@ -30,7 +30,7 @@
 | **7** | **repo config schema** | 仓库 config.yaml 是否声明标准 schema | **WARN** | 🟢 **可自愈** (`--fix`) | 自动将 `schema: agentic-repo-change` 写入 `openspec/config.yaml` |
 | **8** | **.sdlc/policy.yaml** | 团队治理准则配置文件是否存在 | **WARN** | 🟢 **可自愈** (`--fix`) | 自动从资产模板复制生成 `.sdlc/policy.yaml` |
 | **9** | **.githooks** | Git 提交与推送安全钩子是否激活 | **WARN** | 🟢 **可自愈** (`--fix`) | 自动复制 hook 脚本并执行 `git config core.hooksPath .githooks` |
-| **10**| **AGENTS.md routing** | System Prompt 根入口是否包含路由 | **WARN** | 🟢 **可自愈** (`--fix`) | 自动调用 `refreshAgents()` 重新渲染标准 7 阶段路由指令 |
+| **10**| **AGENTS.md routing** | System Prompt 根入口是否包含最新路由 | **WARN** | 🟢 **可自愈** (`--fix`) | 自动调用 `refreshAgents()` 刷新为最新双轨（Track A / Track B）路由指令（含旧版模板自动升级） |
 | **11**| **knowledge graph** | AST 拓扑图谱是否最新 (fresh) | **WARN** | 🟢 **可自愈** (`--fix`) | 运行 `graphify build` 刷新图谱缓存 |
 | **12**| **graphify-out ignored**| 图谱缓存目录是否已加入 .gitignore | **WARN** | 🟢 **可自愈** (`--fix`) | 自动将 `graphify-out/` 追加写入 `.gitignore`，防止误提交超大缓存 |
 

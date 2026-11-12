@@ -436,6 +436,10 @@ test('Boundary: repo with master branch (no origin/main) enforces policy floor i
       () => mergeChange('m1-change', { repoRoot: tmp }),
       (err) => err.code === 'SPEC_NOT_MERGED'
     );
+
+    // verify MUST also resolve master policy floor and block unapproved spec
+    const verifyExit = runVerify('m1-change', { repoRoot: tmp, skipOpenspec: true, skipExternal: true });
+    assert.equal(verifyExit, 1);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

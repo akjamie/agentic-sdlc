@@ -4,15 +4,14 @@ import { execFileSync } from 'node:child_process';
 import { exists, readText, writeText } from '../lib/fs.js';
 import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
-import { git, isGitRepo, changeOnRef, lastCommitTouching, safeCommit } from '../lib/git.js';
+import { git, isGitRepo, changeOnRef, lastCommitTouching, safeCommit, resolveDefaultBranch } from '../lib/git.js';
 import { loadPolicy, matchesAny } from '../lib/policy.js';
 import { runLint } from './lint.js';
 import { runVerify } from './verify.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
 import { assess, renderLabels, renderPRComment } from '../assess/index.js';
-import { readEffectiveLevel } from '../lib/level.js';
-import { resolveWorkflowMode } from '../lib/config.js';
+import { readEffectiveLevel, resolveTopology } from '../lib/level.js';
 
 const SAFE_ENV_TEMPLATE_RE = /(^|\/)\.env\.(example|sample|template|defaults|schema)$/i;
 const SENSITIVE_OR_DUMP_PATTERNS = [
@@ -129,13 +128,6 @@ export async function createPR(changeId, targetBranch, opts = {}) {
   const repoRoot = requireRepo(opts);
   if (!isGitRepo(repoRoot)) fail('not a git repository');
 
-  if (!targetBranch) {
-    fail('target branch is required (e.g. `asdlc pr <changeId> main` or `asdlc pr <changeId> develop`)', {
-      code: 'MISSING_TARGET_BRANCH',
-      hint: 'specify the base branch to merge into: asdlc pr <changeId> <targetBranch>',
-    });
-  }
-
   const slug = toChangeSlug(changeId);
   const cdir = changeDir(repoRoot, slug);
   if (!exists(cdir)) fail(`change '${slug}' not found`);
@@ -143,6 +135,11 @@ export async function createPR(changeId, targetBranch, opts = {}) {
   // Detect PR type 100% automatically (Spec PR vs Impl PR)
   const metaPath = path.join(cdir, '.openspec.yaml');
   const metaText = exists(metaPath) ? readText(metaPath) : '';
+  const tbMatch = metaText.match(/^\s*targetBranch:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+  const metaTargetBranch = tbMatch ? tbMatch[1] : null;
+  if (!targetBranch) {
+    targetBranch = metaTargetBranch || resolveDefaultBranch(repoRoot).replace(/^origin\//, '');
+  }
   const statusMatch = metaText.match(/^\s*status:\s*['"]?([^\s'"]+)['"]?\s*$/m);
   const changeStatus = statusMatch ? statusMatch[1].toLowerCase() : '';
   const shaMatch = metaText.match(/^\s*specSha:\s*['"]?([^\s'"]+)['"]?\s*$/m);
@@ -172,10 +169,9 @@ export async function createPR(changeId, targetBranch, opts = {}) {
   const allPotentialFiles = [...diffFilesPre, ...uncommittedFiles];
   const hasSourceChanges = allPotentialFiles.some((f) => !f.startsWith(`openspec/changes/${slug}/`));
 
-  const lvlMatch = metaText.match(/^\s*level:\s*['"]?([^\s'"]+)['"]?\s*$/m);
-  const changeLevel = lvlMatch ? lvlMatch[1].toUpperCase() : null;
-  const resolvedMode = resolveWorkflowMode({ cliMode: opts.mode, repoRoot, baseRef: targetBranch });
-  const isSinglePr = (changeLevel === 'L0' || changeLevel === 'L1') && resolvedMode !== 'spec-first' && !metaText.match(/^\s*workflowMode:\s*['"]?spec-first['"]?/m);
+  const topology = resolveTopology({ repoRoot, slug, baseRef: targetBranch, cliMode: opts.mode });
+  const resolvedMode = topology.mode;
+  const isSinglePr = topology.isSinglePr;
 
   let prType;
   if (opts.type) {
@@ -598,7 +594,7 @@ export function parseRemoteUrl(url, opts = {}) {
 
 export function register(program) {
   program
-    .command('pr <changeId> <targetBranch>')
+    .command('pr <changeId> [targetBranch]')
     .description('automatically open a Spec or Implementation PR: auto-detects stage, pre-flight checks, pushes branch, and attaches labels for CI AI review')
     .option('--mode <mode>', 'workflow mode: supervised (default) | spec-first | auto')
     .option('--repo-root <path>')
