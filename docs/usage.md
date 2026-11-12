@@ -124,9 +124,10 @@ gh pr create --fill
 ```
 
 The pre-push hook triggers Jenkins (`asdlc lint`), which posts a commit status.
-A human merges the spec PR — **the merge is the approval**. On main:
+A human merges the spec PR — **the merge is the approval**. Run `git fetch` first so your local repo sees the merged spec on the target branch (e.g. `origin/main`), then run:
 
 ```bash
+git fetch origin
 asdlc approve TECH-1234
 ```
 

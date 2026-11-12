@@ -440,3 +440,24 @@ test('Boundary: repo with master branch (no origin/main) enforces policy floor i
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('Boundary: asdlc doctor --fix upgrades outdated AGENTS.md routing block to Two-Track flow', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'asdlc-doc-fix-'));
+  const bin = path.resolve('bin/asdlc.js');
+  try {
+    git(['init', '-b', 'main'], tmp);
+    fs.mkdirSync(path.join(tmp, 'openspec', 'changes'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmp, 'AGENTS.md'),
+      '# Custom Header\n\n<!-- asdlc:routing -->\n## Agentic SDLC — the 7 stages (one front door)\n1. old\n\n<!-- asdlc:system-status -->\nold status\n'
+    );
+    execFileSync(process.execPath, [bin, 'doctor', '--fix', '--repo-root', tmp], { encoding: 'utf8' });
+    const updated = fs.readFileSync(path.join(tmp, 'AGENTS.md'), 'utf8');
+    assert.match(updated, /# Custom Header/);
+    assert.match(updated, /Two-Track Execution Flow/);
+    assert.match(updated, /Track A:/);
+    assert.match(updated, /Track B:/);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

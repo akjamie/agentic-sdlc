@@ -11,6 +11,10 @@ import { graphExists } from './graphify.js';
 export const ROUTING_MARKER = '<!-- asdlc:routing -->';
 export const STATUS_MARKER = '<!-- asdlc:system-status -->';
 
+export function hasCurrentRouting(text = '') {
+  return String(text).includes(ROUTING_MARKER) && String(text).includes('Two-Track Execution Flow');
+}
+
 const ROUTING_BLOCK = `${ROUTING_MARKER}
 ## Agentic SDLC — Two-Track Execution Flow
 
