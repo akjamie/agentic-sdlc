@@ -213,7 +213,7 @@ asdlc doctor
 # 1. Start a routine change (automatically inferred as L1)
 asdlc new "add memory cache helper with TTL eviction"
 
-# 2. Directly implement using the task-level TDD loop (no Spec PR needed!)
+# 2. Directly implement using the task-level TDD loop (no Spec PR or `asdlc approve` needed!)
 asdlc apply memory-cache-helper
 
 # 3. Verify locally against 12 quality gates
@@ -288,7 +288,7 @@ CLI (--mode) > Env (ASDLC_WORKFLOW_MODE) > Repo (.sdlc/policy.yaml) > Global (~/
 | [`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Scaffolds change, queries AST hubs, runs conversational anti-fatigue `grill-me`. |
 | [`asdlc-lint`](assets/skills/asdlc-lint/SKILL.md) | Enforces deterministic BDD GIVEN/WHEN/THEN and R5 scenario-to-AC coverage. |
 | [`asdlc-pr`](assets/skills/asdlc-pr/SKILL.md) | Smart PR dispatcher: automatically handles Spec PR vs. Implementation PR. |
-| [`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md) | Stamps Git `specSha` lock upon Spec PR merge. |
+| [`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md) | Stamps Git `specSha` lock upon Spec PR merge (Track A Dual-PR; waived for Track B Single-PR). |
 | [`asdlc-apply`](assets/skills/asdlc-apply/SKILL.md) | Strict task-level TDD engine (`Red -> Green -> Refactor -> Evidence -> Converge`). |
 | [`asdlc-verify`](assets/skills/asdlc-verify/SKILL.md) | Pre-flight audit across 12 gates (test presence, evidence, tamper guard, schema). |
 | [`asdlc-spec-review`](assets/skills/asdlc-spec-review/SKILL.md) | Independent review agent: 6-dimensional spec review before human lead approval. |
@@ -350,7 +350,7 @@ asdlc init                         # Scaffold repository with OpenSpec, Graphify
 asdlc new "<intent>"               # Scaffold change with AST explore + grill-me interview
 asdlc lint <ID>                    # Validate BDD scenarios, AC rules, and coverage (docs/spec-format.md)
 asdlc pr <ID> <target-branch>      # Smart PR creator (auto-handles Spec PR vs Impl PR + smart staging)
-asdlc approve <ID>                 # Record approvedSha and transition to ready_for_impl
+asdlc approve <ID>                 # Record approvedSha & ready_for_impl (Track A; idempotent no-op in Single-PR)
 asdlc apply <ID>                   # Guarded implementation launcher (checks approvedSha)
 asdlc test <ID> [--json]           # Execute real test runners mapped to AC annotations
 asdlc verify <ID>                  # Audit diff against all 12 quality gates
@@ -371,7 +371,7 @@ git clone https://github.com/akjamie/agentic-sdlc.git
 cd agentic-sdlc
 npm install
 
-# Run complete test suite (196 tests passing, 100% pass rate)
+# Run complete test suite (212 tests passing, 100% pass rate)
 npm test
 
 # Run end-to-end multi-language simulation tests
