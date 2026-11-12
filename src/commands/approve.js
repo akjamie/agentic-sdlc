@@ -8,6 +8,7 @@ import { loadPolicy } from '../lib/policy.js';
 import { classifyPR } from '../lib/prtype.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
+import { resolveTopology } from '../lib/level.js';
 
 function upsertKey(text, key, value) {
   const re = new RegExp(`^\\s*${key}:\\s*.*$`, 'm');
@@ -83,6 +84,28 @@ export function mergeChange(changeId, opts = {}) {
     return [];
   }
 
+  // Single-PR optimization (Stage 4 decoupling):
+  // When explicitly invoked for a Single-PR change, spec approval is co-located with the
+  // final implementation PR. We idempotently mark status: ready_for_impl without requiring
+  // a separate merged Spec PR, without stamping specSha or tagging, and without writing review.md.
+  if (changeId) {
+    const branch = opts.protectedBranch ?? opts.branch ?? 'origin/main';
+    const topology = resolveTopology({ repoRoot, slug, baseRef: branch, cliMode: opts.mode });
+    if (topology.isSinglePr) {
+      const meta = path.join(changeDir(repoRoot, slug), '.openspec.yaml');
+      if (!exists(meta)) fail(`${slug}: no .openspec.yaml`);
+
+      let text = readText(meta);
+      text = upsertKey(text, 'status', 'ready_for_impl');
+      writeText(meta, text);
+
+      log.ok(`${slug}: Single-PR mode (${topology.effectiveLevel}) - spec approval is co-located with implementation PR.`);
+      log.ok('marked status=ready_for_impl in-place (no separate Spec PR required).');
+      log.info('final approval = human Approve on the single PR (NOT waived).');
+      return [slug];
+    }
+  }
+
   const changedFiles = (git(['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD^1', 'HEAD'], repoRoot, { allowFail: true }) ?? '')
     .split(/\r?\n/).filter(Boolean);
   // was the change already on main BEFORE this merge?
@@ -156,6 +179,7 @@ export function register(program) {
     .command('approve [changeId]')
     .description('record the approved spec after the spec PR merges (tags approved/<ID> + marks READY_FOR_IMPL)')
     .option('--sha <sha>', 'merge commit (default: HEAD)')
+    .option('--mode <mode>', 'workflow mode override (supervised, spec-first, auto)')
     .option('--no-tag', 'skip the approved/<ID> git tag')
     .option('--no-commit', 'stamp without committing')
     .option('--repo-root <path>')

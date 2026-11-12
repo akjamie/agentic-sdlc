@@ -94,6 +94,7 @@ export function applyGuard(changeId, opts = {}) {
       };
       metaText = upsertKey(metaText, 'status', 'ready_for_impl');
       writeText(metaPath, metaText);
+      log.ok(`${slug}: marked status=ready_for_impl (no separate Spec PR in Single-PR mode; human sign-off happens on the final PR)`);
     }
     log.ok(`${slug}: governance level is ${effectiveLevel} (Single PR mode: direct local implementation permitted)`);
   } else {

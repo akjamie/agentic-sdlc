@@ -36,8 +36,8 @@ asdlc apply <CHANGE_ID> [--auto-pr] [--target-branch <ref>]
 - If `asdlc apply` succeeds: Proceed to Step 2.
 
 > [!NOTE]
-> **Governance Level & Single PR Flow (L0 / L1)**:
-> For changes evaluated as `level: L0` or `level: L1`, prior merging of a Spec PR to the protected branch is waived. `asdlc apply` immediately unblocks local TDD implementation, allowing source code and spec delta to be submitted together in a Single PR.
+> **Governance Level & Single PR Flow (Track B: L0 / L1)**:
+> For changes evaluated as `level: L0` or `level: L1` (under `supervised` or `auto` without `spec-first` override), separate Spec PR and `asdlc approve` are **waived**. `asdlc apply` immediately unblocks local TDD implementation, automatically transitions status to `ready_for_impl` in-place, and allows source code and spec delta to be submitted together in a Single PR. (In `supervised` mode, human Lead sign-off occurs at the single PR merge).
 
 
 ### Step 2: Read `tasks.md` and Ground Context

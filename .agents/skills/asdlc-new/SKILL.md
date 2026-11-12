@@ -137,6 +137,7 @@ Once `## Open questions` in `clarifications.md` is empty, author the change docu
    - Independent AI review (`asdlc:spec-review`) is executed by an independent review agent (locally or via PR automation).
    - Formal approval is given by the human lead via PR merge or `asdlc approve <SLUG>`.
 
-### Step 5: Transition to Lint
-Once artifacts are written, guide the developer:
-> "Artifacts drafted! Now run `/asdlc:lint <SLUG>` to verify BDD scenarios, technical design, and acceptance criteria before opening the spec PR."
+### Step 5: Transition to Implementation / Review (Two-Track Lifecycle)
+Once artifacts are written, guide the developer based on the change's governance level (`asdlc status <SLUG>`):
+- **Track A (L2 / L3 or `spec-first`)**: Run `/asdlc:lint <SLUG>` to verify BDD scenarios and open a Spec PR (`asdlc pr <SLUG>`). After merge, run `asdlc approve <SLUG>`.
+- **Track B (L0 / L1 under supervised/auto)**: Draft `tasks.md` and proceed directly to `/asdlc:apply <SLUG>` to begin the TDD loop (standalone Spec PR and `asdlc approve` are waived; combined PR opened after verify).

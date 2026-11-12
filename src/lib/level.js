@@ -6,6 +6,7 @@ import { git } from './git.js';
 import { assess, loadMaxHistoryLevel, loadRiskHistory } from '../assess/index.js';
 import { deriveGovernance } from '../assess/governance.js';
 import { RISK_LEVELS, LEVEL_RANK } from '../assess/rules/builtin.js';
+import { resolveWorkflowMode } from './config.js';
 import { fail } from './errors.js';
 
 export const LEVELS = RISK_LEVELS;
@@ -180,4 +181,61 @@ export function readEffectiveLevel(repoRoot, changeId, opts = {}) {
     tampered
   };
 }
+
+export function resolveTopology({ repoRoot, slug, baseRef = 'origin/main', cliMode } = {}) {
+  const eff = readEffectiveLevel(repoRoot, slug, { baseRef });
+  const cdir = repoRoot && slug ? changeDir(repoRoot, slug) : null;
+  const metaPath = cdir ? path.join(cdir, '.openspec.yaml') : null;
+  let metaText = '';
+  let declaredWorkflowMode = null;
+  let declaredStatus = null;
+  if (metaPath && exists(metaPath)) {
+    metaText = readText(metaPath);
+    const mMode = metaText.match(/^\s*workflowMode:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+    if (mMode) declaredWorkflowMode = mMode[1].toLowerCase();
+    const mStat = metaText.match(/^\s*status:\s*['"]?([^\s'"]+)['"]?\s*$/m);
+    if (mStat) declaredStatus = mStat[1].toLowerCase();
+  }
+
+  const effectiveLevel = eff?.effectiveLevel || eff?.declaredLevel || null;
+  const declaredLevel = eff?.declaredLevel || null;
+  const tampered = Boolean(eff?.tampered);
+  const mode = resolveWorkflowMode({ cliMode, repoRoot, baseRef });
+
+  let isSinglePr = false;
+  let reason = '';
+
+  if (tampered) {
+    isSinglePr = false;
+    reason = `governance level tampered (declared ${declaredLevel} < history ${eff?.maxHistoryLevel})`;
+  } else if (!effectiveLevel) {
+    isSinglePr = false;
+    reason = 'unlevelled change requires Dual-PR (Spec-First)';
+  } else if (mode === 'spec-first') {
+    isSinglePr = false;
+    reason = 'workflow mode is spec-first';
+  } else if (declaredWorkflowMode === 'spec-first') {
+    isSinglePr = false;
+    reason = 'change workflowMode is spec-first';
+  } else if (!isSinglePrLevel(effectiveLevel)) {
+    isSinglePr = false;
+    reason = `governance level ${effectiveLevel} requires Dual-PR (Spec-First)`;
+  } else {
+    isSinglePr = true;
+    reason = `Single-PR mode (${effectiveLevel})`;
+  }
+
+  return {
+    isSinglePr,
+    effectiveLevel,
+    declaredLevel,
+    tampered,
+    mode,
+    reason,
+    workflowMode: isSinglePr ? 'single-pr' : 'spec-first',
+    declaredStatus,
+    declaredWorkflowMode
+  };
+}
+
 
