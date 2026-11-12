@@ -12,20 +12,20 @@ This skill opens a **Spec PR** (Stage 3) or an **Implementation PR** (Stage 6.5)
 ## Command
 
 ```powershell
-asdlc pr <CHANGE_ID> <targetBranch>
+asdlc pr <CHANGE_ID> [targetBranch]
 ```
 
-- `<targetBranch>`: Target branch to merge into (e.g. `main`, `develop`, `release/*`). Required.
-- Zero manual flags: `asdlc pr` automatically detects whether to open a Spec PR or an Implementation PR.
+- `[targetBranch]`: Target branch to merge into (e.g. `main`, `master`, `develop`). Optional — defaults to `.openspec.yaml`'s `targetBranch` or the repository's default branch (`resolveDefaultBranch`).
+- Zero manual flags: `asdlc pr` automatically detects whether to open a Spec PR (Track A) or an Implementation / Single PR (Track A/B).
 
 ---
 
-## Dual-PR Lifecycle & Pre-flight Gates
+## Two-Track Lifecycle & Pre-flight Gates
 
-| PR Type | Phase & Moment | Pre-Flight Guard | Auto Labels | Review Automation Trigger |
+| PR Type | Track & Moment | Pre-Flight Guard | Auto Labels | Review Automation Trigger |
 | :--- | :--- | :--- | :--- | :--- |
-| **Spec PR** | Stage 3 (After drafting proposal & specs) | **`asdlc lint <ID>`**<br>(0 blocking BDD/AC issues) | `asdlc:spec-review`<br>`spec` | Runs `asdlc lint` + routes to **Independent Spec AI Review** (`asdlc-spec-review`) |
-| **Impl PR** | Stage 6.5 (After TDD apply & tasks complete) | **`asdlc verify <ID>`**<br>(12 deterministic gates pass) | `asdlc:impl-review`<br>`impl` | Runs `asdlc verify` + routes to **Independent Impl AI Review** (`asdlc-impl-review`) |
+| **Spec PR** | **Track A** Stage 3 (L2/L3/`spec-first` after drafting proposal & specs) | **`asdlc lint <ID>`**<br>(0 blocking BDD/AC issues) | `asdlc:spec-review`<br>`spec` | Runs `asdlc lint` + routes to **Independent Spec AI Review** (`asdlc-spec-review`) |
+| **Impl / Single PR** | **Track A** Stage 6.5 or **Track B** (L0/L1 Single-PR after TDD & tasks complete) | **`asdlc verify <ID>`**<br>(12 deterministic gates pass) | `asdlc:impl-review`<br>`impl` | Runs `asdlc verify` + routes to **Independent Impl AI Review** (`asdlc-impl-review`) |
 
 ---
 
@@ -37,6 +37,7 @@ asdlc pr <CHANGE_ID> <targetBranch>
      - `.openspec.yaml` has `status: ready_for_impl` or a locked `specSha`.
      - Spec intent commit is already merged on `<targetBranch>`.
      - Branch name starts with `impl/`.
+     - Single-PR change (`L0`/`L1` under `supervised`/`auto`) with source code changes outside `openspec/changes/<slug>/`.
      - Source code changes exist outside `openspec/changes/<slug>/` and tasks in `tasks.md` are marked complete.
    - **Detected as Spec PR (`spec`) otherwise**:
      - Spec artifacts (`proposal.md`, `specs/**`) are in drafting/review stage before approval.

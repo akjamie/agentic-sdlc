@@ -6,7 +6,7 @@ import { openspecDir, changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug, readLintConfig, jsonOut } from '../lib/cliutil.js';
 import { validateChange } from '../lib/openspec.js';
 import { runShell } from '../lib/exec.js';
-import { lastCommitTouching, changeOnRef, git } from '../lib/git.js';
+import { lastCommitTouching, changeOnRef, git, resolveDefaultBranch } from '../lib/git.js';
 import { lintSpecText, countBlockers } from '../lib/speclint.js';
 import { checkSchema } from '../lib/schema.js';
 import { loadPolicy, isAdvisory, DEFAULT_POLICY, matchesAny } from '../lib/policy.js';
@@ -195,7 +195,6 @@ export function extractJson(text) {
 export function runVerify(changeId, opts = {}) {
   const results = [];
   const add = (name, status, detail) => results.push({ name, status, detail });
-  const branch = opts.protectedBranch ?? 'origin/main';
 
   let repoRoot;
   try {
@@ -205,6 +204,8 @@ export function runVerify(changeId, opts = {}) {
     add('repo', 'fail', err.message);
     return finish(results, DEFAULT_POLICY);
   }
+
+  const branch = opts.protectedBranch ?? resolveDefaultBranch(repoRoot);
 
   const slug = toChangeSlug(changeId);
   const base = opts.base ?? branch;
@@ -266,7 +267,7 @@ export function runVerify(changeId, opts = {}) {
   } else if (isSinglePr) {
     add('approved-spec', 'pass', `${changeLevel || 'single-pr'} single-PR mode (spec approval co-located in implementation PR)`);
   } else if (!approvedSha) {
-    add('approved-spec', 'fail', `no commit on locked paths is merged into ${branch} (not approved)`);
+    add('approved-spec', 'fail', `no commit on locked paths is merged into ${branch} (not approved; ensure target branch is fetched, e.g. git fetch)`);
   } else if (specSha && specSha !== approvedSha) {
     add('approved-spec', 'fail', `declared specSha ${specSha.slice(0, 8)} != approved commit ${approvedSha.slice(0, 8)}`);
   } else {
@@ -285,7 +286,7 @@ export function runVerify(changeId, opts = {}) {
     add('flow-state', 'pass', `${changeLevel || 'single-pr'} single-PR mode (direct implementation)`);
   } else {
     add('flow-state', status === 'ready_for_impl' ? 'pass' : 'fail',
-      status === 'ready_for_impl' ? 'READY_FOR_IMPL' : `status is ${status ?? 'unset'} (run: asdlc approve ${changeId})`);
+      status === 'ready_for_impl' ? 'READY_FOR_IMPL' : `status is ${status ?? 'unset'} (ensure target branch is fetched, then run: asdlc approve ${changeId})`);
   }
 
   const isCI = opts.ci !== undefined

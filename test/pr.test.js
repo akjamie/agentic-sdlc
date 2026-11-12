@@ -33,12 +33,12 @@ function scaffold(repo, changeId) {
   return dir;
 }
 
-test('pr: fails when targetBranch is missing', async () => {
+test('pr: resolves default targetBranch when omitted and blocks self-PR from main', async () => {
   const repo = tmpRepo();
   scaffold(repo, 'AUTH-1');
   await assert.rejects(
     async () => createSpecPR('AUTH-1', null, { repoRoot: repo }),
-    /target branch is required/,
+    /cannot create a PR from 'main' into itself/,
   );
 });
 
@@ -200,6 +200,19 @@ test('ASDLC_LABELS and ensureRemoteLabels are properly exported and robust', asy
   assert.doesNotThrow(() => {
     ensureRemoteLabels(repo);
   });
+});
+
+test('createPR resolves default targetBranch when omitted (does not fail with MISSING_TARGET_BRANCH)', async () => {
+  const { createPR } = await import('../src/commands/pr.js');
+  const repo = tmpRepo();
+  scaffold(repo, 'DEF-1');
+  execFileSync('git', ['checkout', '-b', 'feat/def-1'], { cwd: repo });
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-qm', 'spec(def-1): add spec'], { cwd: repo });
+
+  // No targetBranch passed; should resolve 'main' and proceed cleanly
+  const res = await createPR('DEF-1', undefined, { repoRoot: repo });
+  assert.equal(res.type, 'spec');
 });
 
 
