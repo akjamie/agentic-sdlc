@@ -2,7 +2,7 @@ import path from 'node:path';
 import { exists, readText } from './fs.js';
 import { changeDir } from './paths.js';
 import { toChangeSlug } from './cliutil.js';
-import { git } from './git.js';
+import { git, resolveDefaultBranch } from './git.js';
 import { assess, loadMaxHistoryLevel, loadRiskHistory } from '../assess/index.js';
 import { deriveGovernance } from '../assess/governance.js';
 import { RISK_LEVELS, LEVEL_RANK } from '../assess/rules/builtin.js';
@@ -182,8 +182,9 @@ export function readEffectiveLevel(repoRoot, changeId, opts = {}) {
   };
 }
 
-export function resolveTopology({ repoRoot, slug, baseRef = 'origin/main', cliMode } = {}) {
-  const eff = readEffectiveLevel(repoRoot, slug, { baseRef });
+export function resolveTopology({ repoRoot, slug, baseRef, cliMode } = {}) {
+  const effectiveBaseRef = baseRef || (repoRoot ? resolveDefaultBranch(repoRoot) : 'origin/main');
+  const eff = readEffectiveLevel(repoRoot, slug, { baseRef: effectiveBaseRef });
   const cdir = repoRoot && slug ? changeDir(repoRoot, slug) : null;
   const metaPath = cdir ? path.join(cdir, '.openspec.yaml') : null;
   let metaText = '';
@@ -200,7 +201,7 @@ export function resolveTopology({ repoRoot, slug, baseRef = 'origin/main', cliMo
   const effectiveLevel = eff?.effectiveLevel || eff?.declaredLevel || null;
   const declaredLevel = eff?.declaredLevel || null;
   const tampered = Boolean(eff?.tampered);
-  const mode = resolveWorkflowMode({ cliMode, repoRoot, baseRef });
+  const mode = resolveWorkflowMode({ cliMode, repoRoot, baseRef: effectiveBaseRef });
 
   let isSinglePr = false;
   let reason = '';

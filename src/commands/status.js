@@ -2,19 +2,18 @@ import path from 'node:path';
 import { exists, readText, walkFiles, listDir } from '../lib/fs.js';
 import { changeDir, openspecDir, CHANGES_DIR } from '../lib/paths.js';
 import { requireRepo, toChangeSlug, jsonOut } from '../lib/cliutil.js';
-import { lastCommitTouching } from '../lib/git.js';
+import { lastCommitTouching, resolveDefaultBranch } from '../lib/git.js';
 import { verdictOf } from './lint.js';
 import { countUncheckedTasks } from './verify.js';
 import { log } from '../lib/log.js';
-import { isSinglePrLevel, resolveTopology } from '../lib/level.js';
-import { resolveWorkflowMode } from '../lib/config.js';
+import { resolveTopology } from '../lib/level.js';
 
 // "Where am I?" for a change - a read-only view of the 7 stages from the working
 // tree + git. Useful for humans and for an agent deciding the next command.
 export function statusChange(changeId, opts = {}) {
   const repoRoot = requireRepo(opts);
   const slug = toChangeSlug(changeId);
-  const branch = opts.protectedBranch ?? 'origin/main';
+  const branch = opts.protectedBranch ?? resolveDefaultBranch(repoRoot);
   const cdir = changeDir(repoRoot, slug);
 
   if (!exists(cdir)) {
@@ -46,7 +45,7 @@ export function statusChange(changeId, opts = {}) {
 
   const topology = resolveTopology({ repoRoot, slug, baseRef: branch, cliMode: opts.mode });
   const isSinglePr = topology.isSinglePr;
-  const level = topology.effectiveLevel || 'L1';
+  const level = topology.effectiveLevel || 'unlevelled';
 
   const stage3Label = isSinglePr
     ? '3 spec approval (co-located in single PR; human sign-off at merge)'
@@ -112,7 +111,7 @@ export function statusChange(changeId, opts = {}) {
 // Deliberately excludes completed/archived changes to keep output compact and scannable.
 export function statusPortfolio(opts = {}) {
   const repoRoot = requireRepo(opts);
-  const branch = opts.protectedBranch ?? 'origin/main';
+  const branch = opts.protectedBranch ?? resolveDefaultBranch(repoRoot);
   const cdirRoot = path.join(openspecDir(repoRoot), CHANGES_DIR);
 
   if (!exists(cdirRoot)) {
@@ -143,7 +142,7 @@ export function statusPortfolio(opts = {}) {
 
     const topology = resolveTopology({ repoRoot, slug, baseRef: branch, cliMode: opts.mode });
     const isSinglePr = topology.isSinglePr;
-    const level = topology.effectiveLevel || 'L1';
+    const level = topology.effectiveLevel || 'unlevelled';
 
     const reqMatch = metaText.match(/^\s*requirement:\s*([^\r\n]+)/m);
     let requirement = reqMatch ? reqMatch[1].trim() : null;

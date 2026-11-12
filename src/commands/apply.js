@@ -2,7 +2,7 @@ import path from 'node:path';
 import { exists, readText, writeText } from '../lib/fs.js';
 import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
-import { lastCommitTouching, git } from '../lib/git.js';
+import { lastCommitTouching, git, resolveDefaultBranch } from '../lib/git.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
 import { isSinglePrLevel, readEffectiveLevel } from '../lib/level.js';
@@ -190,15 +190,6 @@ export function applyGuard(changeId, opts = {}) {
   }
   log.info(`Ready for implementation. Follow task-level TDD loop in tasks.md.`);
   return 0;
-}
-
-function resolveDefaultBranch(repoRoot) {
-  // Check if origin/main, origin/master, main, or master exists
-  for (const candidate of ['origin/main', 'origin/master', 'main', 'master']) {
-    const existsRef = git(['rev-parse', '--verify', candidate], repoRoot, { allowFail: true });
-    if (existsRef) return candidate;
-  }
-  return 'main';
 }
 
 export function register(program) {

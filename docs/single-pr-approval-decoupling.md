@@ -325,3 +325,8 @@ Fast-path Single-PR lifecycle (Spec & code in one PR, human confirms at merge):
 ### 9.5 评审结论
 
 **有条件批准（Approve with changes）**：落实 R1、R2、R4、R5（阻断项）后可实施；R3、R6-R10 为同 PR 内必须完成的加固项，`apply/verify/pr` 的 helper 迁移为后续独立 PR。
+
+### 9.6 实施后二轮评审加固（v1.9.1 发版前）
+- **P0 Track A 防御补全**：`approve <ID>` 在 `topology.tampered` 时直接 `fail(LEVEL_TAMPERED)`；在 Track A（非 Single-PR 且显式传入 `changeId`）下校验目标分支上是否存在 Spec 合并提交，缺失则 `fail(SPEC_NOT_MERGED)` 阻断，消除“未合入主干即可在本地盖章 `Verdict APPROVE`”的旁路。
+- **P1 公共分支探测与状态不倒退**：抽取 `lib/git.js#resolveDefaultBranch()` 统一 `apply`/`approve`/`status` 与 `resolveTopology` 的基线分支解析（兼容 `master` / 无 remote 仓库）；Single-PR `approve` 仅在草稿/预实现状态（`draft`/`spec_review`/未设置）置为 `ready_for_impl`，对 `archived` 等后续状态保持不变；并补充提示“最终等级以 `asdlc apply` 重评估为准”。
+- **P2 一致性**：`status` 对未定级变更统一展示 `unlevelled`（与 Dual-PR 判定一致），历史篡改/升级场景展示 `effectiveLevel`。

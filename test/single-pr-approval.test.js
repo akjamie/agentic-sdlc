@@ -133,17 +133,29 @@ test('TC-SP-03: L1 Single-PR apply unblocks TDD and auto-completes ready_for_imp
   }
 });
 
-test('TC-SP-04: L2 Dual-PR change retains Track A behavior in approve (not single-PR branch)', () => {
+test('TC-SP-04: L2 Dual-PR unmerged change is blocked by approve until merged to targetBranch', () => {
   const repo = setupRepo();
   try {
+    git(['checkout', '-b', 'feat/l2-change'], repo);
     createChange(repo, 'l2-change', { level: 'L2', workflowMode: 'spec-first', status: 'draft' });
     const cdir = path.join(repo, 'openspec', 'changes', 'l2-change');
+    git(['add', '-A'], repo);
+    git(['commit', '-m', 'spec(l2-change): add spec'], repo);
 
-    // In Track A, mergeChange takes the existing branch (creates review.md, tag, commit)
+    // Before merging to main, approve MUST block with SPEC_NOT_MERGED
+    assert.throws(
+      () => mergeChange('l2-change', { repoRoot: repo }),
+      (err) => err.code === 'SPEC_NOT_MERGED' && /Spec PR must be approved and merged/i.test(err.message)
+    );
+
+    // Merge Spec PR into main
+    git(['checkout', 'main'], repo);
+    git(['merge', 'feat/l2-change', '--no-ff', '-m', 'merge: spec PR'], repo);
+
+    // After merge to main, approve succeeds and stamps review.md + specSha
     const approved = mergeChange('l2-change', { repoRoot: repo });
     assert.deepEqual(approved, ['l2-change']);
 
-    // Track A MUST have stamped review.md and specSha
     const meta = fs.readFileSync(path.join(cdir, '.openspec.yaml'), 'utf8');
     assert.match(meta, /specSha:/);
     assert.equal(fs.existsSync(path.join(cdir, 'review.md')), true);
@@ -174,7 +186,7 @@ test('TC-SP-05: L1 Single-PR verify and PR classify properly as single PR', () =
   }
 });
 
-test('TC-SP-06: L1 Single-PR approve <ID> never bypasses human-gate (review.md has NO Verdict APPROVE)', () => {
+test('TC-SP-06: L1 Single-PR approve <ID> never bypasses human-gate (CI and local mode)', () => {
   const repo = setupRepo();
   try {
     fs.mkdirSync(path.join(repo, 'tests'), { recursive: true });
@@ -191,6 +203,22 @@ test('TC-SP-06: L1 Single-PR approve <ID> never bypasses human-gate (review.md h
       assert.doesNotMatch(reviewText, /##\s*Verdict\s*\n+\s*APPROVE/i);
     }
 
+    // In local mode, verify passes with human-gate reporting auto-merge DENIED
+    const localOutputs = [];
+    const origWrite = process.stdout.write;
+    process.stdout.write = (chunk) => {
+      localOutputs.push(chunk);
+      return true;
+    };
+    let localExit;
+    try {
+      localExit = runVerify('l1-human-gate', { repoRoot: repo, skipOpenspec: true, skipExternal: true, ci: false });
+    } finally {
+      process.stdout.write = origWrite;
+    }
+    assert.equal(localExit, 0);
+    assert.match(localOutputs.join(''), /auto-merge DENIED/i);
+
     // In CI mode, verify MUST fail without platform approval
     const ciExit = runVerify('l1-human-gate', { repoRoot: repo, skipOpenspec: true, skipExternal: true, ci: true });
     assert.equal(ciExit, 1, 'CI verify must fail because human lead has not approved the single PR');
@@ -199,7 +227,7 @@ test('TC-SP-06: L1 Single-PR approve <ID> never bypasses human-gate (review.md h
   }
 });
 
-test('TC-SP-07: Declared L1 but tampered history L2 does not take Single-PR branch', () => {
+test('TC-SP-07: Declared L1 but tampered history L2 is blocked by approve with LEVEL_TAMPERED', () => {
   const repo = setupRepo();
   try {
     createChange(repo, 'tamper-change', { level: 'L1', tasks: '- [x] task 1\n' });
@@ -219,11 +247,14 @@ test('TC-SP-07: Declared L1 but tampered history L2 does not take Single-PR bran
     assert.equal(topo.isSinglePr, false);
     assert.equal(topo.tampered, true);
 
-    // approve should NOT take single-pr branch; it falls through to Track A
-    mergeChange('tamper-change', { repoRoot: repo });
+    // approve MUST block with LEVEL_TAMPERED and must NOT stamp review.md or specSha
+    assert.throws(
+      () => mergeChange('tamper-change', { repoRoot: repo }),
+      (err) => err.code === 'LEVEL_TAMPERED'
+    );
     const meta = fs.readFileSync(path.join(cdir, '.openspec.yaml'), 'utf8');
-    // Track A stamped specSha
-    assert.match(meta, /specSha:/);
+    assert.doesNotMatch(meta, /specSha:/);
+    assert.equal(fs.existsSync(path.join(cdir, 'review.md')), false);
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }
@@ -243,24 +274,58 @@ test('TC-SP-08: Change with workflowMode: spec-first or --mode spec-first retain
   }
 });
 
-test('TC-SP-09: --mode auto with L0/L1 behaves consistently with single PR topology', () => {
+test('TC-SP-09: --mode auto with L0/L1 preserves auto-merge semantics while matching Single-PR topology', () => {
   const repo = setupRepo();
   try {
-    createChange(repo, 'auto-change', { level: 'L1' });
+    fs.mkdirSync(path.join(repo, 'tests'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'tests', 'demo.test.js'), '// test\n');
+    createChange(repo, 'auto-change', { level: 'L1', tasks: '# Tasks\n\n- [x] 1.1 implement (AC1) verify: tests/demo.test.js\n' });
+
     const topo = resolveTopology({ repoRoot: repo, slug: 'auto-change', cliMode: 'auto' });
     assert.equal(topo.isSinglePr, true);
     assert.equal(topo.mode, 'auto');
+
+    // Approve under --mode auto
+    mergeChange('auto-change', { repoRoot: repo, mode: 'auto' });
+
+    // Under auto mode, CI verify passes without manual --approved (auto-merge eligible)
+    const ciAuto = runVerify('auto-change', { repoRoot: repo, skipOpenspec: true, skipExternal: true, ci: true, mode: 'auto' });
+    assert.equal(ciAuto, 0);
+
+    // Under supervised mode, CI verify fails without --approved
+    const ciSup = runVerify('auto-change', { repoRoot: repo, skipOpenspec: true, skipExternal: true, ci: true, mode: 'supervised' });
+    assert.equal(ciSup, 1);
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }
 });
 
-test('TC-SP-10: Post-merge hook without changeId (mergeChange(undefined)) retains legacy behavior', () => {
+test('TC-SP-10: Post-merge hook without changeId (mergeChange(undefined)) handles real spec merge commit identically', () => {
   const repo = setupRepo();
   try {
-    // When no changeId is given and no commit touched changes dir, returns []
+    // 1. No openspec/changes/* touched -> returns []
+    assert.deepEqual(mergeChange(undefined, { repoRoot: repo }), []);
+
+    // 2. Real --no-ff spec-only merge commit on main
+    git(['checkout', '-b', 'feat/hook-spec'], repo);
+    createChange(repo, 'hook-spec', { level: 'L2', workflowMode: 'spec-first', status: 'draft' });
+    git(['add', '-A'], repo);
+    git(['commit', '-m', 'spec(hook-spec): add spec'], repo);
+    git(['checkout', 'main'], repo);
+    git(['merge', 'feat/hook-spec', '--no-ff', '-m', 'merge: spec PR'], repo);
+
     const approved = mergeChange(undefined, { repoRoot: repo });
-    assert.deepEqual(approved, []);
+    assert.deepEqual(approved, ['hook-spec']);
+
+    const cdir = path.join(repo, 'openspec', 'changes', 'hook-spec');
+    const meta = fs.readFileSync(path.join(cdir, '.openspec.yaml'), 'utf8');
+    assert.match(meta, /specSha:/);
+    assert.match(meta, /status:\s*ready_for_impl/);
+    assert.equal(fs.existsSync(path.join(cdir, 'review.md')), true);
+    const review = fs.readFileSync(path.join(cdir, 'review.md'), 'utf8');
+    assert.match(review, /## Verdict\s+APPROVE/);
+    const tags = git(['tag', '-l', 'approved/HOOK-SPEC'], repo, { allowFail: true }) || '';
+    assert.match(tags, /approved\/HOOK-SPEC/);
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }
@@ -296,5 +361,82 @@ test('TC-SP-11: status --json schema includes non-breaking fields in single-pr a
     }
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('Boundary: apply idempotent re-run does not repeat ready_for_impl log', () => {
+  const repo = setupRepo();
+  try {
+    createChange(repo, 'idem-apply', { level: 'L1', status: 'draft' });
+
+    const outputs = [];
+    const origWrite = process.stdout.write;
+    process.stdout.write = (chunk) => {
+      outputs.push(chunk);
+      return true;
+    };
+    try {
+      applyGuard('idem-apply', { repoRoot: repo });
+      const firstRun = outputs.join('');
+      assert.match(firstRun, /marked status=ready_for_impl/);
+
+      outputs.length = 0;
+      applyGuard('idem-apply', { repoRoot: repo });
+      const secondRun = outputs.join('');
+      assert.doesNotMatch(secondRun, /marked status=ready_for_impl/);
+    } finally {
+      process.stdout.write = origWrite;
+    }
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('Boundary: approve on archived Single-PR change does not regress status', () => {
+  const repo = setupRepo();
+  try {
+    createChange(repo, 'arch-change', { level: 'L1', status: 'archived' });
+    const cdir = path.join(repo, 'openspec', 'changes', 'arch-change');
+
+    const approved = mergeChange('arch-change', { repoRoot: repo });
+    assert.deepEqual(approved, ['arch-change']);
+
+    const meta = fs.readFileSync(path.join(cdir, '.openspec.yaml'), 'utf8');
+    assert.match(meta, /status:\s*['"]?archived['"]?/);
+    assert.doesNotMatch(meta, /ready_for_impl/);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('Boundary: repo with master branch (no origin/main) enforces policy floor in status and approve', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'asdlc-master-test-'));
+  try {
+    git(['init', '-b', 'master'], tmp);
+    git(['config', 'user.name', 'test'], tmp);
+    git(['config', 'user.email', 'test@test.com'], tmp);
+    fs.mkdirSync(path.join(tmp, '.sdlc'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.sdlc', 'policy.yaml'), 'workflow_mode: spec-first\n');
+    fs.mkdirSync(path.join(tmp, 'openspec', 'changes'), { recursive: true });
+    git(['add', '.'], tmp);
+    git(['commit', '-m', 'init on master'], tmp);
+
+    git(['checkout', '-b', 'feat/m1'], tmp);
+    createChange(tmp, 'm1-change', { level: 'L1', workflowMode: 'single-pr', status: 'draft' });
+    git(['add', '-A'], tmp);
+    git(['commit', '-m', 'spec(m1): add spec'], tmp);
+
+    // Policy floor spec-first on master MUST override L1 single-pr
+    const topo = resolveTopology({ repoRoot: tmp, slug: 'm1-change' });
+    assert.equal(topo.isSinglePr, false);
+    assert.equal(topo.mode, 'spec-first');
+
+    // approve MUST block because not merged into master
+    assert.throws(
+      () => mergeChange('m1-change', { repoRoot: tmp }),
+      (err) => err.code === 'SPEC_NOT_MERGED'
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
