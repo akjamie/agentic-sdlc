@@ -10,10 +10,12 @@ import {
 import { loadGlobalConfig } from '../lib/config.js';
 import { toChangeSlug, jsonOut } from '../lib/cliutil.js';
 import {
+  buildContainerCreateArgs,
   buildDockerCreateArgs,
   detectRepoLifecycle,
   lockSpecsReadOnly,
   preScanWorkspaceForSecrets,
+  resolveContainerEngine,
   runContainerPipeline,
   DEFAULT_RUNNER_IMAGE,
 } from '../lib/container.js';
@@ -593,9 +595,18 @@ export async function runPipeline(target, opts = {}) {
     log.info(dim(`You can run this stage explicitly: asdlc run ${target || slug || '<target>'} --stage ${selectedStage}`));
   }
 
-  // Container dry-run mode returns the hardened execution plan without running Docker
-  if (opts.container && opts.dryRun) {
-    const dockerArgs = buildDockerCreateArgs({
+  const isContainerRun = Boolean(opts.container || opts.engine);
+
+  // Container dry-run mode returns the hardened execution plan without running Docker / Podman
+  if (isContainerRun && opts.dryRun) {
+    let resolvedEngine = 'docker';
+    try {
+      resolvedEngine = resolveContainerEngine(opts, spawnSync);
+    } catch {
+      resolvedEngine = opts.engine || 'docker';
+    }
+    const containerArgs = buildContainerCreateArgs({
+      engine: resolvedEngine,
       image: opts.image,
       hostEnv: mergedEnv,
       caCertHostPath: opts.caCertHostPath,
@@ -615,6 +626,7 @@ export async function runPipeline(target, opts = {}) {
     const plan = sanitizeResult({
       dryRun: true,
       container: true,
+      engine: resolvedEngine,
       lifecycle: lifecycleInfo.lifecycle,
       hostRepo,
       slug,
@@ -629,17 +641,19 @@ export async function runPipeline(target, opts = {}) {
         model: harness.model,
         reviewModel: harness.reviewModel,
       },
-      dockerArgs,
+      containerArgs,
+      dockerArgs: containerArgs, // Backwards-compatible alias
     }, explicitSecrets);
     if (opts.json) jsonOut(plan);
     return plan;
   }
 
   // Full Container Execution Mode
-  if (opts.container && !opts.dryRun) {
+  if (isContainerRun && !opts.dryRun) {
     log.step(`Launching container pipeline (${opts.image || DEFAULT_RUNNER_IMAGE})...`);
     const containerResult = await runContainerPipeline(target, {
       ...opts,
+      engine: opts.engine,
       slug,
       prNumber,
       stage: selectedStage,
@@ -967,6 +981,7 @@ export function register(program) {
     .option('--ticket <id>', 'alias for --from-issue (repeatable)', collectRepeatable, [])
     .option('--issue <id>', 'alias for --from-issue (repeatable)', collectRepeatable, [])
     .option('--container', 'run in isolated hardened UID 10001:10001 container runtime')
+    .option('--engine <engine>', 'container engine to use: docker | podman (default: auto)')
     .option('--dry-run', 'print deterministic execution & security plan without executing')
     .option('--mode <mode>', 'override workflow mode: spec-first | supervised | auto')
     .option('--target-branch <branch>', 'target protected branch (defaults to repo default)')
