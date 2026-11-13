@@ -259,16 +259,25 @@ export function resolveAgentHarnessConfig({
   } else {
     const provider = globalConfig?.agent?.provider || 'anthropic';
     const baseUrl = globalConfig?.agent?.base_url || null;
+    const customHeaders = globalConfig?.agent?.custom_headers || null;
+    const providerOptions = {};
+    if (baseUrl) providerOptions.baseURL = baseUrl;
+    if (customHeaders && typeof customHeaders === 'object') providerOptions.headers = customHeaders;
     generatedConfig = {
       $schema: 'https://opencode.ai/config.json',
       provider: {
-        [provider]: baseUrl ? { options: { baseURL: baseUrl } } : {},
+        [provider]: Object.keys(providerOptions).length > 0 ? { options: providerOptions } : {},
       },
     };
   }
 
   const authorModel = cliModel || env?.ASDLC_AGENT_MODEL || globalConfig?.agent?.model || null;
   const reviewModel = cliReviewModel || env?.ASDLC_REVIEW_MODEL || globalConfig?.agent?.review_model || authorModel;
+  const providerName = globalConfig?.agent?.provider || 'anthropic';
+  const apiKey = env?.ASDLC_AGENT_API_KEY || globalConfig?.agent?.api_key || null;
+  const authPayload = apiKey
+    ? { [providerName]: { type: 'api', key: apiKey } }
+    : null;
 
   const buildRunArgs = (prompt, modelOverride = null) => {
     if (harness === 'claude') {
@@ -289,10 +298,48 @@ export function resolveAgentHarnessConfig({
     baseConfigPath,
     authPath: exists(hostAuthPath) ? hostAuthPath : null,
     generatedConfig,
+    authPayload,
+    model: authorModel,
     authorModel,
     reviewModel,
     heterogeneous: Boolean(authorModel && reviewModel && authorModel !== reviewModel),
     buildAuthorArgs: (prompt) => buildRunArgs(prompt, authorModel),
     buildReviewerArgs: (prompt) => buildRunArgs(prompt, reviewModel),
   };
+}
+
+/**
+ * Resolves explicit `env.*` variables and `runner.env_passthrough` wildcard globs
+ * (e.g. `JIRA_*,CONFLUENCE_*`) into an environment map for intake and container execution.
+ */
+export function resolvePassthroughEnv(globalConfig = {}, hostEnv = process.env) {
+  const out = {};
+  const explicitEnv = globalConfig?.env;
+  if (explicitEnv && typeof explicitEnv === 'object') {
+    for (const [k, v] of Object.entries(explicitEnv)) {
+      if (v !== undefined && v !== null && String(v).length > 0) {
+        out[k] = String(v);
+      }
+    }
+  }
+
+  const rawPatterns = globalConfig?.runner?.env_passthrough || hostEnv?.ASDLC_ENV_PASSTHROUGH || '';
+  const patterns = String(rawPatterns)
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (patterns.length > 0 && hostEnv && typeof hostEnv === 'object') {
+    for (const pattern of patterns) {
+      const regexStr = `^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`;
+      const re = new RegExp(regexStr);
+      for (const [k, v] of Object.entries(hostEnv)) {
+        if (v !== undefined && v !== null && String(v).length > 0 && re.test(k)) {
+          out[k] = String(v);
+        }
+      }
+    }
+  }
+
+  return out;
 }

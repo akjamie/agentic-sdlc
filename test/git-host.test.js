@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { assertGitRepositoryInitialized, resolveGitHostAndRepo, parseCanonicalGitUrl } from '../src/lib/githost.js';
-import { ingestIntakeSources, findChangeByIssueId, resolveIntakeSkillPath } from '../src/lib/intake.js';
+import { ingestIntakeSources, findChangeByIssueId, resolveIntakeSkillPath, parseTicketSpec, defaultIssueFetcher } from '../src/lib/intake.js';
 import { newChange } from '../src/commands/new.js';
 import { hasUnresolvedClarifications, runLint } from '../src/commands/lint.js';
 
@@ -193,6 +193,85 @@ test('Clarification lint gate: blocks [OPEN] questions and passes once settled',
     assert.equal(runLint(slug, { repoRoot: repo }), 0);
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('Multi-source real ticket fetcher & newChange intake grounding (--ticket / --file aliases)', () => {
+  // 1. parseTicketSpec classifies GitHub, Jira, Confluence, generic
+  assert.equal(parseTicketSpec('#42').provider, 'github');
+  assert.equal(parseTicketSpec('acme/demo#99').repo, 'acme/demo');
+  assert.equal(parseTicketSpec('https://github.com/acme/demo/issues/17').issueNumber, '17');
+  assert.equal(parseTicketSpec('PAY-404').provider, 'jira');
+  assert.equal(parseTicketSpec('https://jira.corp.internal/browse/PAY-404').id, 'PAY-404');
+  assert.equal(parseTicketSpec('https://confluence.corp.internal/wiki/spaces/ENG/pages/12345').provider, 'confluence');
+
+  // 2. GitHub issue fetcher via mock ghRunner
+  const ghFetched = defaultIssueFetcher('acme/demo#42', {
+    ghRunner: () => ({
+      status: 0,
+      stdout: JSON.stringify({
+        number: 42,
+        title: 'Add OAuth2 PKCE login flow',
+        body: 'Implement OAuth2 PKCE callback validation.',
+        url: 'https://github.com/acme/demo/issues/42',
+        labels: [{ name: 'security' }],
+        comments: [{ author: { login: 'lead' }, body: 'Use S256 challenge method.' }],
+      }),
+    }),
+  });
+  assert.equal(ghFetched.status, 'fetched');
+  assert.equal(ghFetched.title, 'Add OAuth2 PKCE login flow');
+  assert.match(ghFetched.content, /Use S256 challenge method/);
+
+  // 3. Jira ticket fetcher extracts summary, ADF text & linked Confluence URLs
+  const jiraFetched = defaultIssueFetcher('PAY-404', {
+    env: { JIRA_BASE_URL: 'https://jira.corp.internal', JIRA_API_TOKEN: 'tok_jira_123' },
+    httpFetcher: () => ({
+      fields: {
+        summary: 'Idempotency key enforcement for checkout API',
+        status: { name: 'In Progress' },
+        description: 'See architecture notes: https://confluence.corp.internal/wiki/spaces/PAY/pages/888',
+      },
+    }),
+  });
+  assert.equal(jiraFetched.status, 'fetched');
+  assert.equal(jiraFetched.provider, 'jira');
+  assert.deepEqual(jiraFetched.linkedUrls, ['https://confluence.corp.internal/wiki/spaces/PAY/pages/888']);
+
+  // 4. Offline Jira gracefully marks deferred_to_skill without throwing
+  const offlineJira = defaultIssueFetcher('PAY-405', { env: {} });
+  assert.equal(offlineJira.status, 'deferred_to_skill');
+  assert.match(offlineJira.content, /asdlc-intake/);
+
+  // 5. newChange accepts --ticket and --file aliases and grounds explore.md + clarifications.md
+  const repo = initCommittedRepo();
+  const prdDir = mkTmp('asdlc-prd-dir-');
+  try {
+    const prdFile = path.join(prdDir, 'checkout-prd.md');
+    fs.writeFileSync(prdFile, '# Checkout Idempotency PRD\nEvery POST /payments request requires Idempotency-Key.\n');
+    const slug = newChange(null, {
+      repoRoot: repo,
+      openspec: false,
+      grill: false,
+      ticket: ['PAY-404'],
+      file: [prdFile],
+      issueFetcher: (id) => ({
+        provider: 'jira',
+        status: 'fetched',
+        title: `${id}: Idempotency checkout API`,
+        content: 'Enforce 24h idempotency cache window.',
+      }),
+    });
+    const cdir = path.join(repo, 'openspec', 'changes', slug);
+    const explore = fs.readFileSync(path.join(cdir, 'explore.md'), 'utf8');
+    const clar = fs.readFileSync(path.join(cdir, 'clarifications.md'), 'utf8');
+    assert.match(explore, /Intake Sources/);
+    assert.match(explore, /PAY-404/);
+    assert.match(explore, /Checkout Idempotency PRD/);
+    assert.match(clar, /Idempotency checkout API/);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+    fs.rmSync(prdDir, { recursive: true, force: true });
   }
 });
 

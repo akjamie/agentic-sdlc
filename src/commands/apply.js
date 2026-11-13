@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { exists, readText, writeText } from '../lib/fs.js';
 import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
@@ -8,6 +9,7 @@ import { log } from '../lib/log.js';
 import { isSinglePrLevel, readEffectiveLevel } from '../lib/level.js';
 import { resolveWorkflowMode } from '../lib/config.js';
 import { assess } from '../assess/index.js';
+import { triagePullRequest } from '../lib/triage.js';
 
 // Guard before implementing: the spec must be APPROVED on the target branch
 // (i.e. the Spec PR has been merged into targetBranch, locking proposal.md & specs/**).
@@ -183,6 +185,32 @@ export function applyGuard(changeId, opts = {}) {
   const isAutoPr = opts.autoPr === true || (opts.autoPr === undefined && meta.autoPr === 'true');
   const shaDisplay = approvedSha ? ` (specSha: ${approvedSha.slice(0, 8)}, state: ready_for_impl)` : ` (state: ready_for_impl)`;
   log.ok(`${slug} is READY FOR IMPLEMENTATION on ${branch}${shaDisplay}`);
+
+  if (opts.fromPr) {
+    const prRef = String(opts.fromPr).replace(/^#/, '');
+    let prCtx = opts.prContext || null;
+    if (!prCtx) {
+      const gh = spawnSync('gh', ['pr', 'view', prRef, '--json', 'comments,reviews,reviewDecision'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        timeout: 8000,
+      });
+      if (gh.status === 0 && gh.stdout) {
+        try {
+          const parsed = JSON.parse(gh.stdout);
+          prCtx = {
+            issueComments: parsed.comments || [],
+            reviewDecision: parsed.reviewDecision || null,
+          };
+        } catch {
+          prCtx = {};
+        }
+      }
+    }
+    const triage = triagePullRequest(prCtx || {});
+    log.info(`[PR #${prRef}] Triaged review feedback: ${triage.actionableThreads.length} actionable, ${triage.questionThreads.length} question(s), ${triage.suggestionThreads.length} suggestion(s). Run \`asdlc fix #${prRef}\` for thread-by-thread resolution.`);
+  }
+
   if (isAutoPr) {
     log.info(`Auto-PR delegation: ENABLED (agent is authorized to open Implementation PR once tasks & verify pass).`);
   } else {
@@ -198,6 +226,7 @@ export function register(program) {
     .description('guard before implementing: the spec must be approved on the protected branch')
     .option('--protected-branch <ref>', 'branch the approved spec must be merged into', 'origin/main')
     .option('--target-branch <ref>', 'target branch to merge into')
+    .option('--from-pr <pr>', 'ingest & triage PR review comments before implementing')
     .option('--mode <mode>', 'workflow mode: supervised (default) | spec-first | auto')
     .option('--auto-pr', 'explicitly delegate authority to automatically open Implementation PR after verification passes')
     .option('--no-auto-pr', 'disable automatic Implementation PR creation (default)')

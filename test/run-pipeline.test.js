@@ -10,6 +10,8 @@ import {
   detectRepoLifecycle,
   lockSpecsReadOnly,
   preScanWorkspaceForSecrets,
+  stageWorkspaceToContainer,
+  syncContainerEgressToHost,
   unlockSpecsWritable,
 } from '../src/lib/container.js';
 import {
@@ -22,6 +24,9 @@ import {
 } from '../src/commands/run.js';
 import { newChange } from '../src/commands/new.js';
 import { mergeChange } from '../src/commands/approve.js';
+import { checkTestWeakening } from '../src/commands/verify.js';
+import { discoverRepoStack, initRepo } from '../src/commands/init.js';
+import { upgradeRunnerImage, resolveRunnerImageTag } from '../src/commands/upgrade.js';
 
 function mkTmp(prefix = 'asdlc-run-') {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -366,6 +371,177 @@ test('runPipeline: Draft PR clarification pause/resume, spec-first applyGuard, 0
     if (cdir) {
       unlockSpecsWritable(cdir);
     }
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('Container 3-layer ingestion, egress sync, SSH Patterns A/B/C, init --onboard & upgrade image sync', () => {
+  // 1. SSH Patterns A & B/C in buildDockerCreateArgs
+  const sshKeyArgs = buildDockerCreateArgs({
+    sshKeyPath: '/home/dev/.ssh/id_ed25519',
+  });
+  assert.ok(sshKeyArgs.some((a) => a.startsWith('GIT_SSH_COMMAND=') && a.includes('/dev/shm/.ssh/id_ed25519') && a.includes('StrictHostKeyChecking=accept-new')));
+
+  const macAgentArgs = buildDockerCreateArgs({
+    platform: 'darwin',
+    sshAgent: true,
+  });
+  assert.ok(macAgentArgs.includes('/run/host-services/ssh-auth.sock:/run/host-services/ssh-auth.sock:ro'));
+  assert.ok(macAgentArgs.includes('SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock'));
+
+  // 2. 3-layer dirty tree ingestion + /dev/shm streaming + egress sync
+  const repo = mkTmp('asdlc-stage-');
+  const fakeHome = mkTmp('asdlc-skills-home-');
+  const extFile = path.join(fakeHome, 'prd.md');
+  try {
+    initGitRepo(repo, { withOpenspec: true });
+    fs.writeFileSync(path.join(repo, 'README.md'), '# modified tracked\n');
+    fs.writeFileSync(path.join(repo, 'untracked.txt'), 'hello\n');
+    fs.writeFileSync(extFile, '# External PRD\n');
+    fs.mkdirSync(path.join(fakeHome, '.asdlc', 'skills', 'jira-custom'), { recursive: true });
+    fs.writeFileSync(path.join(fakeHome, '.asdlc', 'skills', 'jira-custom', 'SKILL.md'), '# Jira\n');
+
+    const calls = [];
+    const mockExec = (cmd, args) => {
+      calls.push([cmd, ...args]);
+      if (cmd === 'git' && args[0] === 'archive') return { status: 0, stdout: Buffer.from('tar') };
+      if (cmd === 'git' && args[0] === 'diff') return { status: 0, stdout: 'diff --git a/README.md b/README.md\n+modified' };
+      if (cmd === 'git' && args[0] === 'ls-files') return { status: 0, stdout: 'untracked.txt\n' };
+      return { status: 0, stdout: '' };
+    };
+
+    const stageRes = stageWorkspaceToContainer(repo, 'cid-123456', {
+      execFn: mockExec,
+      homeDir: fakeHome,
+      fromFiles: [extFile],
+      sshKeyContent: '-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----',
+      harness: {
+        generatedConfig: { $schema: 'https://opencode.ai/config.json' },
+        authPayload: { anthropic: { type: 'api', key: 'sk-test-1' } },
+      },
+    });
+    assert.ok(stageRes.layers.includes('git-archive-head'));
+    assert.ok(stageRes.layers.includes('git-diff-head'));
+    assert.ok(stageRes.layers.includes('untracked-files:1'));
+    assert.equal(stageRes.externalFiles, 1);
+    assert.equal(stageRes.customSkillsInjected, true);
+    assert.deepEqual(stageRes.shmCredentials, [
+      '/dev/shm/opencode/opencode.json',
+      '/dev/shm/opencode/auth.json',
+      '/dev/shm/.ssh/id_ed25519',
+    ]);
+
+    const egressEst = syncContainerEgressToHost(repo, 'cid-123456', 'established', {
+      execFn: mockExec,
+      branch: 'impl/demo',
+      targetRef: 'impl/demo',
+    });
+    assert.equal(egressEst.strategy, 'git-bundle-fetch');
+    assert.ok(calls.some((c) => c[0] === 'docker' && c.includes('bundle') && c.includes('create')));
+    assert.ok(calls.some((c) => c[0] === 'git' && c[1] === 'fetch'));
+
+    // 3. initRepo --headless --onboard stack discovery
+    const greenDir = mkTmp('asdlc-onboard-');
+    try {
+      fs.writeFileSync(path.join(greenDir, 'package.json'), JSON.stringify({
+        name: 'demo-app',
+        scripts: { test: 'node --test', lint: 'eslint .' },
+      }));
+      const stack = discoverRepoStack(greenDir);
+      assert.ok(stack.languages.includes('javascript/node'));
+      assert.equal(stack.testCommand, 'npm test');
+
+      initRepo({ repoRoot: greenDir, headless: true, onboard: true, openspec: false, graph: false });
+      assert.ok(fs.existsSync(path.join(greenDir, '.git')));
+      assert.match(fs.readFileSync(path.join(greenDir, 'openspec', 'config.yaml'), 'utf8'), /test_command: "npm test"/);
+      assert.match(fs.readFileSync(path.join(greenDir, 'AGENTS.md'), 'utf8'), /Test command: `npm test`/);
+    } finally {
+      fs.rmSync(greenDir, { recursive: true, force: true });
+    }
+
+    // 4. upgradeRunnerImage aligns image tag & invokes docker pull
+    const tag = resolveRunnerImageTag();
+    assert.match(tag, /^ghcr\.io\/akjamie\/asdlc-runner:/);
+    const pulled = [];
+    const upgRes = upgradeRunnerImage({
+      image: 'ghcr.io/akjamie/asdlc-runner:2.0.0-alpha.1',
+      execFn: (cmd, args) => {
+        pulled.push([cmd, ...args]);
+        return { status: 0 };
+      },
+    });
+    assert.equal(upgRes.pulled, true);
+    assert.deepEqual(pulled, [['docker', 'pull', 'ghcr.io/akjamie/asdlc-runner:2.0.0-alpha.1']]);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
+test('Human-centric runPipeline resolution (branch auto-detect, PR label, multi-change guard, pauseBanner) & anti-test-weakening', async () => {
+  // 1. checkTestWeakening flags deleted tests and newly introduced .skip(...)
+  const deleted = checkTestWeakening(process.cwd(), 'main', 'HEAD', [], {
+    nameStatusText: 'D\ttest/important.test.js\nM\tsrc/app.js\n',
+    diffText: '',
+  });
+  assert.equal(deleted.ok, false);
+  assert.match(deleted.detail, /deleted test file: test\/important\.test\.js/);
+
+  const skipped = checkTestWeakening(process.cwd(), 'main', 'HEAD', ['test/app.test.js'], {
+    nameStatusText: 'M\ttest/app.test.js\n',
+    diffText: '+++ b/test/app.test.js\n+  test.skip("flaky check", () => {});\n',
+  });
+  assert.equal(skipped.ok, false);
+  assert.match(skipped.detail, /\.skip\(/);
+
+  const cleanWeak = checkTestWeakening(process.cwd(), 'main', 'HEAD', ['test/app.test.js'], {
+    nameStatusText: 'M\ttest/app.test.js\n',
+    diffText: '+++ b/test/app.test.js\n+  test("real check", () => { assert.ok(true); });\n',
+  });
+  assert.equal(cleanWeak.ok, true);
+
+  // 2. Multi-change disambiguation vs active branch auto-detection & pauseBanner
+  const repo = mkTmp('asdlc-branch-');
+  try {
+    initGitRepo(repo, { withOpenspec: true });
+    newChange('first task', { repoRoot: repo, id: 'alpha-change', grill: false, openspec: false });
+    newChange('second task', { repoRoot: repo, id: 'beta-change', grill: false, openspec: false });
+
+    // On main with 2 active changes -> throws MULTIPLE_ACTIVE_CHANGES
+    await assert.rejects(
+      () => runPipeline(null, { repoRoot: repo, stage: 'spec', skipPr: true }),
+      (e) => e.code === 'MULTIPLE_ACTIVE_CHANGES'
+    );
+
+    // Switch to branch `spec/beta-change` -> auto-detects `beta-change` even with 2 active changes
+    execFileSync('git', ['checkout', '-qb', 'spec/beta-change'], { cwd: repo });
+    const cdirBeta = path.join(repo, 'openspec', 'changes', 'beta-change');
+    fs.writeFileSync(path.join(cdirBeta, 'clarifications.md'), '## Open questions\n- [OPEN] Choose backoff strategy?\n');
+    const pausedRes = await runPipeline(null, {
+      repoRoot: repo,
+      stage: 'spec',
+      createDraftPr: async () => ({ number: 77 }),
+    });
+    assert.equal(pausedRes.slug, 'beta-change');
+    assert.equal(pausedRes.paused, true);
+    assert.match(pausedRes.pauseBanner, /Paused: Awaiting human replies on Draft Spec PR #77/);
+    assert.match(pausedRes.pauseBanner, /asdlc run #77/);
+
+    // PR number resolution via label `asdlc:change-id: alpha-change`
+    const prDry = await runPipeline('#88', {
+      repoRoot: repo,
+      container: true,
+      dryRun: true,
+      prMetadataResolver: async () => ({
+        number: 88,
+        title: 'Some generic PR title',
+        headRefName: 'topic/misc',
+        labels: [{ name: 'asdlc:change-id: alpha-change' }, { name: 'asdlc:spec-review' }],
+        state: 'OPEN',
+      }),
+    });
+    assert.equal(prDry.slug, 'alpha-change');
+  } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }
 });
