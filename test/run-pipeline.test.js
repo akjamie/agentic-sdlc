@@ -7,11 +7,16 @@ import { execFileSync } from 'node:child_process';
 import {
   CONTAINER_SECURITY_BASELINE,
   DEFAULT_RUNNER_IMAGE,
+  SUPPORTED_CONTAINER_ENGINES,
+  buildContainerCreateArgs,
   buildDockerCreateArgs,
+  checkContainerEngineHealth,
   detectRepoLifecycle,
+  isEngineAvailable,
   lockContainerSpecsRootReadOnly,
   lockSpecsReadOnly,
   preScanWorkspaceForSecrets,
+  resolveContainerEngine,
   runContainerPipeline,
   stageWorkspaceToContainer,
   syncContainerEgressToHost,
@@ -559,16 +564,16 @@ test('runContainerPipeline & lockContainerSpecsRootReadOnly: validates docker pr
     initGitRepo(repo, { withOpenspec: true });
     newChange('container execution test', { repoRoot: repo, id: 'cont-change', grill: false, openspec: false });
 
-    // 1. Docker preflight failure throws ASDLC_ERR_DOCKER_NOT_AVAILABLE
+    // 1. Container engine preflight failure throws ASDLC_ERR_ENGINE_NOT_AVAILABLE
     await assert.rejects(
       () => runContainerPipeline('cont-change', {
         repoRoot: repo,
         execFn: (cmd, args) => {
-          if (cmd === 'docker' && args[0] === '--version') return { status: 1, stderr: 'docker: command not found' };
+          if (cmd === 'docker' || cmd === 'podman') return { status: 1, stderr: `${cmd}: command not found` };
           return { status: 0 };
         },
       }),
-      (err) => err.code === 'ASDLC_ERR_DOCKER_NOT_AVAILABLE'
+      (err) => err.code === 'ASDLC_ERR_ENGINE_NOT_AVAILABLE' || err.code === 'ASDLC_ERR_DOCKER_NOT_AVAILABLE'
     );
 
     // 2. lockContainerSpecsRootReadOnly executes docker exec -u 0:0 chown and chmod
@@ -606,7 +611,7 @@ test('runContainerPipeline & lockContainerSpecsRootReadOnly: validates docker pr
 
     assert.equal(runRes.containerId, 'cid-mock-99999');
     assert.equal(runRes.exitCode, 0);
-    assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === '--version'));
+    assert.ok(containerCalls.some((c) => c[0] === 'docker' && (c[1] === '--version' || c[1] === 'info')));
     assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === 'create'));
     assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === 'start' && c[2] === 'cid-mock-99999'));
     assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === 'exec' && c.includes('0:0')));
@@ -879,6 +884,136 @@ test('Product integrity: autonomous mode fails fast without agents and fix stage
 
     assert.equal(fixResWithCommit.unresolvedQuestions, 1, 'Category C question remained open');
     assert.equal(fixResWithCommit.resolvedThreads.length, 1, 'Only Category A actionable thread was resolved');
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('Container Engine Abstraction: resolveContainerEngine, Podman execution, and health reporting', async () => {
+  assert.deepEqual(SUPPORTED_CONTAINER_ENGINES, ['docker', 'podman']);
+
+  // 1. Explicit CLI selection
+  const dockerExplicit = resolveContainerEngine({ engine: 'docker' }, (cmd) => ({ status: 0 }));
+  assert.equal(dockerExplicit, 'docker');
+
+  const podmanExplicit = resolveContainerEngine({ engine: 'podman' }, (cmd) => ({ status: 0 }));
+  assert.equal(podmanExplicit, 'podman');
+
+  // 2. Reject unsupported engines with ASDLC_ERR_INVALID_ENGINE
+  assert.throws(
+    () => resolveContainerEngine({ engine: 'nerdctl' }),
+    (err) => err.code === 'ASDLC_ERR_INVALID_ENGINE' && err.message.includes('nerdctl')
+  );
+  assert.throws(
+    () => resolveContainerEngine({ engine: 'kubernetes' }),
+    (err) => err.code === 'ASDLC_ERR_INVALID_ENGINE'
+  );
+
+  // 3. Fallback / auto detection order: probes docker first, then podman
+  const probeCalls = [];
+  const autoResolved = resolveContainerEngine({}, (cmd, args) => {
+    probeCalls.push(cmd);
+    if (cmd === 'docker') return { status: 1 }; // docker not available
+    if (cmd === 'podman') return { status: 0 }; // podman available
+    return { status: 1 };
+  });
+  assert.equal(autoResolved, 'podman');
+  assert.ok(probeCalls.includes('docker') && probeCalls.includes('podman'));
+
+  // 4. When neither is available, fails closed with ASDLC_ERR_ENGINE_NOT_AVAILABLE
+  assert.throws(
+    () => resolveContainerEngine({}, () => ({ status: 1 })),
+    (err) => err.code === 'ASDLC_ERR_ENGINE_NOT_AVAILABLE'
+  );
+
+  // 5. buildContainerCreateArgs differences: SELinux mount options on Podman vs Docker
+  const podmanLinuxArgs = buildContainerCreateArgs({
+    engine: 'podman',
+    platform: 'linux',
+    sshAuthSock: '/tmp/ssh.sock',
+  });
+  assert.ok(podmanLinuxArgs.some((a) => a === '/tmp/ssh.sock:/run/ssh-agent.sock:ro,z'));
+
+  const dockerMacArgs = buildContainerCreateArgs({
+    engine: 'docker',
+    platform: 'darwin',
+    sshAgent: true,
+  });
+  assert.ok(dockerMacArgs.some((a) => a.includes('/run/host-services/ssh-auth.sock')));
+
+  // 6. Doctor health checks
+  const healthPass = checkContainerEngineHealth((cmd, args) => {
+    if (cmd === 'podman' && args[0] === '--version') return { status: 0, stdout: 'podman version 5.0.0' };
+    if (cmd === 'podman' && args[0] === 'info') return { status: 0 };
+    return { status: 1 };
+  });
+  assert.equal(healthPass.status, 'pass');
+  assert.ok(healthPass.detail.includes('podman'));
+
+  const healthWarn = checkContainerEngineHealth((cmd, args) => {
+    if (cmd === 'docker' && args[0] === '--version') return { status: 0, stdout: 'Docker version 27.1.0' };
+    if (cmd === 'docker' && args[0] === 'info') return { status: 1 }; // daemon down
+    return { status: 1 };
+  });
+  assert.equal(healthWarn.status, 'warn');
+  assert.ok(healthWarn.detail.includes('daemon/machine unreachable'));
+});
+
+test('Podman lifecycle execution: obeys create -> start -> exec -> egress -> rm using podman CLI', async () => {
+  const repo = mkTmp('asdlc-podman-test-');
+  try {
+    initGitRepo(repo, { withOpenspec: true });
+    newChange('podman test change', { repoRoot: repo, id: 'podman-change', grill: false, openspec: false });
+
+    const podmanCalls = [];
+    let containerState = 'none';
+
+    const stubPodmanExec = (cmd, args, opts = {}) => {
+      podmanCalls.push([cmd, ...args]);
+      if (cmd === 'podman') {
+        const sub = args[0];
+        if (sub === 'info' || sub === '--version') return { status: 0, stdout: 'podman version 5.0.0' };
+        if (sub === 'create') {
+          containerState = 'created';
+          return { status: 0, stdout: 'podman-cid-777\n' };
+        }
+        if (sub === 'start') {
+          assert.equal(containerState, 'created', 'podman start must be called on created container');
+          containerState = 'running';
+          return { status: 0 };
+        }
+        if (sub === 'exec') {
+          assert.equal(containerState, 'running', 'podman exec is strictly forbidden on non-running container');
+          return { status: 0, stdout: 'success' };
+        }
+        if (sub === 'cp') {
+          return { status: 0 };
+        }
+        if (sub === 'rm') {
+          containerState = 'removed';
+          return { status: 0 };
+        }
+      }
+      if (cmd === 'git') return { status: 0, stdout: '' };
+      return { status: 0 };
+    };
+
+    const res = await runContainerPipeline('podman-change', {
+      engine: 'podman',
+      repoRoot: repo,
+      stage: 'apply',
+      slug: 'podman-change',
+      execFn: stubPodmanExec,
+    });
+
+    assert.equal(res.engine, 'podman');
+    assert.equal(res.exitCode, 0);
+    assert.equal(containerState, 'removed');
+    assert.ok(podmanCalls.every((c) => c[0] === 'podman' || c[0] === 'git'));
+    assert.ok(podmanCalls.some((c) => c[0] === 'podman' && c[1] === 'create'));
+    assert.ok(podmanCalls.some((c) => c[0] === 'podman' && c[1] === 'start'));
+    assert.ok(podmanCalls.some((c) => c[0] === 'podman' && c[1] === 'exec'));
+    assert.ok(podmanCalls.some((c) => c[0] === 'podman' && c[1] === 'rm'));
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }

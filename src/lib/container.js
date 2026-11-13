@@ -8,6 +8,7 @@ import { git } from './git.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
 export const DEFAULT_RUNNER_IMAGE = `ghcr.io/akjamie/asdlc-runner:${pkg.version}`;
+export const SUPPORTED_CONTAINER_ENGINES = Object.freeze(['docker', 'podman']);
 
 /**
  * Container security baseline enforced internally on every sandbox launch.
@@ -59,16 +60,119 @@ export function collectCorporateProxyEnv(hostEnv = process.env) {
 }
 
 /**
- * Build hardened `docker create` argument vector enforcing non-root UID 10001:10001,
+ * Probes whether a container engine CLI & daemon/machine is available.
+ * Probes with `<engine> info` (or `--version` fallback) to verify daemon connectivity.
+ *
+ * @param {string} engine
+ * @param {Function} [execFn]
+ * @returns {boolean}
+ */
+export function isEngineAvailable(engine, execFn = defaultExec) {
+  if (!engine) return false;
+  try {
+    const res = execFn(engine, ['info'], { stdio: 'ignore', timeout: 5000 });
+    if (res && res.status === 0) return true;
+  } catch {
+    // continue
+  }
+  try {
+    const res = execFn(engine, ['--version'], { stdio: 'ignore', timeout: 5000 });
+    return Boolean(res && res.status === 0);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolves the container engine according to precedence:
+ * 1. Explicit CLI option `opts.engine`
+ * 2. Environment variable `ASDLC_CONTAINER_ENGINE`
+ * 3. Global config `runner.engine`
+ * 4. Automatic probe order: `docker`, then `podman`
+ *
+ * @param {object} [opts]
+ * @param {Function} [execFn]
+ * @returns {'docker'|'podman'}
+ */
+export function resolveContainerEngine(opts = {}, execFn = defaultExec) {
+  const explicit = opts.engine || opts.hostEnv?.ASDLC_CONTAINER_ENGINE || process.env?.ASDLC_CONTAINER_ENGINE || opts.config?.runner?.engine;
+  if (explicit && explicit !== 'auto') {
+    const norm = String(explicit).toLowerCase().trim();
+    if (!SUPPORTED_CONTAINER_ENGINES.includes(norm)) {
+      throw new AsdlcError(
+        `Unsupported container engine '${explicit}'. Supported engines: ${SUPPORTED_CONTAINER_ENGINES.join(', ')}.`,
+        {
+          code: 'ASDLC_ERR_INVALID_ENGINE',
+          hint: `Specify --engine docker or --engine podman, or unset to allow auto-detection.`,
+        }
+      );
+    }
+    if (!isEngineAvailable(norm, execFn)) {
+      throw new AsdlcError(
+        `Container engine '${norm}' is not available or its daemon is not running.`,
+        {
+          code: 'ASDLC_ERR_ENGINE_NOT_AVAILABLE',
+          hint: `Ensure '${norm}' is installed, in your PATH, and its service/machine is running.`,
+        }
+      );
+    }
+    return norm;
+  }
+
+  // Automatic probe order: docker first, then podman
+  for (const candidate of SUPPORTED_CONTAINER_ENGINES) {
+    if (isEngineAvailable(candidate, execFn)) {
+      return candidate;
+    }
+  }
+
+  throw new AsdlcError(
+    'No supported container engine found (probed docker, podman). Please start Docker/Podman or run without --container.',
+    {
+      code: 'ASDLC_ERR_ENGINE_NOT_AVAILABLE',
+      hint: 'Install Docker or Podman, ensure the service/machine is running, or execute without the --container flag.',
+    }
+  );
+}
+
+/**
+ * Health check helper for `asdlc doctor`.
+ * Reports active engine, version, or warn if neither is available.
+ *
+ * @param {Function} [execFn]
+ * @returns {{ status: 'pass'|'warn', detail: string, engine?: string }}
+ */
+export function checkContainerEngineHealth(execFn = defaultExec) {
+  for (const candidate of SUPPORTED_CONTAINER_ENGINES) {
+    try {
+      const verRes = execFn(candidate, ['--version'], { stdio: 'pipe', encoding: 'utf8', timeout: 5000 });
+      if (verRes && verRes.status === 0) {
+        const verText = String(verRes.stdout || '').trim().split('\n')[0];
+        const infoRes = execFn(candidate, ['info'], { stdio: 'ignore', timeout: 5000 });
+        if (infoRes && infoRes.status === 0) {
+          return { status: 'pass', detail: `${candidate} (${verText})`, engine: candidate };
+        }
+        return { status: 'warn', detail: `${candidate} installed (${verText}) but daemon/machine unreachable`, engine: candidate };
+      }
+    } catch {
+      // continue
+    }
+  }
+  return { status: 'warn', detail: 'neither docker nor podman detected (optional, required only for --container)' };
+}
+
+/**
+ * Build hardened OCI `create` argument vector enforcing non-root UID 10001:10001,
  * dropped capabilities, PIDs cap, dubious-ownership immunity, and enterprise proxy/CA passthrough.
  *
  * @param {object} [opts]
  * @returns {string[]}
  */
-export function buildDockerCreateArgs(opts = {}) {
+export function buildContainerCreateArgs(opts = {}) {
   const image = opts.image || DEFAULT_RUNNER_IMAGE;
   const workdir = opts.workdir || CONTAINER_SECURITY_BASELINE.safeDirectory;
   const hostEnv = opts.hostEnv || process.env;
+  const engine = opts.engine || 'docker';
   const args = [
     'create',
     '--user',
@@ -104,13 +208,14 @@ export function buildDockerCreateArgs(opts = {}) {
   // SSH Patterns A, B, and C (Agent forwarding, /dev/shm deploy key, Known Hosts handling)
   const platform = opts.platform || process.platform;
   if (opts.sshAuthSock || opts.sshAgent) {
-    const isDockerDesktop = platform === 'darwin' || platform === 'win32';
+    const isDockerDesktop = engine === 'docker' && (platform === 'darwin' || platform === 'win32');
     const hostSock = opts.sshAuthSock || (isDockerDesktop ? '/run/host-services/ssh-auth.sock' : hostEnv?.SSH_AUTH_SOCK);
     const containerSock = hostSock === '/run/host-services/ssh-auth.sock'
       ? '/run/host-services/ssh-auth.sock'
       : '/run/ssh-agent.sock';
     if (hostSock) {
-      args.push('-v', `${hostSock}:${containerSock}:ro`);
+      const mountOpt = (engine === 'podman' && platform === 'linux') ? ':ro,z' : ':ro';
+      args.push('-v', `${hostSock}:${containerSock}${mountOpt}`);
       injectedEnv.SSH_AUTH_SOCK = containerSock;
     }
     if (!injectedEnv.GIT_SSH_COMMAND) {
@@ -123,7 +228,7 @@ export function buildDockerCreateArgs(opts = {}) {
   }
 
   for (const [k, v] of Object.entries(injectedEnv)) {
-    if (isSensitiveEnvKey(k)) continue; // §3.3: Never leak secrets via docker inspect / -e flags
+    if (isSensitiveEnvKey(k)) continue; // §3.3: Never leak secrets via inspect / -e flags
     if (v !== undefined && v !== null && String(v).length > 0) {
       args.push('-e', `${k}=${v}`);
     }
@@ -135,6 +240,8 @@ export function buildDockerCreateArgs(opts = {}) {
   }
   return args;
 }
+
+export const buildDockerCreateArgs = buildContainerCreateArgs;
 
 /**
  * Detect Tri-State Repository Lifecycle (`greenfield`, `brownfield`, `established`).
@@ -300,6 +407,7 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
   const targetDir = path.resolve(repoDir || process.cwd());
   const lifecycle = opts.lifecycle || detectRepoLifecycle(targetDir).lifecycle;
   const homeDir = opts.homeDir || os.homedir();
+  const engine = opts.engine || 'docker';
   const staged = {
     lifecycle,
     containerId,
@@ -310,7 +418,7 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
   };
 
   if (lifecycle === 'greenfield') {
-    const res = execFn('docker', ['exec', containerId, 'sh', '-c', 'mkdir -p /workspace'], { cwd: targetDir });
+    const res = execFn(engine, ['exec', containerId, 'sh', '-c', 'mkdir -p /workspace'], { cwd: targetDir });
     if (res && res.status !== 0 && !opts.ignoreErrors) {
       throw new AsdlcError(`Failed to initialize /workspace in greenfield container: ${res.stderr || res.status}`, {
         code: 'ASDLC_ERR_CONTAINER_STAGE',
@@ -323,7 +431,7 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
     if (hasHead) {
       const archive = execFn('git', ['archive', '--format=tar', 'HEAD'], { cwd: targetDir, encoding: null });
       if (archive && archive.status === 0 && archive.stdout) {
-        const cp = execFn('docker', ['cp', '-', `${containerId}:/workspace`], { input: archive.stdout, encoding: null });
+        const cp = execFn(engine, ['cp', '-', `${containerId}:/workspace`], { input: archive.stdout, encoding: null });
         if (cp && cp.status !== 0 && !opts.ignoreErrors) {
           throw new AsdlcError(`Failed to stream git archive into container: ${cp.stderr || cp.status}`, {
             code: 'ASDLC_ERR_CONTAINER_STAGE',
@@ -336,7 +444,7 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
     // Layer 2: Uncommitted tracked changes (`git diff --binary HEAD`)
     const diffRes = execFn('git', ['diff', '--binary', 'HEAD'], { cwd: targetDir, timeout: 60000 });
     if (diffRes && diffRes.status === 0 && diffRes.stdout && String(diffRes.stdout).trim().length > 0) {
-      const applyRes = execFn('docker', ['exec', '-i', containerId, 'git', 'apply', '--allow-empty', '-'], {
+      const applyRes = execFn(engine, ['exec', '-i', containerId, 'git', 'apply', '--allow-empty', '-'], {
         input: String(diffRes.stdout),
         timeout: 60000,
       });
@@ -359,8 +467,8 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
         const abs = path.join(targetDir, rel);
         if (!fs.existsSync(abs)) continue;
         const containerDestDir = path.posix.dirname(`/workspace/${rel.replace(/\\/g, '/')}`);
-        execFn('docker', ['exec', containerId, 'mkdir', '-p', containerDestDir], { timeout: 15000 });
-        const cpRes = execFn('docker', ['cp', abs, `${containerId}:/workspace/${rel.replace(/\\/g, '/')}`], { timeout: 30000 });
+        execFn(engine, ['exec', containerId, 'mkdir', '-p', containerDestDir], { timeout: 15000 });
+        const cpRes = execFn(engine, ['cp', abs, `${containerId}:/workspace/${rel.replace(/\\/g, '/')}`], { timeout: 30000 });
         if (cpRes && cpRes.status !== 0 && !opts.ignoreErrors) {
           throw new AsdlcError(`Failed to copy untracked file '${rel}' into container: ${cpRes.stderr || cpRes.status}`, {
             code: 'ASDLC_ERR_CONTAINER_STAGE',
@@ -371,17 +479,17 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
     }
 
     // Ensure non-root agent user (UID 10001:10001) owns the staged workspace
-    execFn('docker', ['exec', containerId, 'chown', '-R', '10001:10001', '/workspace'], { timeout: 60000 });
+    execFn(engine, ['exec', containerId, 'chown', '-R', '10001:10001', '/workspace'], { timeout: 60000 });
   }
 
   // External --from-file attachments
   const fromFiles = Array.isArray(opts.fromFiles) ? opts.fromFiles.filter(Boolean) : [];
   if (fromFiles.length > 0) {
-    execFn('docker', ['exec', containerId, 'mkdir', '-p', '/workspace/.asdlc-intake/files'], { timeout: 15000 });
+    execFn(engine, ['exec', containerId, 'mkdir', '-p', '/workspace/.asdlc-intake/files'], { timeout: 15000 });
     for (const f of fromFiles) {
       const abs = path.isAbsolute(f) ? f : path.resolve(targetDir, f);
       if (fs.existsSync(abs)) {
-        const cpRes = execFn('docker', ['cp', abs, `${containerId}:/workspace/.asdlc-intake/files/${path.basename(abs)}`], { timeout: 30000 });
+        const cpRes = execFn(engine, ['cp', abs, `${containerId}:/workspace/.asdlc-intake/files/${path.basename(abs)}`], { timeout: 30000 });
         if (cpRes && cpRes.status !== 0 && !opts.ignoreErrors) {
           throw new AsdlcError(`Failed to copy intake file '${f}' into container: ${cpRes.stderr || cpRes.status}`, {
             code: 'ASDLC_ERR_CONTAINER_STAGE',
@@ -395,8 +503,8 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
   // Tier 1 enterprise custom skills (~/.asdlc/skills/)
   const customSkillsDir = path.join(homeDir, '.asdlc', 'skills');
   if (fs.existsSync(customSkillsDir)) {
-    execFn('docker', ['exec', containerId, 'mkdir', '-p', '/workspace/.asdlc'], { timeout: 15000 });
-    const cpRes = execFn('docker', ['cp', customSkillsDir, `${containerId}:/workspace/.asdlc/skills`], { timeout: 30000 });
+    execFn(engine, ['exec', containerId, 'mkdir', '-p', '/workspace/.asdlc'], { timeout: 15000 });
+    const cpRes = execFn(engine, ['cp', customSkillsDir, `${containerId}:/workspace/.asdlc/skills`], { timeout: 30000 });
     if (cpRes && cpRes.status !== 0 && !opts.ignoreErrors) {
       throw new AsdlcError(`Failed to copy custom skills into container: ${cpRes.stderr || cpRes.status}`, {
         code: 'ASDLC_ERR_CONTAINER_STAGE',
@@ -408,7 +516,7 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
   // Stream volatile AI auth & SSH keys directly into container tmpfs (/dev/shm) with 0600 permissions
   const streamShmFile = (containerDestPath, content) => {
     const dir = path.posix.dirname(containerDestPath);
-    execFn('docker', ['exec', '-i', containerId, 'sh', '-c', `mkdir -p ${dir} && chmod 700 ${dir} && cat > ${containerDestPath} && chmod 600 ${containerDestPath}`], {
+    execFn(engine, ['exec', '-i', containerId, 'sh', '-c', `mkdir -p ${dir} && chmod 700 ${dir} && cat > ${containerDestPath} && chmod 600 ${containerDestPath}`], {
       input: typeof content === 'string' ? content : JSON.stringify(content, null, 2),
       timeout: 30000,
     });
@@ -452,7 +560,7 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
   }
 
   // Ensure OpenCode agent finds configuration in /dev/shm
-  execFn('docker', [
+  execFn(engine, [
     'exec', containerId, 'sh', '-c',
     'mkdir -p /home/agent/.config /home/agent/.local/share && ln -sfn /dev/shm/opencode /home/agent/.config/opencode && ln -sfn /dev/shm/opencode /home/agent/.local/share/opencode'
   ], { timeout: 15000 });
@@ -471,12 +579,13 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
  */
 export function lockContainerSpecsRootReadOnly(containerId, changeSlug, opts = {}) {
   const execFn = opts.execFn || defaultExec;
+  const engine = opts.engine || 'docker';
   const lockedPaths = [
     `/workspace/openspec/changes/${changeSlug}/proposal.md`,
     `/workspace/openspec/changes/${changeSlug}/specs`,
   ];
   for (const p of lockedPaths) {
-    execFn('docker', ['exec', '-u', '0:0', containerId, 'sh', '-c', `if [ -e "${p}" ]; then chown -R 0:0 "${p}" && chmod -R 0444 "${p}"; fi`], { timeout: 15000 });
+    execFn(engine, ['exec', '-u', '0:0', containerId, 'sh', '-c', `if [ -e "${p}" ]; then chown -R 0:0 "${p}" && chmod -R 0444 "${p}"; fi`], { timeout: 15000 });
   }
   return lockedPaths;
 }
@@ -496,22 +605,23 @@ export function syncContainerEgressToHost(repoDir, containerId, lifecycleState =
     throw new AsdlcError('containerId is required for egress sync', { code: 'ASDLC_ERR_CONTAINER_ID' });
   }
   const execFn = opts.execFn || defaultExec;
+  const engine = opts.engine || 'docker';
   const targetDir = path.resolve(repoDir || process.cwd());
   const branch = opts.branch || 'HEAD';
 
   if (lifecycleState === 'greenfield') {
     fs.mkdirSync(targetDir, { recursive: true });
-    execFn('docker', ['cp', `${containerId}:/workspace/.`, targetDir], { timeout: 60000 });
+    execFn(engine, ['cp', `${containerId}:/workspace/.`, targetDir], { timeout: 60000 });
     return { lifecycle: 'greenfield', strategy: 'full-copy', dest: targetDir };
   }
 
   if (lifecycleState === 'brownfield') {
     const syncedPaths = [];
     for (const rel of ['openspec', '.agents', 'AGENTS.md', '.gitignore']) {
-      const check = execFn('docker', ['exec', containerId, 'test', '-e', `/workspace/${rel}`], { timeout: 15000 });
+      const check = execFn(engine, ['exec', containerId, 'test', '-e', `/workspace/${rel}`], { timeout: 15000 });
       if (!check || check.status === 0) {
         const hostDest = path.join(targetDir, rel);
-        execFn('docker', ['cp', `${containerId}:/workspace/${rel}`, hostDest], { timeout: 30000 });
+        execFn(engine, ['cp', `${containerId}:/workspace/${rel}`, hostDest], { timeout: 30000 });
         syncedPaths.push(rel);
       }
     }
@@ -520,14 +630,14 @@ export function syncContainerEgressToHost(repoDir, containerId, lifecycleState =
 
   // Established repositories: atomic git bundle fetch without touching host dirty tree
   const bundleHostPath = opts.bundleHostPath || path.join(os.tmpdir(), `asdlc-egress-${containerId.slice(0, 12)}.bundle`);
-  const bundleRes = execFn('docker', ['exec', containerId, 'git', '-C', '/workspace', 'bundle', 'create', '/tmp/asdlc-out.bundle', branch], { timeout: 60000 });
+  const bundleRes = execFn(engine, ['exec', containerId, 'git', '-C', '/workspace', 'bundle', 'create', '/tmp/asdlc-out.bundle', branch], { timeout: 60000 });
   if (bundleRes && bundleRes.status !== 0 && !opts.ignoreErrors) {
     throw new AsdlcError(`Failed to create git egress bundle inside container: ${bundleRes.stderr || bundleRes.status}`, {
       code: 'ASDLC_ERR_CONTAINER_EGRESS',
     });
   }
 
-  const cpRes = execFn('docker', ['cp', `${containerId}:/tmp/asdlc-out.bundle`, bundleHostPath], { timeout: 60000 });
+  const cpRes = execFn(engine, ['cp', `${containerId}:/tmp/asdlc-out.bundle`, bundleHostPath], { timeout: 60000 });
   if (cpRes && cpRes.status !== 0 && !opts.ignoreErrors) {
     throw new AsdlcError(`Failed to copy git egress bundle from container: ${cpRes.stderr || cpRes.status}`, {
       code: 'ASDLC_ERR_CONTAINER_EGRESS',
@@ -589,9 +699,9 @@ export function buildContainerRunCommand(target, opts = {}) {
 
 /**
  * Executes a full end-to-end containerized pipeline lifecycle:
- * 1. Verifies Docker CLI & daemon
+ * 1. Verifies container engine (Docker / Podman) CLI & daemon/machine
  * 2. Creates container with idle entrypoint (sleep infinity) without --rm
- * 3. Starts container in background so tmpfs (/dev/shm) is mounted and docker exec is accepted
+ * 3. Starts container in background so tmpfs (/dev/shm) is mounted and exec is accepted
  * 4. Ingests workspace via 3-layer staging + volatile credentials in /dev/shm
  * 5. Locks specs root-owned (if apply stage)
  * 6. Executes pipeline stage as unprivileged UID 10001 with sourced /dev/shm/.env
@@ -607,19 +717,14 @@ export async function runContainerPipeline(target, opts = {}) {
   const targetDir = path.resolve(opts.repoRoot || process.cwd());
   const lifecycleInfo = detectRepoLifecycle(targetDir);
 
-  const checkDocker = execFn('docker', ['--version']);
-  if (!checkDocker || checkDocker.status !== 0) {
-    throw new AsdlcError('Docker CLI is not available or daemon is not running. Please start Docker or run without --container.', {
-      code: 'ASDLC_ERR_DOCKER_NOT_AVAILABLE',
-      hint: 'Ensure `docker` is in PATH and the Docker daemon is accessible.',
-    });
-  }
+  const engine = resolveContainerEngine(opts, execFn);
 
   const containerName = `asdlc-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const containerSubcommand = buildContainerRunCommand(target, opts);
 
-  const createArgs = buildDockerCreateArgs({
+  const createArgs = buildContainerCreateArgs({
     name: containerName,
+    engine,
     image: opts.image || DEFAULT_RUNNER_IMAGE,
     hostEnv: opts.env || process.env,
     sshAuthSock: opts.sshAuthSock,
@@ -630,17 +735,17 @@ export async function runContainerPipeline(target, opts = {}) {
     cmd: ['sleep', 'infinity'], // Keeps container alive as daemon for staging, execution, and egress
   });
 
-  const createRes = execFn('docker', createArgs);
+  const createRes = execFn(engine, createArgs);
   if (!createRes || createRes.status !== 0) {
-    throw new AsdlcError(`Docker create failed: ${createRes?.stderr || createRes?.status}`, {
+    throw new AsdlcError(`${engine} create failed: ${createRes?.stderr || createRes?.status}`, {
       code: 'ASDLC_ERR_CONTAINER_CREATE',
     });
   }
   const containerId = String(createRes.stdout || '').trim() || containerName;
 
   try {
-    // 1. Start container in background so tmpfs (/dev/shm) is active and docker exec works
-    const startRes = execFn('docker', ['start', containerId]);
+    // 1. Start container in background so tmpfs (/dev/shm) is active and exec works
+    const startRes = execFn(engine, ['start', containerId]);
     if (startRes && startRes.status !== 0) {
       throw new AsdlcError(`Failed to start container daemon: ${startRes.stderr || startRes.status}`, {
         code: 'ASDLC_ERR_CONTAINER_START',
@@ -650,18 +755,19 @@ export async function runContainerPipeline(target, opts = {}) {
     // 2. Stage workspace and inject credentials into active /dev/shm
     stageWorkspaceToContainer(targetDir, containerId, {
       ...opts,
+      engine,
       execFn,
       lifecycle: lifecycleInfo.lifecycle,
     });
 
     // 3. Lock specs root-owned if apply stage
     if (opts.stage === 'apply' && opts.slug) {
-      lockContainerSpecsRootReadOnly(containerId, opts.slug, { execFn });
+      lockContainerSpecsRootReadOnly(containerId, opts.slug, { engine, execFn });
     }
 
     // 4. Run stage command inside the running container as unprivileged UID 10001
     const execTimeout = opts.timeoutMs ?? (opts.stage === 'apply' ? 1800000 : 600000);
-    const runRes = execFn('docker', [
+    const runRes = execFn(engine, [
       'exec',
       '-u', CONTAINER_SECURITY_BASELINE.user,
       containerId,
@@ -677,12 +783,15 @@ export async function runContainerPipeline(target, opts = {}) {
     let egress = null;
     if (exitCode === 0 && !opts.skipEgress) {
       egress = syncContainerEgressToHost(targetDir, containerId, lifecycleInfo.lifecycle, {
+        ...opts,
+        engine,
         execFn,
         branch: opts.branch || 'HEAD',
       });
     }
 
     return {
+      engine,
       containerId,
       exitCode,
       egress,
@@ -691,7 +800,7 @@ export async function runContainerPipeline(target, opts = {}) {
     };
   } finally {
     // 6. Guarantee container removal
-    execFn('docker', ['rm', '-f', containerId]);
+    execFn(engine, ['rm', '-f', containerId]);
   }
 }
 

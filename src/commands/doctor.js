@@ -10,6 +10,7 @@ import { git } from '../lib/git.js';
 import { log, dim } from '../lib/log.js';
 import { detectTools, checkToolHealth, installSkills, installCommands } from '../lib/tools.js';
 import { jsonOut } from '../lib/cliutil.js';
+import { checkContainerEngineHealth } from '../lib/container.js';
 
 // Environment + setup health. Exit non-zero only on a critical failure
 // (no OpenSpec project, or the managed schema is not installed / is overridden).
@@ -36,6 +37,9 @@ export function doctor(opts = {}) {
   const schemaCheck = checkSchema(repoRoot || process.cwd(), { stateless: true });
   add('managed schema', schemaCheck.ok ? 'pass' : 'fail',
     schemaCheck.ok ? `v${schemaCheck.installed || builtinSchemaVersion()} (stateless bundled)` : schemaCheck.reason);
+
+  const engineHealth = checkContainerEngineHealth();
+  add('container engine', engineHealth.status, engineHealth.detail);
 
   let gi = null;
   let ignored = false;
