@@ -16,6 +16,7 @@ import { register as registerUpdate } from './commands/update.js';
 import { register as registerSkills } from './commands/skills.js';
 import { register as registerAssess } from './commands/assess.js';
 import { register as registerConfig } from './commands/config.js';
+import { register as registerRun } from './commands/run.js';
 import { AsdlcError } from './lib/errors.js';
 import { log } from './lib/log.js';
 
@@ -47,6 +48,7 @@ export function buildCli() {
   registerSkills(program); // manage & install bundled agent skills (repo or global CI)
   registerAssess(program); // evaluate risk & governance requirements (CI & local tool)
   registerConfig(program); // manage machine global configuration (~/.asdlc/config.yaml)
+  registerRun(program);    // orchestrate autonomous or stage-driven SDLC pipeline (spec | apply | verify | fix)
 
   program.addHelpText('after', `
 The flow:
@@ -68,6 +70,7 @@ Navigation, health & maintenance:
   asdlc skills list              list all available bundled agent skills
   asdlc skills install --global  install skills globally for CI/headless agents (opencode, pi, dsh)
   asdlc config <set|get|list>    manage global settings (~/.asdlc/config.yaml, workflow_mode)
+  asdlc run [target]             orchestrate autonomous SDLC stage (spec | apply | verify | fix)
 
 A bad spec is not edited: close it and run \`asdlc new\` again.`);
   return program;

@@ -1,5 +1,41 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { loadGlobalConfig, saveGlobalConfig, validateWorkflowMode } from '../lib/config.js';
+import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
+
+/**
+ * Imports an enterprise OpenCode JSON template into ~/.asdlc/agent/opencode/opencode.json
+ * with mode 0600 without deep-merging or mutating host files.
+ */
+export function importAgentConfigTemplate(sourceFile, { homeDir = os.homedir() } = {}) {
+  const abs = path.resolve(sourceFile);
+  if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+    fail(`Agent configuration template not found: ${sourceFile}`, {
+      code: 'AGENT_CONFIG_NOT_FOUND',
+      hint: 'Pass a valid opencode.json file path via --file <path>.',
+    });
+  }
+  const raw = fs.readFileSync(abs, 'utf8');
+  try {
+    JSON.parse(raw);
+  } catch (err) {
+    fail(`Invalid JSON in agent template '${sourceFile}': ${err.message}`, {
+      code: 'INVALID_AGENT_CONFIG_JSON',
+    });
+  }
+  const destDir = path.join(homeDir, '.asdlc', 'agent', 'opencode');
+  fs.mkdirSync(destDir, { recursive: true, mode: 0o700 });
+  const destPath = path.join(destDir, 'opencode.json');
+  fs.writeFileSync(destPath, raw, { encoding: 'utf8', mode: 0o600 });
+  try {
+    fs.chmodSync(destPath, 0o600);
+  } catch {
+    // Best-effort chmod on Windows
+  }
+  return destPath;
+}
 
 function setNested(obj, keyPath, value) {
   const parts = keyPath.split('.');
@@ -137,5 +173,14 @@ export function register(program) {
           }
         }
       }
+    });
+
+  configCmd
+    .command('agent')
+    .description('import enterprise opencode.json template into ~/.asdlc/agent/opencode/opencode.json (0600)')
+    .requiredOption('--file <path>', 'path to enterprise opencode.json template')
+    .action((opts) => {
+      const dest = importAgentConfigTemplate(opts.file);
+      log.ok(`imported enterprise agent config -> ${dest} (0600)`);
     });
 }
