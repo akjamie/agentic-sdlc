@@ -28,6 +28,10 @@ Drawing from Anthropic's engineering practices for scaling AI code reviews, this
 > **Scope**: Reviews *implementation conformance and code quality* — spec adherence, test rigor, architecture, and production safety.
 > Requires `asdlc test <CHANGE_ID>` and `asdlc verify <CHANGE_ID>` to have passed before this review can issue an APPROVE verdict.
 > Does NOT review spec intent — that is `asdlc-spec-review`.
+>
+> **Output Routing Contract (PR vs. Local)**:
+> - **PR Mode** (invoked with a PR URL, PR number, or via CI PR trigger): **Post the review comment directly to the PR** via `gh pr comment` — **NEVER pause to ask the user whether to post comments**.
+> - **Local Mode** (invoked with `<CHANGE_ID>` only, no PR context): **Print the formatted review report directly** in your response; do NOT run `gh pr comment`.
 
 ---
 
@@ -214,9 +218,11 @@ Every finding must follow a structured schema with explicit defect attribution s
 
 ---
 
-### Step 5: Post PR Comment
+### Step 5: Deliver Review (Post PR Comment or Print Locally)
 
-Compose the review markdown and post it as a PR comment using the GitHub API:
+Compose the review using the markdown format below, then deliver it according to the invocation mode:
+
+- **If reviewing a PR** (PR URL, PR number, or CI PR trigger): **Post the comment directly** without asking the user for confirmation:
 
 ```bash
 gh pr comment $PR_NUMBER --repo $REPO --body "$(cat <<'EOF'
@@ -224,6 +230,8 @@ gh pr comment $PR_NUMBER --repo $REPO --body "$(cat <<'EOF'
 EOF
 )"
 ```
+
+- **If reviewing locally** (`<CHANGE_ID>` only, no PR): **Print the formatted review markdown directly** in your response and skip `gh pr comment` and Step 6.
 
 Format the comment body strictly as:
 

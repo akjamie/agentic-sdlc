@@ -16,7 +16,10 @@ It applies the **Player ≠ Referee** principle: the reviewing agent MUST NOT be
 > **Scope**: Reviews *intent* — BDD quality, logical consistency, architectural soundness, AC testability.
 > Does NOT re-run `asdlc lint` (deterministic structural checks are already gated by `asdlc pr`).
 > Does NOT review implementation code — that is `asdlc-impl-review`.
-> Output can be posted as a PR comment or reported locally.
+>
+> **Output Routing Contract (PR vs. Local)**:
+> - **PR Mode** (invoked with a PR URL, PR number, or via CI PR trigger): **Post the review comment directly to the PR** via `gh pr comment` — **NEVER pause to ask the user whether to post comments**.
+> - **Local Mode** (invoked with `<CHANGE_ID>` only, no PR context): **Print the formatted review report directly** in your response; do NOT run `gh pr comment`.
 
 ---
 
@@ -121,9 +124,11 @@ Classify each finding:
 
 ---
 
-### Step 5: Post PR Comment
+### Step 5: Deliver Review (Post PR Comment or Print Locally)
 
-Compose the review as markdown and post it as a PR comment using the GitHub API:
+Compose the review using the markdown format below, then deliver it according to the invocation mode:
+
+- **If reviewing a PR** (PR URL, PR number, or CI PR trigger): **Post the comment directly** without asking the user for confirmation:
 
 ```bash
 gh pr comment $PR_NUMBER --repo $REPO --body "$(cat <<'EOF'
@@ -131,6 +136,8 @@ gh pr comment $PR_NUMBER --repo $REPO --body "$(cat <<'EOF'
 EOF
 )"
 ```
+
+- **If reviewing locally** (`<CHANGE_ID>` only, no PR): **Print the formatted review markdown directly** in your response and skip `gh pr comment` and Step 6.
 
 Format the comment body strictly as:
 
