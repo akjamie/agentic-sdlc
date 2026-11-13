@@ -1,7 +1,7 @@
 # agentic-sdlc
 
 [![npm version](https://img.shields.io/npm/v/@akjamie/agentic-sdlc?color=6366f1&label=npm)](https://www.npmjs.com/package/@akjamie/agentic-sdlc)
-[![version: v1.9.1](https://img.shields.io/badge/version-v1.9.1-6366f1.svg)](package.json)
+[![version: v1.9.2](https://img.shields.io/badge/version-v1.9.2-6366f1.svg)](package.json)
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-10b981.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20.19.0-38bdf8.svg)](https://nodejs.org/)
 [![tests](https://img.shields.io/badge/tests-213%20passing-10b981.svg)](#development--verification)

@@ -2,6 +2,21 @@
 
 All notable changes to `@akjamie/agentic-sdlc` are documented in this file.
 
+## [1.9.2] - 2026-11-13
+
+### Changed & Fixed
+- **Review Skills Auto-Post in PR Mode**:
+  - `asdlc-spec-review` and `asdlc-impl-review` skills now automatically post review comments to GitHub PRs directly without halting for interactive confirmation when invoked with a PR URL or number.
+  - In local mode (invoked with a local `changeId`), reviews continue to print cleanly to the terminal/stdout.
+- **CLI DX & Default Branch Unification**:
+  - `asdlc pr <changeId> [targetBranch]`: Made `[targetBranch]` optional, automatically resolving from `.openspec.yaml` target branch or repository default branch via `resolveDefaultBranch()`.
+  - Migrated `asdlc pr` topology detection to centralized `resolveTopology()` helper.
+  - Unified default branch resolution across `asdlc verify` and `asdlc pr`.
+- **Skills & Documentation Alignment**:
+  - Synchronized `asdlc-lint` and `asdlc-pr` skills across `.agents/skills/` and `assets/skills/` for the Two-Track lifecycle.
+  - Removed superseded temporary design docs (`docs/risk-detection-hardening.md` and `docs/single-pr-approval-decoupling.md`) in favor of canonical root and reference docs.
+  - Added repository-wide `.gitattributes` (`* text=auto eol=lf`) to enforce LF line endings across Windows and Unix platforms.
+
 ## [1.9.1] - 2026-11-12
 
 ### Added
