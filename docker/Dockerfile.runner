@@ -1,0 +1,24 @@
+ARG BASE_IMAGE=ghcr.io/akjamie/asdlc-base:2026.04
+FROM ${BASE_IMAGE}
+
+ARG ASDLC_VERSION=2.0.0-alpha.1
+
+USER root
+
+# Install global Agentic SDLC CLI, OpenSpec, headless AI harnesses, and AST Graphify
+RUN npm install -g \
+    "@akjamie/agentic-sdlc@${ASDLC_VERSION}" \
+    "@fission-ai/openspec@latest" \
+    "opencode-ai@latest" \
+    "@anthropic-ai/claude-code@latest" \
+  && pip3 install --no-cache-dir --break-system-packages uv \
+  && uv tool install --python "<3.14" graphifyy || pip3 install --no-cache-dir --break-system-packages graphifyy
+
+# Pre-seed bundled global skills for non-root agent user
+USER 10001:10001
+RUN asdlc skills install --global --tools opencode,claude
+
+WORKDIR /workspace
+ENTRYPOINT ["asdlc"]
+CMD ["--help"]
+

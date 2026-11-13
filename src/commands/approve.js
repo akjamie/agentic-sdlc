@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { exists, readText, writeText } from '../lib/fs.js';
 import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
-import { headSha, git, isGitRepo, lastCommitTouching, changeOnRef, safeCommit, resolveDefaultBranch } from '../lib/git.js';
+import { headSha, git, isGitRepo, lastCommitTouching, changeOnRef, safeCommit, resolveDefaultBranch, commitInfo } from '../lib/git.js';
 import { loadPolicy } from '../lib/policy.js';
 import { classifyPR } from '../lib/prtype.js';
 import { fail } from '../lib/errors.js';
@@ -21,6 +21,8 @@ function ensureApprovedReview(repoRoot, slug, approvedSha, mergeSha) {
   const cdir = changeDir(repoRoot, slug);
   const reviewPath = path.join(cdir, 'review.md');
   const now = new Date().toISOString();
+  const info = commitInfo(repoRoot, mergeSha);
+  const approver = info?.name ? `${info.name}${info.email ? ` <${info.email}>` : ''}` : 'protected-branch-merge';
 
   if (exists(reviewPath)) {
     let content = readText(reviewPath);
@@ -29,7 +31,7 @@ function ensureApprovedReview(repoRoot, slug, approvedSha, mergeSha) {
     } else {
       content = `${content.trimEnd()}\n\n## Verdict\nAPPROVE\n`;
     }
-    const record = `\n\n## Approval Record\n- status: READY_FOR_IMPL\n- specSha: ${approvedSha}\n- mergeCommit: ${mergeSha}\n- approvedAt: ${now}\n`;
+    const record = `\n\n## Approval Record\n- status: READY_FOR_IMPL\n- specSha: ${approvedSha}\n- mergeCommit: ${mergeSha}\n- approver: ${approver}\n- approvedAt: ${now}\n`;
     if (/##\s*Approval Record/i.test(content)) {
       content = content.replace(/##\s*Approval Record[\s\S]*$/i, record.trimStart());
     } else {
@@ -40,16 +42,8 @@ function ensureApprovedReview(repoRoot, slug, approvedSha, mergeSha) {
     const content = `# Review: ${slug}
 
 ## Summary
-Human PR review and merge completed on protected branch.
-Spec approval confirmed and locked via merge commit \`${mergeSha.slice(0, 8)}\`.
-
-## Dimensions Evaluation
-- Completeness: PASS
-- Ambiguity: PASS
-- Cross-repo consistency: PASS
-- Contract impact: PASS
-- Testability: PASS
-- Security: PASS
+Approved via Git merge SHA \`${approvedSha}\` by ${approver}.
+No separate prior AI review artifact was committed before merge; provenance is derived directly from protected branch merge commit \`${mergeSha.slice(0, 8)}\`.
 
 ## Blocking Findings
 (none)
@@ -59,8 +53,10 @@ APPROVE
 
 ## Approval Record
 - status: READY_FOR_IMPL
+- provenance: git-merge-sha
 - specSha: ${approvedSha}
 - mergeCommit: ${mergeSha}
+- approver: ${approver}
 - approvedAt: ${now}
 `;
     writeText(reviewPath, content);

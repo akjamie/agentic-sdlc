@@ -23,6 +23,19 @@ export function hasBlockingFindings(text) {
   return Boolean(body) && !/^\(?\s*none\s*\)?\.?$/i.test(body);
 }
 
+/**
+ * Returns true if clarifications.md still contains unresolved [OPEN] markers
+ * or non-empty questions under `## Open questions` (outside HTML comments).
+ */
+export function hasUnresolvedClarifications(text) {
+  const stripped = String(text ?? '').replace(/<!--[\s\S]*?-->/g, '');
+  if (/\[OPEN\]/i.test(stripped)) return true;
+  const m = stripped.match(/##\s*Open questions[^\n]*\n([\s\S]*?)(?:\n##\s|\s*$)/i);
+  if (!m) return false;
+  const body = m[1].trim();
+  return Boolean(body) && !/^\(?\s*none\s*\)?\.?$/i.test(body);
+}
+
 function finish(results, { json, changeId }) {
   const blockers = results.filter((r) => r.status === 'fail');
   if (json) {
@@ -100,6 +113,13 @@ export function runLint(changeId, opts = {}) {
     const verdict = verdictOf(text);
     add('review verdict', verdict === 'APPROVE' ? 'pass' : 'fail', verdict ? `verdict: ${verdict}` : 'no verdict found');
     add('blocking findings', hasBlockingFindings(text) ? 'fail' : 'pass', hasBlockingFindings(text) ? 'blocking findings present' : '');
+  }
+
+  const clarPath = path.join(cdir, 'clarifications.md');
+  if (exists(clarPath)) {
+    const clarText = readText(clarPath);
+    const unresolved = hasUnresolvedClarifications(clarText);
+    add('clarifications', unresolved ? 'fail' : 'pass', unresolved ? 'unresolved [OPEN] questions in clarifications.md' : 'all clarifications settled');
   }
 
   // Spec-stage risk assessment: ground in artifacts and sync level/workflow mode

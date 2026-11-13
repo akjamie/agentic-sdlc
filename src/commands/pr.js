@@ -12,6 +12,8 @@ import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
 import { assess, renderLabels, renderPRComment } from '../assess/index.js';
 import { readEffectiveLevel, resolveTopology } from '../lib/level.js';
+import { loadGlobalConfig } from '../lib/config.js';
+import { resolveGitCredentials, buildEphemeralGitEnv, redactSecrets } from '../lib/auth.js';
 
 const SAFE_ENV_TEMPLATE_RE = /(^|\/)\.env\.(example|sample|template|defaults|schema)$/i;
 const SENSITIVE_OR_DUMP_PATTERNS = [
@@ -107,7 +109,7 @@ export const ASDLC_LABELS = {
   },
 };
 
-export function ensureRemoteLabels(repoRoot, labelNames = Object.keys(ASDLC_LABELS)) {
+export function ensureRemoteLabels(repoRoot, labelNames = Object.keys(ASDLC_LABELS), env = process.env) {
   for (const name of labelNames) {
     const meta = ASDLC_LABELS[name];
     if (!meta) continue;
@@ -117,11 +119,31 @@ export function ensureRemoteLabels(repoRoot, labelNames = Object.keys(ASDLC_LABE
         '--description', meta.description,
         '--color', meta.color,
         '--force',
-      ], { cwd: repoRoot, stdio: 'ignore' });
+      ], { cwd: repoRoot, env, stdio: 'ignore' });
     } catch {
       // ignore if gh is not installed, not authenticated, or not a GitHub repo
     }
   }
+}
+
+/**
+ * Resolves ephemeral Git & PR credentials for Auto-PR execution without writing tokens to disk.
+ */
+export async function resolvePrAuthEnv(repoRoot, opts = {}) {
+  const remoteUrl = git(['remote', 'get-url', 'origin'], repoRoot, { allowFail: true });
+  const remoteInfo = parseRemoteUrl(remoteUrl, opts);
+  const globalConfig = opts.globalConfig || loadGlobalConfig(opts.customGlobalPath);
+  const env = opts.env || process.env;
+  const cred = await resolveGitCredentials({
+    env,
+    globalConfig,
+    host: remoteInfo?.host || globalConfig?.git?.default_host || 'github.com',
+    provider: remoteInfo?.isGitLab ? 'gitlab' : 'github',
+    execFn: opts.execFn,
+    fetchFn: opts.fetchFn,
+  });
+  const authEnv = buildEphemeralGitEnv(cred, env);
+  return { cred, authEnv, remoteInfo };
 }
 
 export async function createPR(changeId, targetBranch, opts = {}) {
@@ -167,7 +189,7 @@ export async function createPR(changeId, targetBranch, opts = {}) {
     .split(/\r?\n/).filter(Boolean);
   const uncommittedFiles = statusLines.map((l) => l.replace(/^\s*\S+\s+/, '').trim()).filter(Boolean);
   const allPotentialFiles = [...diffFilesPre, ...uncommittedFiles];
-  const hasSourceChanges = allPotentialFiles.some((f) => !f.startsWith(`openspec/changes/${slug}/`));
+  const hasSourceChanges = allPotentialFiles.some((f) => !f.startsWith(`openspec/changes/${slug}/`) && !f.startsWith('graphify-out/'));
 
   const topology = resolveTopology({ repoRoot, slug, baseRef: targetBranch, cliMode: opts.mode });
   const resolvedMode = topology.mode;
@@ -253,13 +275,18 @@ export async function createPR(changeId, targetBranch, opts = {}) {
     if (raw) title = `${isSpec ? 'spec' : 'impl'}(${slug}): ${raw}`;
   }
 
-  // 4. Push to remote
+  // 4. Resolve ephemeral auth environment & push to remote
+  const { cred, authEnv, remoteInfo } = await resolvePrAuthEnv(repoRoot, opts);
+  const doFetch = opts.fetchFn || globalThis.fetch;
+
   log.step(`pushing branch '${currentBranch}' to origin...`);
-  try {
-    execFileSync('git', ['push', '-u', 'origin', currentBranch], { cwd: repoRoot, stdio: 'inherit' });
-    log.ok(`pushed branch '${currentBranch}' to origin`);
-  } catch (err) {
-    log.warn(`git push skipped or failed: ${err.message}`);
+  if (!opts.skipPush) {
+    try {
+      execFileSync('git', ['push', '-u', 'origin', currentBranch], { cwd: repoRoot, env: authEnv, stdio: 'inherit' });
+      log.ok(`pushed branch '${currentBranch}' to origin`);
+    } catch (err) {
+      log.warn(`git push skipped or failed: ${redactSecrets(err.message, cred?.token ? [cred.token] : [])}`);
+    }
   }
 
   // 5. Build PR body
@@ -316,28 +343,13 @@ ${proposalText}
   let prCreated = false;
   let prUrl = null;
 
-  // Detect remote repository information
-  const remoteUrl = git(['remote', 'get-url', 'origin'], repoRoot, { allowFail: true });
-  const remoteInfo = parseRemoteUrl(remoteUrl);
-
   // Pre-provision governance labels on remote before PR creation (so gh pr create doesn't reject unknown labels)
-  if (remoteInfo?.isGitHub) {
-    ensureRemoteLabels(repoRoot, labelsToApply);
+  if (remoteInfo?.isGitHub && !opts.skipCliPr) {
+    ensureRemoteLabels(repoRoot, labelsToApply, authEnv);
   }
 
   // Attempt Tier 1: CLI (gh)
-  try {
-    const out = execFileSync('gh', [
-      'pr', 'create',
-      '--title', title,
-      '--body', body,
-      '--base', targetBranch,
-      '--head', currentBranch,
-      '--label', labelsToApply.join(','),
-    ], { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-    prCreated = true;
-    prUrl = out.trim();
-  } catch {
+  if (!opts.skipCliPr) {
     try {
       const out = execFileSync('gh', [
         'pr', 'create',
@@ -345,8 +357,8 @@ ${proposalText}
         '--body', body,
         '--base', targetBranch,
         '--head', currentBranch,
-        '--label', labelPrefix,
-      ], { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        '--label', labelsToApply.join(','),
+      ], { cwd: repoRoot, env: authEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
       prCreated = true;
       prUrl = out.trim();
     } catch {
@@ -357,62 +369,75 @@ ${proposalText}
           '--body', body,
           '--base', targetBranch,
           '--head', currentBranch,
-        ], { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+          '--label', labelPrefix,
+        ], { cwd: repoRoot, env: authEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
         prCreated = true;
         prUrl = out.trim();
       } catch {
-        // Check if PR for current branch already exists on GitHub
         try {
-          const existingOut = execFileSync('gh', [
-            'pr', 'view', currentBranch,
-            '--json', 'url',
-            '-q', '.url',
-          ], { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-          if (existingOut && existingOut.trim()) {
-            prCreated = true;
-            prUrl = existingOut.trim();
-          }
+          const out = execFileSync('gh', [
+            'pr', 'create',
+            '--title', title,
+            '--body', body,
+            '--base', targetBranch,
+            '--head', currentBranch,
+          ], { cwd: repoRoot, env: authEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+          prCreated = true;
+          prUrl = out.trim();
         } catch {
-          // gh not available or failed
+          // Check if PR for current branch already exists on GitHub
+          try {
+            const existingOut = execFileSync('gh', [
+              'pr', 'view', currentBranch,
+              '--json', 'url',
+              '-q', '.url',
+            ], { cwd: repoRoot, env: authEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+            if (existingOut && existingOut.trim()) {
+              prCreated = true;
+              prUrl = existingOut.trim();
+            }
+          } catch {
+            // gh not available or failed
+          }
         }
       }
     }
-  }
 
-  // If created or found via gh, guarantee labels are attached even if initial create omitted them
-  if (prCreated && remoteInfo?.isGitHub) {
-    try {
-      execFileSync('gh', [
-        'pr', 'edit', currentBranch,
-        '--add-label', `${labelPrefix},${secondaryLabel}`,
-      ], { cwd: repoRoot, stdio: 'ignore' });
-    } catch {
-      // ignore
+    // If created or found via gh, guarantee labels are attached even if initial create omitted them
+    if (prCreated && remoteInfo?.isGitHub) {
+      try {
+        execFileSync('gh', [
+          'pr', 'edit', currentBranch,
+          '--add-label', `${labelPrefix},${secondaryLabel}`,
+        ], { cwd: repoRoot, env: authEnv, stdio: 'ignore' });
+      } catch {
+        // ignore
+      }
     }
-  }
 
-  // Attempt Tier 1: CLI (glab for GitLab)
-  if (!prCreated) {
-    try {
-      const out = execFileSync('glab', [
-        'mr', 'create',
-        '--title', title,
-        '--description', body,
-        '--target-branch', targetBranch,
-        '--source-branch', currentBranch,
-        '--label', `${labelPrefix},${secondaryLabel}`,
-      ], { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-      prCreated = true;
-      prUrl = out.trim();
-    } catch {
-      // glab not available
+    // Attempt Tier 1: CLI (glab for GitLab)
+    if (!prCreated) {
+      try {
+        const out = execFileSync('glab', [
+          'mr', 'create',
+          '--title', title,
+          '--description', body,
+          '--target-branch', targetBranch,
+          '--source-branch', currentBranch,
+          '--label', `${labelPrefix},${secondaryLabel}`,
+        ], { cwd: repoRoot, env: authEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        prCreated = true;
+        prUrl = out.trim();
+      } catch {
+        // glab not available
+      }
     }
   }
 
   // Attempt Tier 2: Direct REST API via fetch (Node 20+)
   if (!prCreated && remoteInfo) {
-    const ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
-    const glToken = process.env.GITLAB_TOKEN || process.env.CI_JOB_TOKEN || process.env.GL_TOKEN;
+    const ghToken = authEnv.GITHUB_TOKEN || authEnv.GH_TOKEN;
+    const glToken = authEnv.GITLAB_TOKEN || authEnv.CI_JOB_TOKEN || authEnv.GL_TOKEN;
 
     if (remoteInfo.isGitHub && ghToken) {
       try {
@@ -420,7 +445,7 @@ ${proposalText}
           ? 'https://api.github.com'
           : `${remoteInfo.protocol}//${remoteInfo.host}/api/v3`;
         const apiUrl = `${apiBase}/repos/${remoteInfo.repoPath}/pulls`;
-        const res = await fetch(apiUrl, {
+        const res = await doFetch(apiUrl, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${ghToken}`,
@@ -446,7 +471,7 @@ ${proposalText}
             for (const lbl of [labelPrefix, secondaryLabel]) {
               const meta = ASDLC_LABELS[lbl];
               try {
-                await fetch(`${apiBase}/repos/${remoteInfo.repoPath}/labels`, {
+                await doFetch(`${apiBase}/repos/${remoteInfo.repoPath}/labels`, {
                   method: 'POST',
                   headers: {
                     'Authorization': `Bearer ${ghToken}`,
@@ -465,7 +490,7 @@ ${proposalText}
 
             try {
               const labelUrl = `${apiBase}/repos/${remoteInfo.repoPath}/issues/${data.number}/labels`;
-              await fetch(labelUrl, {
+              await doFetch(labelUrl, {
                 method: 'POST',
                 headers: {
                   'Authorization': `Bearer ${ghToken}`,
@@ -485,7 +510,7 @@ ${proposalText}
       try {
         const projectId = encodeURIComponent(remoteInfo.repoPath);
         const apiUrl = `${remoteInfo.protocol}//${remoteInfo.host}/api/v4/projects/${projectId}/merge_requests`;
-        const res = await fetch(apiUrl, {
+        const res = await doFetch(apiUrl, {
           method: 'POST',
           headers: {
             'PRIVATE-TOKEN': glToken,

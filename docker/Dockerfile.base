@@ -1,0 +1,60 @@
+FROM ubuntu:26.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG GO_VERSION=1.24.2
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    jq \
+    ripgrep \
+    gnupg \
+    build-essential \
+    cmake \
+    pkg-config \
+    python3 \
+    python3-pip \
+    python3-venv \
+    openjdk-21-jdk-headless \
+    maven \
+    nodejs \
+    npm \
+    unzip \
+    tar \
+    xz-utils \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install Go toolchain
+RUN ARCH="$(dpkg --print-architecture)" \
+  && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" | tar -C /usr/local -xzf -
+ENV PATH="/usr/local/go/bin:/home/agent/.local/bin:${PATH}"
+
+# Install Rust via rustup into shared location or agent home
+ENV CARGO_HOME="/usr/local/cargo" \
+    RUSTUP_HOME="/usr/local/rustup"
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path \
+  && chmod -R a+rX /usr/local/cargo /usr/local/rustup
+ENV PATH="/usr/local/cargo/bin:${PATH}"
+
+# Install GitHub CLI (gh)
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+  && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+    > /etc/apt/sources.list.d/github-cli.list \
+  && apt-get update && apt-get install -y --no-install-recommends gh \
+  && rm -rf /var/lib/apt/lists/*
+
+# Hardened enterprise dubious ownership immunity (CVE-2022-24765)
+RUN printf '[safe]\n\tdirectory = /workspace\n' >> /etc/gitconfig
+
+# Create dedicated unprivileged non-root agent user (UID 10001:10001)
+RUN groupadd --gid 10001 agent \
+  && useradd --uid 10001 --gid 10001 --create-home --shell /bin/bash agent \
+  && mkdir -p /workspace /home/agent/.config/opencode /home/agent/.local/share/opencode /home/agent/.agents/skills \
+  && chown -R 10001:10001 /workspace /home/agent
+
+USER 10001:10001
+WORKDIR /workspace
+
