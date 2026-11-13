@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { exists } from '../lib/fs.js';
 import { resolveRepoRoot, schemaAssetDir, openspecDir } from '../lib/paths.js';
 import { installSchema, builtinSchemaVersion } from '../lib/schema.js';
@@ -8,6 +9,30 @@ import { doctor } from './doctor.js';
 import { log } from '../lib/log.js';
 
 import { detectTools, installSkills } from './init.js';
+
+const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+
+export function resolveRunnerImageTag(opts = {}) {
+  return opts.image || process.env.ASDLC_RUNNER_IMAGE || `ghcr.io/akjamie/asdlc-runner:${pkg.version}`;
+}
+
+export function upgradeRunnerImage(opts = {}) {
+  const image = resolveRunnerImageTag(opts);
+  const execFn = opts.execFn || spawnSync;
+  const hasDocker = Boolean(opts.execFn || which('docker'));
+  if (!hasDocker) {
+    log.info(`note: docker CLI not found; runner image pinned at ${image}`);
+    return { pulled: false, skipped: true, image };
+  }
+  log.step(`syncing runner container image ${image}...`);
+  const res = execFn('docker', ['pull', image], { encoding: 'utf8', stdio: opts.execFn ? 'pipe' : 'inherit' });
+  if (res && res.status === 0) {
+    log.ok(`synced runner image ${image}`);
+    return { pulled: true, skipped: false, image };
+  }
+  log.warn(`runner image pull failed (${image}); container mode will attempt pull on first launch`);
+  return { pulled: false, skipped: false, image };
+}
 
 function which(name) {
   const finder = process.platform === 'win32' ? 'where' : 'which';
@@ -167,6 +192,12 @@ export function runUpgrade(opts = {}) {
     }
   }
 
+  if (opts.pullImage) {
+    upgradeRunnerImage(opts);
+  } else {
+    log.info(`runner image aligned to ${resolveRunnerImageTag(opts)} (pass --pull-image to pre-pull)`);
+  }
+
   log.info('');
   log.ok('Toolchain upgrade complete.');
 
@@ -184,6 +215,8 @@ export function register(program) {
     .command('upgrade')
     .description('upgrade the toolchain: asdlc CLI, OpenSpec, Graphify, managed schemas, and repo or global skills')
     .option('-g, --global', 'upgrade toolchain and refresh global user skills (~/.agents) for CI runners')
+    .option('--pull-image', 'pre-pull version-pinned asdlc runner container image')
+    .option('--image <tag>', 'override runner container image tag when pulling')
     .option('--no-asdlc', 'skip upgrading asdlc itself')
     .option('--no-openspec', 'skip upgrading openspec')
     .option('--no-graphify', 'skip upgrading graphify')

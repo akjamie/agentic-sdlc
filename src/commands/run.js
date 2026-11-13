@@ -1,10 +1,13 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
   resolveAgentHarnessConfig,
   resolveGitCredentials,
+  resolvePassthroughEnv,
   redactSecrets,
 } from '../lib/auth.js';
+import { loadGlobalConfig } from '../lib/config.js';
 import { toChangeSlug, jsonOut } from '../lib/cliutil.js';
 import {
   buildDockerCreateArgs,
@@ -22,7 +25,7 @@ import {
 import { assertGitRepositoryInitialized, resolveGitHostAndRepo } from '../lib/githost.js';
 import { findChangeByIssueId } from '../lib/intake.js';
 import { resolveTopology } from '../lib/level.js';
-import { log } from '../lib/log.js';
+import { log, dim } from '../lib/log.js';
 import { exists, readText, walkFiles } from '../lib/fs.js';
 import { changeDir, openspecDir } from '../lib/paths.js';
 import {
@@ -384,18 +387,78 @@ function parsePrReference(target) {
   return null;
 }
 
-function inferActiveSlug(repoRoot) {
+function extractSlugFromBranchName(branchName) {
+  const b = String(branchName || '').trim();
+  const m = b.match(/^(?:change|spec|impl|feat|fix)\/([a-z0-9._-]+)$/i);
+  return m ? toChangeSlug(m[1]) : null;
+}
+
+function listActiveChangeSlugs(repoRoot) {
   const changesRoot = path.join(openspecDir(repoRoot), 'changes');
-  if (!exists(changesRoot)) return null;
-  const entries = fs.readdirSync(changesRoot, { withFileTypes: true })
+  if (!exists(changesRoot)) return [];
+  return fs.readdirSync(changesRoot, { withFileTypes: true })
     .filter((d) => d.isDirectory() && d.name !== 'archive')
     .map((d) => d.name);
-  if (entries.length === 1) return entries[0];
+}
+
+function extractSlugFromPrMetadata(prMeta, activeSlugs = []) {
+  if (!prMeta) return null;
+  const labels = (prMeta.labels || []).map((l) => (typeof l === 'string' ? l : l?.name || '')).filter(Boolean);
+  for (const label of labels) {
+    const m = label.match(/^asdlc:change-id:\s*(.+)$/i);
+    if (m) return toChangeSlug(m[1].trim());
+  }
+  const fromBranch = extractSlugFromBranchName(prMeta.headRefName || prMeta.head?.ref || '');
+  if (fromBranch) return fromBranch;
+  for (const s of activeSlugs) {
+    if (String(prMeta.title || '').toLowerCase().includes(s.toLowerCase())) {
+      return s;
+    }
+  }
   return null;
+}
+
+function inferActiveSlug(repoRoot, opts = {}) {
+  const active = listActiveChangeSlugs(repoRoot);
+  if (active.length === 0) return null;
+
+  // Priority 1: Current git branch name (`change/<slug>`, `spec/<slug>`, `impl/<slug>`, etc.)
+  const headBranch = git(['rev-parse', '--abbrev-ref', 'HEAD'], repoRoot, { allowFail: true });
+  const branchSlug = extractSlugFromBranchName(headBranch);
+  if (branchSlug && active.includes(branchSlug)) {
+    return branchSlug;
+  }
+
+  // Priority 2: Single active change in workspace
+  if (active.length === 1) return active[0];
+
+  // Priority 3: Disambiguate multiple active changes via callback or fail explicitly
+  if (typeof opts.changeSelector === 'function') {
+    const picked = opts.changeSelector(active);
+    if (picked && active.includes(picked)) return picked;
+  }
+
+  fail(`Multiple active changes found (${active.join(', ')}). Specify a change ID, e.g. \`asdlc run ${active[0]}\`.`, {
+    code: 'MULTIPLE_ACTIVE_CHANGES',
+    hint: `Active changes: ${active.join(', ')}`,
+  });
+}
+
+function formatPauseBanner(reason, resumeCmd) {
+  return `⏸️  Paused: ${reason}\n   👉 Resume command: ${resumeCmd}`;
 }
 
 function collectRepeatable(val, prev = []) {
   return [...prev, val];
+}
+
+function mergeOptsList(...lists) {
+  const out = [];
+  for (const list of lists) {
+    if (Array.isArray(list)) out.push(...list.filter(Boolean));
+    else if (list) out.push(list);
+  }
+  return out;
 }
 
 /**
@@ -429,33 +492,66 @@ export async function runPipeline(target, opts = {}) {
     preScanWorkspaceForSecrets(workDir, { diffText: opts.diffText });
   }
 
+  const fromFiles = mergeOptsList(opts.fromFile, opts.file);
+  const fromIssues = mergeOptsList(opts.fromIssue, opts.ticket, opts.issue);
+  const globalConfig = opts.globalConfig || loadGlobalConfig();
+  const passthroughEnv = resolvePassthroughEnv(globalConfig, env);
+  const mergedEnv = { ...passthroughEnv, ...env };
+
   const prNumber = parsePrReference(target);
   const repoRoot = lifecycleInfo.isGitRepo && lifecycleInfo.hasOpenspec ? workDir : (opts.repoRoot ? path.resolve(opts.repoRoot) : workDir);
 
   // Resolve credentials & agent harness config when container or dry-run planning is requested
-  const creds = resolveGitCredentials({ env, host: hostRepo?.host, fetchFn: opts.fetchFn });
+  const creds = await resolveGitCredentials({ env: mergedEnv, globalConfig, host: hostRepo?.host, fetchFn: opts.fetchFn });
+  const authSource = creds?.type || 'none';
   const explicitSecrets = creds?.token ? [creds.token] : [];
+  if (globalConfig?.agent?.api_key) explicitSecrets.push(globalConfig.agent.api_key);
+  if (mergedEnv?.JIRA_API_TOKEN) explicitSecrets.push(mergedEnv.JIRA_API_TOKEN);
+
   const harness = resolveAgentHarnessConfig({
+    globalConfig,
     cliModel: opts.model,
     cliReviewModel: opts.reviewModel,
-    env,
+    env: mergedEnv,
   });
 
-  // Determine target change slug if possible
+  // Determine target change slug if possible (active branch, single change, selector, PR metadata, issue ID)
   let slug = null;
   if (!prNumber && target) {
     const candidate = toChangeSlug(target);
     if (exists(changeDir(repoRoot, candidate))) {
       slug = candidate;
-    } else if (opts.fromIssue?.length && lifecycleInfo.hasOpenspec) {
-      slug = findChangeByIssueId(repoRoot, opts.fromIssue[0]) || null;
+    } else if (fromIssues.length && lifecycleInfo.hasOpenspec) {
+      slug = findChangeByIssueId(repoRoot, fromIssues[0]) || null;
     }
+  } else if (prNumber) {
+    const activeSlugs = lifecycleInfo.hasOpenspec ? listActiveChangeSlugs(repoRoot) : [];
+    let prMeta = opts.prContext || null;
+    if (!prMeta && typeof opts.prMetadataResolver === 'function') {
+      prMeta = await opts.prMetadataResolver(prNumber, { repo: opts.repo, host: opts.host, env: mergedEnv });
+    } else if (!prMeta && lifecycleInfo.isGitRepo) {
+      try {
+        const ghRes = spawnSync('gh', ['pr', 'view', String(prNumber), '--json', 'number,title,headRefName,labels,state'], {
+          cwd: repoRoot,
+          encoding: 'utf8',
+          env: mergedEnv,
+          timeout: 8000,
+        });
+        if (ghRes.status === 0 && ghRes.stdout) {
+          prMeta = JSON.parse(ghRes.stdout);
+        }
+      } catch {
+        // offline fallback
+      }
+    }
+    slug = (prMeta?.changeId ? toChangeSlug(prMeta.changeId) : null)
+      || extractSlugFromPrMetadata(prMeta, activeSlugs);
   } else if (opts.prContext?.changeId) {
     slug = toChangeSlug(opts.prContext.changeId);
-  } else if (opts.fromIssue?.length && lifecycleInfo.hasOpenspec) {
-    slug = findChangeByIssueId(repoRoot, opts.fromIssue[0]) || null;
+  } else if (fromIssues.length && lifecycleInfo.hasOpenspec) {
+    slug = findChangeByIssueId(repoRoot, fromIssues[0]) || null;
   } else if (!target && lifecycleInfo.hasOpenspec) {
-    slug = inferActiveSlug(repoRoot);
+    slug = inferActiveSlug(repoRoot, { changeSelector: opts.changeSelector });
   }
 
   let vectorResult = null;
@@ -484,20 +580,23 @@ export async function runPipeline(target, opts = {}) {
 
   if (!explicitStage && !opts.json) {
     log.info(`No --stage specified. Auto-selected stage: '${selectedStage}' (${vectorResult.phase}).`);
-    log.dim(`You can run this stage explicitly: asdlc run ${target || slug || '<target>'} --stage ${selectedStage}`);
+    log.info(dim(`You can run this stage explicitly: asdlc run ${target || slug || '<target>'} --stage ${selectedStage}`));
   }
 
   // Container dry-run mode returns the hardened execution plan without running Docker
   if (opts.container && opts.dryRun) {
     const dockerArgs = buildDockerCreateArgs({
       image: opts.image,
-      hostEnv: env,
+      hostEnv: mergedEnv,
       caCertHostPath: opts.caCertHostPath,
       sshAuthSock: opts.sshAuthSock,
+      sshAgent: Boolean(globalConfig?.git?.ssh_agent || opts.sshAgent),
+      sshKeyPath: opts.sshKeyPath || globalConfig?.git?.ssh_key_path,
       env: {
+        ...passthroughEnv,
         ASDLC_LIFECYCLE: lifecycleInfo.lifecycle,
         ASDLC_STAGE: selectedStage,
-        ASDLC_AUTH_SOURCE: creds.source,
+        ASDLC_AUTH_SOURCE: authSource,
         ...(harness.model ? { ASDLC_MODEL: harness.model } : {}),
         ...(harness.reviewModel ? { ASDLC_REVIEW_MODEL: harness.reviewModel } : {}),
       },
@@ -513,7 +612,8 @@ export async function runPipeline(target, opts = {}) {
       selectedStage,
       phase: vectorResult.phase,
       stateVector: vectorResult.vector,
-      authSource: creds.source,
+      authSource,
+      passthroughKeys: Object.keys(passthroughEnv),
       harnessConfig: {
         configSource: harness.configSource,
         model: harness.model,
@@ -527,17 +627,22 @@ export async function runPipeline(target, opts = {}) {
 
   // Ensure slug exists or can be scaffolded for `--stage spec`
   if (!slug && selectedStage === 'spec') {
-    if (!target && !opts.fromFile?.length && !opts.fromIssue?.length) {
-      fail('Cannot start `spec` stage without a requirement, change ID, `--from-file`, or `--from-issue`.');
+    if (!target && !fromFiles.length && !fromIssues.length) {
+      fail('Cannot start `spec` stage without a requirement, change ID, `--from-file`, or `--from-issue`/`--ticket`.');
     }
     slug = newChange(target || null, {
       repoRoot,
-      fromFile: opts.fromFile,
-      fromIssue: opts.fromIssue,
+      fromFile: fromFiles,
+      fromIssue: fromIssues,
       grill: false,
       openspec: opts.openspec ?? false,
       mode: opts.mode,
       targetBranch: opts.targetBranch,
+      issueFetcher: opts.issueFetcher,
+      ghRunner: opts.ghRunner,
+      httpFetcher: opts.httpFetcher,
+      env: mergedEnv,
+      globalConfig,
     });
   }
 
@@ -564,12 +669,20 @@ export async function runPipeline(target, opts = {}) {
           if (!opts.skipPr && typeof opts.createDraftPr === 'function') {
             prInfo = await opts.createDraftPr({ slug, targetBranch, label: 'asdlc:needs-clarification' });
           }
+          const prNumLabel = prInfo?.number ? `#${prInfo.number}` : slug;
+          const resumeCmd = `asdlc run ${prNumLabel}${opts.container ? ' --container' : ''}`;
+          const pauseBanner = formatPauseBanner(
+            `Awaiting human replies on Draft Spec PR ${prNumLabel} for '${slug}' ([OPEN] clarifications remain).`,
+            resumeCmd
+          );
+          if (!opts.json) log.info(pauseBanner);
           result = {
             slug,
             stage: 'spec',
             phase: hasReplies ? 'SPEC_GRILL_RESUME' : 'SPEC_GRILL_PAUSE',
             paused: !hasReplies,
             prLabel: 'asdlc:needs-clarification',
+            pauseBanner,
             exitCode: 0,
             pr: prInfo,
           };
@@ -751,7 +864,10 @@ export function register(program) {
     .option('--create-repo <repo>', 'provision a new remote repository in greenfield mode')
     .option('--host <host>', 'explicit git host when disambiguating enterprise hosts')
     .option('--from-file <path>', 'attach local requirement/PRD file snapshot (repeatable)', collectRepeatable, [])
+    .option('--file <path>', 'alias for --from-file (repeatable)', collectRepeatable, [])
     .option('--from-issue <id>', 'attach external issue reference snapshot (repeatable)', collectRepeatable, [])
+    .option('--ticket <id>', 'alias for --from-issue (repeatable)', collectRepeatable, [])
+    .option('--issue <id>', 'alias for --from-issue (repeatable)', collectRepeatable, [])
     .option('--container', 'run in isolated hardened UID 10001:10001 container runtime')
     .option('--dry-run', 'print deterministic execution & security plan without executing')
     .option('--mode <mode>', 'override workflow mode: spec-first | supervised | auto')
@@ -762,6 +878,25 @@ export function register(program) {
     .option('--json', 'emit redacted structured JSON output')
     .action(async (target, opts) => {
       const res = await runPipeline(target, opts);
+      if (res && typeof res.exitCode === 'number' && res.exitCode !== 0) {
+        process.exitCode = res.exitCode;
+      }
+    });
+
+  // First-class local CLI symmetry for addressing PR review feedback (Tier 1-3 triage)
+  program
+    .command('fix [target]')
+    .alias('review-comments')
+    .description('address PR review comments with Tier 1-3 triage & anti-thrashing circuit breaker')
+    .option('--repo <repo>', 'target repository (owner/repo or canonical git URL)')
+    .option('--host <host>', 'explicit git host when disambiguating enterprise hosts')
+    .option('--mode <mode>', 'override workflow mode: spec-first | supervised | auto')
+    .option('--target-branch <branch>', 'target protected branch (defaults to repo default)')
+    .option('-m, --model <model>', 'override author AI model')
+    .option('--json', 'emit redacted structured JSON output')
+    .option('--repo-root <path>')
+    .action(async (target, opts) => {
+      const res = await runPipeline(target, { ...opts, stage: 'fix' });
       if (res && typeof res.exitCode === 'number' && res.exitCode !== 0) {
         process.exitCode = res.exitCode;
       }

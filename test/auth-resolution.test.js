@@ -12,8 +12,9 @@ import {
   formatBotCommitMessage,
   redactSecrets,
   resolveAgentHarnessConfig,
+  resolvePassthroughEnv,
 } from '../src/lib/auth.js';
-import { importAgentConfigTemplate } from '../src/commands/config.js';
+import { importAgentConfigTemplate, runConfigWizard } from '../src/commands/config.js';
 import { createPR } from '../src/commands/pr.js';
 import { newChange } from '../src/commands/new.js';
 import { mergeChange } from '../src/commands/approve.js';
@@ -271,5 +272,68 @@ test('100% Auto-PR: createPR creates Spec PR and Impl PR seamlessly via GitHub A
     assert.ok(glCalls.some((c) => c.url.includes('/api/v4/projects/acme%2Fdemo/merge_requests') && c.token === 'glpat-autoPrGitLab222'));
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('resolvePassthroughEnv, Mode B authPayload, and interactive runConfigWizard (0600 persistence)', async () => {
+  const fakeHome = mkTmp('asdlc-wizard-home-');
+  const cfgPath = path.join(fakeHome, '.asdlc', 'config.yaml');
+  try {
+    // 1. Run 4-section config wizard with deterministic answers
+    const wizardRes = await runConfigWizard({
+      configPath: cfgPath,
+      homeDir: fakeHome,
+      ghRunner: () => ({ status: 0, stdout: 'Logged in to github.com account akjamie' }),
+      answers: {
+        workflow_mode: 'spec-first',
+        'agent.harness': 'opencode',
+        'agent.provider': 'ark',
+        'agent.model': 'ark/doubao-seed-code',
+        'agent.review_model': 'anthropic/claude-sonnet-4-5',
+        'agent.api_key': 'sk-wizard-secret-1234',
+        'agent.base_url': 'https://ark.cn-beijing.volces.com/api/v3',
+        'git.default_host': 'github.com',
+        'git.provider': 'github',
+        'git.token': '',
+        'git.ssh_key_path': '/home/dev/.ssh/id_ed25519',
+        'env.JIRA_BASE_URL': 'https://jira.corp.internal',
+        'env.JIRA_EMAIL': 'dev@corp.internal',
+        'env.JIRA_API_TOKEN': 'jira-tok-9999',
+        'runner.env_passthrough': 'JIRA_*,CONFLUENCE_*',
+      },
+    });
+    assert.equal(wizardRes.saved, true);
+    assert.equal(wizardRes.detected.ghAccount, 'akjamie');
+    assert.ok(fs.existsSync(cfgPath));
+
+    // 2. resolvePassthroughEnv expands wildcard patterns + explicit env.* entries
+    const passed = resolvePassthroughEnv(wizardRes.config, {
+      JIRA_PROJECT: 'PAY',
+      CONFLUENCE_API_TOKEN: 'conf-tok-1',
+      UNRELATED_SECRET: 'do-not-leak',
+    });
+    assert.equal(passed.JIRA_BASE_URL, 'https://jira.corp.internal');
+    assert.equal(passed.JIRA_PROJECT, 'PAY');
+    assert.equal(passed.CONFLUENCE_API_TOKEN, 'conf-tok-1');
+    assert.equal(passed.UNRELATED_SECRET, undefined);
+
+    // 3. Mode B harness config emits custom base_url + custom_headers + authPayload
+    const modeB = resolveAgentHarnessConfig({
+      homeDir: fakeHome,
+      globalConfig: {
+        ...wizardRes.config,
+        agent: {
+          ...wizardRes.config.agent,
+          custom_headers: { 'X-Corp-Tenant': 'eng' },
+        },
+      },
+    });
+    assert.equal(modeB.configSource, 'generated-minimal');
+    assert.equal(modeB.generatedConfig.provider.ark.options.baseURL, 'https://ark.cn-beijing.volces.com/api/v3');
+    assert.deepEqual(modeB.generatedConfig.provider.ark.options.headers, { 'X-Corp-Tenant': 'eng' });
+    assert.deepEqual(modeB.authPayload, { ark: { type: 'api', key: 'sk-wizard-secret-1234' } });
+    assert.equal(modeB.heterogeneous, true);
+  } finally {
+    fs.rmSync(fakeHome, { recursive: true, force: true });
   }
 });

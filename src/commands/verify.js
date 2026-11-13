@@ -192,6 +192,55 @@ export function extractJson(text) {
   }
 }
 
+const TEST_FILE_RE = /(?:^|\/)(?:test|tests|__tests__)\/|\.(?:test|spec)\.[a-z0-9]+$/i;
+const TEST_SKIP_PATTERNS = [
+  { label: '.skip(', re: /\b(?:it|test|describe)\.skip\s*\(/ },
+  { label: 'xit/xtest/xdescribe', re: /\bx(?:it|test|describe)\s*\(/ },
+  { label: '@pytest.mark.skip', re: /@pytest\.mark\.skip\b/ },
+  { label: '@Disabled', re: /@Disabled\b/ },
+  { label: '#[ignore]', re: /#\[ignore\]/ },
+];
+
+/**
+ * Anti-Test-Weakening Gate (§6.4.4):
+ * Fails if the implementation diff deletes test files or adds new skip/disable annotations.
+ */
+export function checkTestWeakening(repoRoot, base, head, changedFiles = [], opts = {}) {
+  const issues = [];
+  const nameStatusRaw = typeof opts.nameStatusText === 'string'
+    ? opts.nameStatusText
+    : (git(['diff', '--name-status', `${base}...${head}`], repoRoot, { allowFail: true }) ?? '');
+
+  for (const line of nameStatusRaw.split(/\r?\n/)) {
+    const m = line.match(/^D\s+(.+)$/);
+    if (m && TEST_FILE_RE.test(m[1].trim())) {
+      issues.push(`deleted test file: ${m[1].trim()}`);
+    }
+  }
+
+  const testFiles = (changedFiles || []).filter((f) => TEST_FILE_RE.test(f));
+  if (testFiles.length > 0 || typeof opts.diffText === 'string') {
+    const diffText = typeof opts.diffText === 'string'
+      ? opts.diffText
+      : (git(['diff', '-U0', `${base}...${head}`, '--', ...testFiles], repoRoot, { allowFail: true }) ?? '');
+    for (const line of diffText.split(/\r?\n/)) {
+      if (!line.startsWith('+') || line.startsWith('+++')) continue;
+      for (const pat of TEST_SKIP_PATTERNS) {
+        if (pat.re.test(line)) {
+          issues.push(`newly skipped/disabled test (${pat.label}): ${line.slice(1).trim().slice(0, 80)}`);
+          break;
+        }
+      }
+    }
+  }
+
+  return {
+    ok: issues.length === 0,
+    issues,
+    detail: issues.length === 0 ? 'no deleted or newly skipped tests' : issues.join('; '),
+  };
+}
+
 export function runVerify(changeId, opts = {}) {
   const results = [];
   const add = (name, status, detail) => results.push({ name, status, detail });
@@ -364,6 +413,9 @@ export function runVerify(changeId, opts = {}) {
 
   const testDiff = checkTestPresence(changedFiles);
   add('test-presence', testDiff.ok ? 'pass' : 'fail', testDiff.detail);
+
+  const weakening = checkTestWeakening(repoRoot, base, head, changedFiles, opts);
+  add('anti-test-weakening', weakening.ok ? 'pass' : 'fail', weakening.detail);
 
   if (exists(tasksPath)) {
     const evidence = checkTaskEvidence(readText(tasksPath));
