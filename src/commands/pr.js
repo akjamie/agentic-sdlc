@@ -332,7 +332,8 @@ ${proposalText}
   });
   const assessLabels = renderLabels(assessment);
   const assessComment = renderPRComment(assessment);
-  const labelsToApply = Array.from(new Set([labelPrefix, secondaryLabel, ...assessLabels]));
+  const extraLabels = opts.label ? (Array.isArray(opts.label) ? opts.label : [opts.label]) : [];
+  const labelsToApply = Array.from(new Set([labelPrefix, secondaryLabel, ...extraLabels, ...assessLabels]));
 
   body = `${body}\n\n---\n\n${assessComment}\n`;
 
@@ -342,6 +343,7 @@ ${proposalText}
   // Tier 3: 1-click Web compare URL fallback
   let prCreated = false;
   let prUrl = null;
+  const draftArgs = opts.draft ? ['--draft'] : [];
 
   // Pre-provision governance labels on remote before PR creation (so gh pr create doesn't reject unknown labels)
   if (remoteInfo?.isGitHub && !opts.skipCliPr) {
@@ -358,6 +360,7 @@ ${proposalText}
         '--base', targetBranch,
         '--head', currentBranch,
         '--label', labelsToApply.join(','),
+        ...draftArgs,
       ], { cwd: repoRoot, env: authEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
       prCreated = true;
       prUrl = out.trim();
@@ -370,6 +373,7 @@ ${proposalText}
           '--base', targetBranch,
           '--head', currentBranch,
           '--label', labelPrefix,
+          ...draftArgs,
         ], { cwd: repoRoot, env: authEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
         prCreated = true;
         prUrl = out.trim();
@@ -381,6 +385,7 @@ ${proposalText}
             '--body', body,
             '--base', targetBranch,
             '--head', currentBranch,
+            ...draftArgs,
           ], { cwd: repoRoot, env: authEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
           prCreated = true;
           prUrl = out.trim();
@@ -458,6 +463,7 @@ ${proposalText}
             body,
             head: currentBranch,
             base: targetBranch,
+            draft: Boolean(opts.draft),
           }),
         });
         if (res.ok) {
@@ -468,7 +474,7 @@ ${proposalText}
           // Attach labels via GitHub Issues API (pull requests are issues in GitHub)
           if (data.number) {
             // Pre-create labels if missing
-            for (const lbl of [labelPrefix, secondaryLabel]) {
+            for (const lbl of labelsToApply) {
               const meta = ASDLC_LABELS[lbl];
               try {
                 await doFetch(`${apiBase}/repos/${remoteInfo.repoPath}/labels`, {
@@ -498,7 +504,7 @@ ${proposalText}
                   'User-Agent': 'asdlc-cli',
                   'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ labels: [labelPrefix, secondaryLabel] }),
+                body: JSON.stringify({ labels: labelsToApply }),
               });
             } catch { /* ignore label add error */ }
           }
@@ -570,7 +576,10 @@ ${proposalText}
     writeText(metaPath, metaTextUpdated);
   }
 
-  return { slug, type: prType, title, targetBranch, prUrl, labels: [labelPrefix, secondaryLabel] };
+  const numMatch = prUrl ? String(prUrl).match(/(?:pull|merge_requests)\/(\d+)/) : null;
+  const number = numMatch ? parseInt(numMatch[1], 10) : null;
+
+  return { slug, type: prType, title, targetBranch, prUrl, number, labels: Array.from(new Set([labelPrefix, secondaryLabel, ...extraLabels])) };
 }
 
 // Backwards-compatible export

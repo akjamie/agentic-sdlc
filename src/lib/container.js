@@ -27,6 +27,22 @@ const PROXY_ENV_KEYS = ['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', '
 const MAX_SCAN_FILE_BYTES = 512 * 1024;
 
 /**
+ * Checks whether an environment variable key is sensitive (tokens, keys, secrets, passwords).
+ * Secrets must never be passed via container CLI arguments (-e).
+ *
+ * @param {string} key
+ * @returns {boolean}
+ */
+export function isSensitiveEnvKey(key) {
+  if (!key) return false;
+  const upper = String(key).toUpperCase();
+  if (upper.startsWith('GIT_CONFIG_') || upper === 'SSH_AUTH_SOCK' || upper.startsWith('SSL_') || upper.startsWith('NODE_EXTRA_CA_')) {
+    return false;
+  }
+  return /(API_KEY|AUTH_TOKEN|PRIVATE_KEY|BEARER|PASSWORD|SECRET_KEY|_TOKEN$|_SECRET$|_KEY$)/i.test(upper);
+}
+
+/**
  * Extract corporate HTTP(S) proxy environment variables from host env.
  *
  * @param {Record<string, string|undefined>} [hostEnv]
@@ -55,7 +71,6 @@ export function buildDockerCreateArgs(opts = {}) {
   const hostEnv = opts.hostEnv || process.env;
   const args = [
     'create',
-    '--rm',
     '--user',
     CONTAINER_SECURITY_BASELINE.user,
     `--cap-drop=${CONTAINER_SECURITY_BASELINE.capDrop}`,
@@ -64,6 +79,10 @@ export function buildDockerCreateArgs(opts = {}) {
     '-w',
     workdir,
   ];
+
+  if (opts.rm !== false) {
+    args.push('--rm');
+  }
 
   if (opts.name) {
     args.push('--name', String(opts.name));
@@ -104,6 +123,7 @@ export function buildDockerCreateArgs(opts = {}) {
   }
 
   for (const [k, v] of Object.entries(injectedEnv)) {
+    if (isSensitiveEnvKey(k)) continue; // §3.3: Never leak secrets via docker inspect / -e flags
     if (v !== undefined && v !== null && String(v).length > 0) {
       args.push('-e', `${k}=${v}`);
     }
@@ -413,18 +433,29 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
     streamShmFile('/dev/shm/.ssh/id_ed25519', opts.sshKeyContent);
   }
 
-  // Stream Git / tool credentials into /dev/shm/.env
+  // Stream Git / tool credentials and API tokens into /dev/shm/.env with export syntax
   const shmEnv = {};
   if (opts.creds?.token) {
     shmEnv.GH_TOKEN = opts.creds.token;
     shmEnv.GITHUB_TOKEN = opts.creds.token;
   }
-  if (opts.env?.JIRA_API_TOKEN) shmEnv.JIRA_API_TOKEN = opts.env.JIRA_API_TOKEN;
-  if (opts.env?.CONFLUENCE_API_TOKEN) shmEnv.CONFLUENCE_API_TOKEN = opts.env.CONFLUENCE_API_TOKEN;
+  for (const [k, v] of Object.entries(opts.env || {})) {
+    if (isSensitiveEnvKey(k) && v !== undefined && v !== null && String(v).length > 0) {
+      shmEnv[k] = String(v);
+    }
+  }
   if (Object.keys(shmEnv).length > 0) {
-    const envLines = Object.entries(shmEnv).map(([k, v]) => `${k}=${v}`).join('\n') + '\n';
+    const envLines = Object.entries(shmEnv)
+      .map(([k, v]) => `export ${k}=${JSON.stringify(v)}`)
+      .join('\n') + '\n';
     streamShmFile('/dev/shm/.env', envLines);
   }
+
+  // Ensure OpenCode agent finds configuration in /dev/shm
+  execFn('docker', [
+    'exec', containerId, 'sh', '-c',
+    'mkdir -p /home/agent/.config /home/agent/.local/share && ln -sfn /dev/shm/opencode /home/agent/.config/opencode && ln -sfn /dev/shm/opencode /home/agent/.local/share/opencode'
+  ], { timeout: 15000 });
 
   return staged;
 }
@@ -489,10 +520,44 @@ export function syncContainerEgressToHost(repoDir, containerId, lifecycleState =
 
   // Established repositories: atomic git bundle fetch without touching host dirty tree
   const bundleHostPath = opts.bundleHostPath || path.join(os.tmpdir(), `asdlc-egress-${containerId.slice(0, 12)}.bundle`);
-  execFn('docker', ['exec', containerId, 'git', '-C', '/workspace', 'bundle', 'create', '/tmp/asdlc-out.bundle', branch], { timeout: 60000 });
-  execFn('docker', ['cp', `${containerId}:/tmp/asdlc-out.bundle`, bundleHostPath], { timeout: 60000 });
+  const bundleRes = execFn('docker', ['exec', containerId, 'git', '-C', '/workspace', 'bundle', 'create', '/tmp/asdlc-out.bundle', branch], { timeout: 60000 });
+  if (bundleRes && bundleRes.status !== 0 && !opts.ignoreErrors) {
+    throw new AsdlcError(`Failed to create git egress bundle inside container: ${bundleRes.stderr || bundleRes.status}`, {
+      code: 'ASDLC_ERR_CONTAINER_EGRESS',
+    });
+  }
+
+  const cpRes = execFn('docker', ['cp', `${containerId}:/tmp/asdlc-out.bundle`, bundleHostPath], { timeout: 60000 });
+  if (cpRes && cpRes.status !== 0 && !opts.ignoreErrors) {
+    throw new AsdlcError(`Failed to copy git egress bundle from container: ${cpRes.stderr || cpRes.status}`, {
+      code: 'ASDLC_ERR_CONTAINER_EGRESS',
+    });
+  }
+
   const targetRef = opts.targetRef || branch;
-  execFn('git', ['fetch', bundleHostPath, `${branch}:${targetRef}`], { cwd: targetDir, timeout: 60000 });
+  const egressTrackingRef = `refs/asdlc/egress/${branch.replace(/^refs\/(heads\/)?/, '')}`;
+  const fetchRes = execFn('git', ['fetch', bundleHostPath, `${branch}:${egressTrackingRef}`, '--force'], { cwd: targetDir, timeout: 60000 });
+  if (fetchRes && fetchRes.status !== 0 && !opts.ignoreErrors) {
+    throw new AsdlcError(`Failed to fetch git egress bundle into host repository: ${fetchRes.stderr || fetchRes.status}`, {
+      code: 'ASDLC_ERR_CONTAINER_EGRESS',
+    });
+  }
+
+  // If host workspace is currently on target branch, fast-forward; otherwise update ref
+  let headBranch = '';
+  try {
+    const headRes = execFn('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: targetDir, timeout: 5000 });
+    headBranch = headRes?.stdout?.trim() || '';
+  } catch {
+    // ignore
+  }
+
+  if (headBranch === branch || headBranch === targetRef) {
+    execFn('git', ['merge', '--ff-only', egressTrackingRef], { cwd: targetDir, timeout: 15000 });
+  } else {
+    execFn('git', ['update-ref', `refs/heads/${targetRef.replace(/^refs\/heads\//, '')}`, egressTrackingRef], { cwd: targetDir, timeout: 15000 });
+  }
+
   try {
     if (fs.existsSync(bundleHostPath)) fs.unlinkSync(bundleHostPath);
   } catch {
@@ -502,14 +567,36 @@ export function syncContainerEgressToHost(repoDir, containerId, lifecycleState =
 }
 
 /**
+ * Build deterministic container CLI invocation command forwarding all orchestrator flags.
+ *
+ * @param {string|null} target
+ * @param {object} [opts]
+ * @returns {string}
+ */
+export function buildContainerRunCommand(target, opts = {}) {
+  const parts = ['asdlc', 'run'];
+  if (target) parts.push(JSON.stringify(String(target)));
+  if (opts.stage) parts.push('--stage', opts.stage);
+  if (opts.repo) parts.push('--repo', JSON.stringify(opts.repo));
+  if (opts.mode) parts.push('--mode', opts.mode);
+  if (opts.model) parts.push('--model', JSON.stringify(opts.model));
+  if (opts.reviewModel) parts.push('--review-model', JSON.stringify(opts.reviewModel));
+  if (opts.targetBranch) parts.push('--target-branch', JSON.stringify(opts.targetBranch));
+  for (const f of (opts.fromFile || [])) parts.push('--from-file', JSON.stringify(f));
+  for (const i of (opts.fromIssue || [])) parts.push('--from-issue', JSON.stringify(i));
+  return parts.join(' ');
+}
+
+/**
  * Executes a full end-to-end containerized pipeline lifecycle:
  * 1. Verifies Docker CLI & daemon
- * 2. Creates container via hardened UID 10001 baseline
- * 3. Ingests workspace via 3-layer staging + volatile credentials in /dev/shm
- * 4. Locks specs root-owned (if apply stage)
- * 5. Starts container and streams execution
- * 6. Syncs egress artifacts back to host repository
- * 7. Cleans up container safely
+ * 2. Creates container with idle entrypoint (sleep infinity) without --rm
+ * 3. Starts container in background so tmpfs (/dev/shm) is mounted and docker exec is accepted
+ * 4. Ingests workspace via 3-layer staging + volatile credentials in /dev/shm
+ * 5. Locks specs root-owned (if apply stage)
+ * 6. Executes pipeline stage as unprivileged UID 10001 with sourced /dev/shm/.env
+ * 7. Syncs egress artifacts back to host repository while container is alive
+ * 8. Cleans up container safely
  *
  * @param {string|null} target
  * @param {object} [opts]
@@ -529,6 +616,8 @@ export async function runContainerPipeline(target, opts = {}) {
   }
 
   const containerName = `asdlc-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const containerSubcommand = buildContainerRunCommand(target, opts);
+
   const createArgs = buildDockerCreateArgs({
     name: containerName,
     image: opts.image || DEFAULT_RUNNER_IMAGE,
@@ -537,7 +626,8 @@ export async function runContainerPipeline(target, opts = {}) {
     sshAgent: opts.sshAgent,
     sshKeyPath: opts.sshKeyPath,
     caCertHostPath: opts.caCertHostPath,
-    cmd: ['asdlc', 'run', ...(target ? [String(target)] : []), ...(opts.stage ? ['--stage', opts.stage] : [])],
+    rm: false, // Must not delete automatically on exit so egress artifacts can be synced
+    cmd: ['sleep', 'infinity'], // Keeps container alive as daemon for staging, execution, and egress
   });
 
   const createRes = execFn('docker', createArgs);
@@ -549,22 +639,41 @@ export async function runContainerPipeline(target, opts = {}) {
   const containerId = String(createRes.stdout || '').trim() || containerName;
 
   try {
+    // 1. Start container in background so tmpfs (/dev/shm) is active and docker exec works
+    const startRes = execFn('docker', ['start', containerId]);
+    if (startRes && startRes.status !== 0) {
+      throw new AsdlcError(`Failed to start container daemon: ${startRes.stderr || startRes.status}`, {
+        code: 'ASDLC_ERR_CONTAINER_START',
+      });
+    }
+
+    // 2. Stage workspace and inject credentials into active /dev/shm
     stageWorkspaceToContainer(targetDir, containerId, {
       ...opts,
       execFn,
       lifecycle: lifecycleInfo.lifecycle,
     });
 
+    // 3. Lock specs root-owned if apply stage
     if (opts.stage === 'apply' && opts.slug) {
       lockContainerSpecsRootReadOnly(containerId, opts.slug, { execFn });
     }
 
-    const startRes = execFn('docker', ['start', '-a', containerId], {
+    // 4. Run stage command inside the running container as unprivileged UID 10001
+    const execTimeout = opts.timeoutMs ?? (opts.stage === 'apply' ? 1800000 : 600000);
+    const runRes = execFn('docker', [
+      'exec',
+      '-u', CONTAINER_SECURITY_BASELINE.user,
+      containerId,
+      'sh', '-c',
+      `if [ -f /dev/shm/.env ]; then . /dev/shm/.env; fi; exec ${containerSubcommand}`,
+    ], {
       stdio: opts.stdio || 'inherit',
-      timeout: opts.timeoutMs ?? 600000,
+      timeout: execTimeout,
     });
-    const exitCode = startRes?.status ?? 0;
+    const exitCode = runRes?.status ?? 0;
 
+    // 5. Sync egress artifacts back to host while container is still alive
     let egress = null;
     if (exitCode === 0 && !opts.skipEgress) {
       egress = syncContainerEgressToHost(targetDir, containerId, lifecycleInfo.lifecycle, {
@@ -577,10 +686,11 @@ export async function runContainerPipeline(target, opts = {}) {
       containerId,
       exitCode,
       egress,
-      stdout: startRes?.stdout || '',
-      stderr: startRes?.stderr || '',
+      stdout: runRes?.stdout || '',
+      stderr: runRes?.stderr || '',
     };
   } finally {
+    // 6. Guarantee container removal
     execFn('docker', ['rm', '-f', containerId]);
   }
 }

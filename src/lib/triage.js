@@ -531,21 +531,36 @@ export async function replyAndResolveGitHubThread(threadId, replyBody = '', opti
     const apiEndpoint = host === 'github.com' ? 'https://api.github.com/graphql' : `https://${host}/api/graphql`;
     const headers = { Authorization: `Bearer ${creds?.token || ''}`, 'Content-Type': 'application/json' };
     try {
-      await fetchFn(apiEndpoint, { method: 'POST', headers, body: JSON.stringify({ query: replyMutation, variables: { threadId: effectiveThreadId, body: effectiveReplyBody } }) });
-      await fetchFn(apiEndpoint, { method: 'POST', headers, body: JSON.stringify({ query: resolveMutation, variables: { threadId: effectiveThreadId } }) });
+      const res1 = await fetchFn(apiEndpoint, { method: 'POST', headers, body: JSON.stringify({ query: replyMutation, variables: { threadId: effectiveThreadId, body: effectiveReplyBody } }) });
+      if (!res1 || !res1.ok) return { ok: false, threadId: effectiveThreadId };
+      const json1 = await res1.json().catch(() => null);
+      if (json1?.errors?.length) return { ok: false, threadId: effectiveThreadId, errors: json1.errors };
+
+      const res2 = await fetchFn(apiEndpoint, { method: 'POST', headers, body: JSON.stringify({ query: resolveMutation, variables: { threadId: effectiveThreadId } }) });
+      if (!res2 || !res2.ok) return { ok: false, threadId: effectiveThreadId };
+      const json2 = await res2.json().catch(() => null);
+      if (json2?.errors?.length) return { ok: false, threadId: effectiveThreadId, errors: json2.errors };
+
       return { ok: true, replied: true, resolved: true, threadId: effectiveThreadId };
-    } catch {
-      return { ok: false, threadId: effectiveThreadId };
+    } catch (err) {
+      return { ok: false, threadId: effectiveThreadId, error: err.message };
     }
   }
 
   try {
     const runGh = ghRunner || ((cmd, args) => spawnSync(cmd, args, { cwd: repoRoot, encoding: 'utf8', env, timeout: 15000 }));
-    runGh('gh', ['api', 'graphql', '-f', `query=${replyMutation}`, '-F', `threadId=${effectiveThreadId}`, '-F', `body=${effectiveReplyBody}`]);
-    runGh('gh', ['api', 'graphql', '-f', `query=${resolveMutation}`, '-F', `threadId=${effectiveThreadId}`]);
+    // Pass literal string parameters with -f (preventing bodies starting with '@' from being parsed as files)
+    const r1 = runGh('gh', ['api', 'graphql', '-f', `query=${replyMutation}`, '-f', `threadId=${effectiveThreadId}`, '-f', `body=${effectiveReplyBody}`]);
+    if (r1 && r1.status !== 0) {
+      return { ok: false, threadId: effectiveThreadId, error: r1.stderr || r1.status };
+    }
+    const r2 = runGh('gh', ['api', 'graphql', '-f', `query=${resolveMutation}`, '-f', `threadId=${effectiveThreadId}`]);
+    if (r2 && r2.status !== 0) {
+      return { ok: false, threadId: effectiveThreadId, error: r2.stderr || r2.status };
+    }
     return { ok: true, replied: true, resolved: true, threadId: effectiveThreadId };
-  } catch {
-    return { ok: false, threadId: effectiveThreadId };
+  } catch (err) {
+    return { ok: false, threadId: effectiveThreadId, error: err.message };
   }
 }
 
