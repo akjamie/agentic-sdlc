@@ -2,7 +2,7 @@
 # 全自动容器流水线与全局治理架构方案
 
 > **Bilingual Solution Proposal (Pre-Implementation RFC) / 中英文双语架构方案（待实施设计稿）**  
-> **Status / 状态**: Proposed Solution — Not Yet Implemented / 方案设计稿（尚未进入代码实现）  
+> **Status / 状态**: Implemented (v2.0.0-alpha.1) / 已进入代码实现与验证  
 > **Scope / 范围**: Global configuration (`asdlc config`), dual-mode governance switch (`spec-first` | `auto`), multi-source intake (`--from-file` / `--from-issue`), hardened non-root polyglot runner (`asdlc-runner`), and state-driven autonomous orchestrator (`asdlc run`).
 
 ---

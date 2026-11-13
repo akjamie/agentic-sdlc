@@ -1,3 +1,7 @@
+import { spawnSync } from 'node:child_process';
+import { resolveGitHostAndRepo } from './githost.js';
+import { resolveGitCredentials } from './auth.js';
+
 /**
  * GraphQL query for fetching PR review threads, review decision, and commit anchor.
  */
@@ -359,12 +363,189 @@ export function checkAntiThrashingCircuitBreaker({
 
   return {
     tripped: true,
-    exitCode: 0,
+    exitCode: 2,
     label: 'asdlc:needs-human-arbitration',
     status: 'PAUSED_NEEDS_HUMAN_ARBITRATION',
     currentRound,
     maxRounds,
     synthesisReport,
   };
+}
+
+function resolveOwnerRepo(repoRoot, explicitRepo = null) {
+  if (explicitRepo) {
+    const parsed = resolveGitHostAndRepo(explicitRepo, { repoRoot });
+    return { owner: parsed.owner, repo: parsed.repo, host: parsed.host };
+  }
+  try {
+    const gitRes = spawnSync('git', ['remote', 'get-url', 'origin'], { cwd: repoRoot, encoding: 'utf8', timeout: 5000 });
+    if (gitRes.status === 0 && gitRes.stdout) {
+      const parsed = resolveGitHostAndRepo(gitRes.stdout.trim(), { repoRoot });
+      return { owner: parsed.owner, repo: parsed.repo, host: parsed.host };
+    }
+  } catch {
+    // ignore
+  }
+  return { owner: null, repo: null, host: 'github.com' };
+}
+
+/**
+ * Fetches full PR review context (review threads, issue comments, review decision) via GraphQL
+ * using gh CLI or direct API fetchFn.
+ */
+export async function fetchGitHubPrReviewContext(prNumber, {
+  repoRoot = process.cwd(),
+  repo = null,
+  host = null,
+  env = process.env,
+  fetchFn = null,
+  ghRunner = null,
+} = {}) {
+  const num = Number(String(prNumber).replace(/^#/, ''));
+  if (!Number.isFinite(num) || num <= 0) {
+    return {};
+  }
+
+  const { owner, repo: repoName, host: targetHost } = resolveOwnerRepo(repoRoot, repo);
+  const effectiveHost = host || targetHost || 'github.com';
+
+  // 1. If fetchFn is provided, call GraphQL API directly
+  if (typeof fetchFn === 'function') {
+    const creds = await resolveGitCredentials({ env, host: effectiveHost, fetchFn });
+    const apiEndpoint = effectiveHost === 'github.com' ? 'https://api.github.com/graphql' : `https://${effectiveHost}/api/graphql`;
+    const headers = {
+      Authorization: `Bearer ${creds?.token || ''}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'agentic-sdlc',
+    };
+    try {
+      const res = await fetchFn(apiEndpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          query: PULL_REQUEST_THREADS_QUERY,
+          variables: { owner: owner || 'unknown', repo: repoName || 'unknown', number: num },
+        }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const pr = json?.data?.repository?.pullRequest;
+        return {
+          prNumber: num,
+          headRefOid: pr?.headRefOid || null,
+          reviewDecision: pr?.reviewDecision || null,
+          reviewThreads: pr?.reviewThreads?.nodes || [],
+          issueComments: [],
+        };
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  // 2. Default: Use GitHub CLI (`gh api graphql`)
+  try {
+    const runGh = ghRunner || ((cmd, args) => spawnSync(cmd, args, { cwd: repoRoot, encoding: 'utf8', env, timeout: 15000 }));
+    if (owner && repoName) {
+      const gqlRes = runGh('gh', [
+        'api',
+        'graphql',
+        '-H', 'Accept: application/vnd.github.v3+json',
+        '-F', `owner=${owner}`,
+        '-F', `repo=${repoName}`,
+        '-F', `number=${num}`,
+        '-f', `query=${PULL_REQUEST_THREADS_QUERY}`,
+      ]);
+      if (gqlRes && gqlRes.status === 0 && gqlRes.stdout) {
+        const json = JSON.parse(gqlRes.stdout);
+        const pr = json?.data?.repository?.pullRequest;
+        const threads = pr?.reviewThreads?.nodes || [];
+        const viewRes = runGh('gh', ['pr', 'view', String(num), '--json', 'title,headRefName,labels,state,comments']);
+        let parsedView = {};
+        if (viewRes && viewRes.status === 0 && viewRes.stdout) {
+          parsedView = JSON.parse(viewRes.stdout);
+        }
+        return {
+          prNumber: num,
+          title: parsedView.title || null,
+          headRefName: parsedView.headRefName || null,
+          labels: parsedView.labels || [],
+          state: parsedView.state || 'OPEN',
+          headRefOid: pr?.headRefOid || null,
+          reviewDecision: pr?.reviewDecision || null,
+          reviewThreads: threads,
+          issueComments: parsedView.comments || [],
+        };
+      }
+    }
+
+    // Fallback: gh pr view json if graphql fails
+    const viewRes = runGh('gh', ['pr', 'view', String(num), '--json', 'title,headRefName,labels,state,comments']);
+    if (viewRes && viewRes.status === 0 && viewRes.stdout) {
+      const parsedView = JSON.parse(viewRes.stdout);
+      return {
+        prNumber: num,
+        title: parsedView.title || null,
+        headRefName: parsedView.headRefName || null,
+        labels: parsedView.labels || [],
+        state: parsedView.state || 'OPEN',
+        reviewThreads: [],
+        issueComments: parsedView.comments || [],
+      };
+    }
+  } catch {
+    // offline / missing gh
+  }
+
+  return { prNumber: num, reviewThreads: [], issueComments: [] };
+}
+
+/**
+ * Replies to an inline PR review thread and resolves the conversation via GraphQL.
+ */
+export async function replyAndResolveGitHubThread(threadId, replyBody = '', options = {}) {
+  let effectiveThreadId = threadId;
+  let effectiveReplyBody = replyBody;
+  let opts = options;
+
+  if (typeof threadId === 'object' && threadId !== null) {
+    effectiveThreadId = threadId.threadId || threadId.id;
+    effectiveReplyBody = threadId.replyBody || threadId.body || '';
+    opts = { ...threadId, ...options };
+  }
+
+  if (!effectiveThreadId) return { ok: false };
+  const {
+    repoRoot = process.cwd(),
+    host = 'github.com',
+    env = process.env,
+    fetchFn = null,
+    ghRunner = null,
+  } = opts;
+
+  const replyMutation = 'mutation ReplyThread($threadId: ID!, $body: String!) { addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $threadId, body: $body }) { comment { id } } }';
+  const resolveMutation = 'mutation ResolveThread($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { isResolved } } }';
+
+  if (typeof fetchFn === 'function') {
+    const creds = await resolveGitCredentials({ env, host, fetchFn });
+    const apiEndpoint = host === 'github.com' ? 'https://api.github.com/graphql' : `https://${host}/api/graphql`;
+    const headers = { Authorization: `Bearer ${creds?.token || ''}`, 'Content-Type': 'application/json' };
+    try {
+      await fetchFn(apiEndpoint, { method: 'POST', headers, body: JSON.stringify({ query: replyMutation, variables: { threadId: effectiveThreadId, body: effectiveReplyBody } }) });
+      await fetchFn(apiEndpoint, { method: 'POST', headers, body: JSON.stringify({ query: resolveMutation, variables: { threadId: effectiveThreadId } }) });
+      return { ok: true, replied: true, resolved: true, threadId: effectiveThreadId };
+    } catch {
+      return { ok: false, threadId: effectiveThreadId };
+    }
+  }
+
+  try {
+    const runGh = ghRunner || ((cmd, args) => spawnSync(cmd, args, { cwd: repoRoot, encoding: 'utf8', env, timeout: 15000 }));
+    runGh('gh', ['api', 'graphql', '-f', `query=${replyMutation}`, '-F', `threadId=${effectiveThreadId}`, '-F', `body=${effectiveReplyBody}`]);
+    runGh('gh', ['api', 'graphql', '-f', `query=${resolveMutation}`, '-F', `threadId=${effectiveThreadId}`]);
+    return { ok: true, replied: true, resolved: true, threadId: effectiveThreadId };
+  } catch {
+    return { ok: false, threadId: effectiveThreadId };
+  }
 }
 

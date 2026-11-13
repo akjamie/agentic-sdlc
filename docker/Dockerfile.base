@@ -18,11 +18,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     openjdk-21-jdk-headless \
     maven \
-    nodejs \
-    npm \
     unzip \
     tar \
     xz-utils \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js 22 LTS
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+  && apt-get install -y --no-install-recommends nodejs \
   && rm -rf /var/lib/apt/lists/*
 
 # Install Go toolchain
@@ -45,6 +48,13 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     > /etc/apt/sources.list.d/github-cli.list \
   && apt-get update && apt-get install -y --no-install-recommends gh \
   && rm -rf /var/lib/apt/lists/*
+
+# Install GitLab CLI (glab)
+ARG GLAB_VERSION=1.51.0
+RUN ARCH="$(dpkg --print-architecture)" \
+  && curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_${ARCH}.deb" -o /tmp/glab.deb \
+  && dpkg -i /tmp/glab.deb || true \
+  && rm -f /tmp/glab.deb
 
 # Hardened enterprise dubious ownership immunity (CVE-2022-24765)
 RUN printf '[safe]\n\tdirectory = /workspace\n' >> /etc/gitconfig

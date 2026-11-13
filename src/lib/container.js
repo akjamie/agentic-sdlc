@@ -1,10 +1,13 @@
-import fs from 'node:fs';
+import fs, { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { scanDiffForSecrets } from '../assess/secrets.js';
 import { AsdlcError } from './errors.js';
 import { git } from './git.js';
+
+const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+export const DEFAULT_RUNNER_IMAGE = `ghcr.io/akjamie/asdlc-runner:${pkg.version}`;
 
 /**
  * Container security baseline enforced internally on every sandbox launch.
@@ -47,7 +50,7 @@ export function collectCorporateProxyEnv(hostEnv = process.env) {
  * @returns {string[]}
  */
 export function buildDockerCreateArgs(opts = {}) {
-  const image = opts.image || 'ghcr.io/akjamie/asdlc-runner:2.0.0';
+  const image = opts.image || DEFAULT_RUNNER_IMAGE;
   const workdir = opts.workdir || CONTAINER_SECURITY_BASELINE.safeDirectory;
   const hostEnv = opts.hostEnv || process.env;
   const args = [
@@ -311,16 +314,22 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
     }
 
     // Layer 2: Uncommitted tracked changes (`git diff --binary HEAD`)
-    const diffRes = execFn('git', ['diff', '--binary', 'HEAD'], { cwd: targetDir });
+    const diffRes = execFn('git', ['diff', '--binary', 'HEAD'], { cwd: targetDir, timeout: 60000 });
     if (diffRes && diffRes.status === 0 && diffRes.stdout && String(diffRes.stdout).trim().length > 0) {
-      execFn('docker', ['exec', '-i', containerId, 'git', 'apply', '--allow-empty', '-'], {
+      const applyRes = execFn('docker', ['exec', '-i', containerId, 'git', 'apply', '--allow-empty', '-'], {
         input: String(diffRes.stdout),
+        timeout: 60000,
       });
+      if (applyRes && applyRes.status !== 0 && !opts.ignoreErrors) {
+        throw new AsdlcError(`Failed to apply git diff in container: ${applyRes.stderr || applyRes.status}`, {
+          code: 'ASDLC_ERR_CONTAINER_STAGE',
+        });
+      }
       staged.layers.push('git-diff-head');
     }
 
     // Layer 3: Untracked non-ignored files (`git ls-files --others --exclude-standard`)
-    const untrackedRes = execFn('git', ['ls-files', '--others', '--exclude-standard'], { cwd: targetDir });
+    const untrackedRes = execFn('git', ['ls-files', '--others', '--exclude-standard'], { cwd: targetDir, timeout: 60000 });
     const untracked = String(untrackedRes?.stdout || '')
       .split(/\r?\n/)
       .map((s) => s.trim())
@@ -330,21 +339,34 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
         const abs = path.join(targetDir, rel);
         if (!fs.existsSync(abs)) continue;
         const containerDestDir = path.posix.dirname(`/workspace/${rel.replace(/\\/g, '/')}`);
-        execFn('docker', ['exec', containerId, 'mkdir', '-p', containerDestDir]);
-        execFn('docker', ['cp', abs, `${containerId}:/workspace/${rel.replace(/\\/g, '/')}`]);
+        execFn('docker', ['exec', containerId, 'mkdir', '-p', containerDestDir], { timeout: 15000 });
+        const cpRes = execFn('docker', ['cp', abs, `${containerId}:/workspace/${rel.replace(/\\/g, '/')}`], { timeout: 30000 });
+        if (cpRes && cpRes.status !== 0 && !opts.ignoreErrors) {
+          throw new AsdlcError(`Failed to copy untracked file '${rel}' into container: ${cpRes.stderr || cpRes.status}`, {
+            code: 'ASDLC_ERR_CONTAINER_STAGE',
+          });
+        }
       }
       staged.layers.push(`untracked-files:${untracked.length}`);
     }
+
+    // Ensure non-root agent user (UID 10001:10001) owns the staged workspace
+    execFn('docker', ['exec', containerId, 'chown', '-R', '10001:10001', '/workspace'], { timeout: 60000 });
   }
 
   // External --from-file attachments
   const fromFiles = Array.isArray(opts.fromFiles) ? opts.fromFiles.filter(Boolean) : [];
   if (fromFiles.length > 0) {
-    execFn('docker', ['exec', containerId, 'mkdir', '-p', '/workspace/.asdlc-intake/files']);
+    execFn('docker', ['exec', containerId, 'mkdir', '-p', '/workspace/.asdlc-intake/files'], { timeout: 15000 });
     for (const f of fromFiles) {
       const abs = path.isAbsolute(f) ? f : path.resolve(targetDir, f);
       if (fs.existsSync(abs)) {
-        execFn('docker', ['cp', abs, `${containerId}:/workspace/.asdlc-intake/files/${path.basename(abs)}`]);
+        const cpRes = execFn('docker', ['cp', abs, `${containerId}:/workspace/.asdlc-intake/files/${path.basename(abs)}`], { timeout: 30000 });
+        if (cpRes && cpRes.status !== 0 && !opts.ignoreErrors) {
+          throw new AsdlcError(`Failed to copy intake file '${f}' into container: ${cpRes.stderr || cpRes.status}`, {
+            code: 'ASDLC_ERR_CONTAINER_STAGE',
+          });
+        }
         staged.externalFiles += 1;
       }
     }
@@ -353,8 +375,13 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
   // Tier 1 enterprise custom skills (~/.asdlc/skills/)
   const customSkillsDir = path.join(homeDir, '.asdlc', 'skills');
   if (fs.existsSync(customSkillsDir)) {
-    execFn('docker', ['exec', containerId, 'mkdir', '-p', '/workspace/.asdlc']);
-    execFn('docker', ['cp', customSkillsDir, `${containerId}:/workspace/.asdlc/skills`]);
+    execFn('docker', ['exec', containerId, 'mkdir', '-p', '/workspace/.asdlc'], { timeout: 15000 });
+    const cpRes = execFn('docker', ['cp', customSkillsDir, `${containerId}:/workspace/.asdlc/skills`], { timeout: 30000 });
+    if (cpRes && cpRes.status !== 0 && !opts.ignoreErrors) {
+      throw new AsdlcError(`Failed to copy custom skills into container: ${cpRes.stderr || cpRes.status}`, {
+        code: 'ASDLC_ERR_CONTAINER_STAGE',
+      });
+    }
     staged.customSkillsInjected = true;
   }
 
@@ -363,6 +390,7 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
     const dir = path.posix.dirname(containerDestPath);
     execFn('docker', ['exec', '-i', containerId, 'sh', '-c', `mkdir -p ${dir} && chmod 700 ${dir} && cat > ${containerDestPath} && chmod 600 ${containerDestPath}`], {
       input: typeof content === 'string' ? content : JSON.stringify(content, null, 2),
+      timeout: 30000,
     });
     staged.shmCredentials.push(containerDestPath);
   };
@@ -385,7 +413,41 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
     streamShmFile('/dev/shm/.ssh/id_ed25519', opts.sshKeyContent);
   }
 
+  // Stream Git / tool credentials into /dev/shm/.env
+  const shmEnv = {};
+  if (opts.creds?.token) {
+    shmEnv.GH_TOKEN = opts.creds.token;
+    shmEnv.GITHUB_TOKEN = opts.creds.token;
+  }
+  if (opts.env?.JIRA_API_TOKEN) shmEnv.JIRA_API_TOKEN = opts.env.JIRA_API_TOKEN;
+  if (opts.env?.CONFLUENCE_API_TOKEN) shmEnv.CONFLUENCE_API_TOKEN = opts.env.CONFLUENCE_API_TOKEN;
+  if (Object.keys(shmEnv).length > 0) {
+    const envLines = Object.entries(shmEnv).map(([k, v]) => `${k}=${v}`).join('\n') + '\n';
+    streamShmFile('/dev/shm/.env', envLines);
+  }
+
   return staged;
+}
+
+/**
+ * Enforces true root-owned read-only immutability (chown 0:0, chmod 0444) on approved spec files
+ * inside the container so the unprivileged agent (UID 10001) cannot mutate them.
+ *
+ * @param {string} containerId
+ * @param {string} changeSlug
+ * @param {object} [opts]
+ * @returns {string[]} locked paths
+ */
+export function lockContainerSpecsRootReadOnly(containerId, changeSlug, opts = {}) {
+  const execFn = opts.execFn || defaultExec;
+  const lockedPaths = [
+    `/workspace/openspec/changes/${changeSlug}/proposal.md`,
+    `/workspace/openspec/changes/${changeSlug}/specs`,
+  ];
+  for (const p of lockedPaths) {
+    execFn('docker', ['exec', '-u', '0:0', containerId, 'sh', '-c', `if [ -e "${p}" ]; then chown -R 0:0 "${p}" && chmod -R 0444 "${p}"; fi`], { timeout: 15000 });
+  }
+  return lockedPaths;
 }
 
 /**
@@ -408,17 +470,17 @@ export function syncContainerEgressToHost(repoDir, containerId, lifecycleState =
 
   if (lifecycleState === 'greenfield') {
     fs.mkdirSync(targetDir, { recursive: true });
-    execFn('docker', ['cp', `${containerId}:/workspace/.`, targetDir]);
+    execFn('docker', ['cp', `${containerId}:/workspace/.`, targetDir], { timeout: 60000 });
     return { lifecycle: 'greenfield', strategy: 'full-copy', dest: targetDir };
   }
 
   if (lifecycleState === 'brownfield') {
     const syncedPaths = [];
     for (const rel of ['openspec', '.agents', 'AGENTS.md', '.gitignore']) {
-      const check = execFn('docker', ['exec', containerId, 'test', '-e', `/workspace/${rel}`]);
+      const check = execFn('docker', ['exec', containerId, 'test', '-e', `/workspace/${rel}`], { timeout: 15000 });
       if (!check || check.status === 0) {
         const hostDest = path.join(targetDir, rel);
-        execFn('docker', ['cp', `${containerId}:/workspace/${rel}`, hostDest]);
+        execFn('docker', ['cp', `${containerId}:/workspace/${rel}`, hostDest], { timeout: 30000 });
         syncedPaths.push(rel);
       }
     }
@@ -427,15 +489,99 @@ export function syncContainerEgressToHost(repoDir, containerId, lifecycleState =
 
   // Established repositories: atomic git bundle fetch without touching host dirty tree
   const bundleHostPath = opts.bundleHostPath || path.join(os.tmpdir(), `asdlc-egress-${containerId.slice(0, 12)}.bundle`);
-  execFn('docker', ['exec', containerId, 'git', '-C', '/workspace', 'bundle', 'create', '/tmp/asdlc-out.bundle', branch]);
-  execFn('docker', ['cp', `${containerId}:/tmp/asdlc-out.bundle`, bundleHostPath]);
+  execFn('docker', ['exec', containerId, 'git', '-C', '/workspace', 'bundle', 'create', '/tmp/asdlc-out.bundle', branch], { timeout: 60000 });
+  execFn('docker', ['cp', `${containerId}:/tmp/asdlc-out.bundle`, bundleHostPath], { timeout: 60000 });
   const targetRef = opts.targetRef || branch;
-  execFn('git', ['fetch', bundleHostPath, `${branch}:${targetRef}`], { cwd: targetDir });
+  execFn('git', ['fetch', bundleHostPath, `${branch}:${targetRef}`], { cwd: targetDir, timeout: 60000 });
   try {
     if (fs.existsSync(bundleHostPath)) fs.unlinkSync(bundleHostPath);
   } catch {
     // ignore cleanup error
   }
   return { lifecycle: 'established', strategy: 'git-bundle-fetch', branch: targetRef };
+}
+
+/**
+ * Executes a full end-to-end containerized pipeline lifecycle:
+ * 1. Verifies Docker CLI & daemon
+ * 2. Creates container via hardened UID 10001 baseline
+ * 3. Ingests workspace via 3-layer staging + volatile credentials in /dev/shm
+ * 4. Locks specs root-owned (if apply stage)
+ * 5. Starts container and streams execution
+ * 6. Syncs egress artifacts back to host repository
+ * 7. Cleans up container safely
+ *
+ * @param {string|null} target
+ * @param {object} [opts]
+ * @returns {Promise<object>} execution summary
+ */
+export async function runContainerPipeline(target, opts = {}) {
+  const execFn = opts.execFn || defaultExec;
+  const targetDir = path.resolve(opts.repoRoot || process.cwd());
+  const lifecycleInfo = detectRepoLifecycle(targetDir);
+
+  const checkDocker = execFn('docker', ['--version']);
+  if (!checkDocker || checkDocker.status !== 0) {
+    throw new AsdlcError('Docker CLI is not available or daemon is not running. Please start Docker or run without --container.', {
+      code: 'ASDLC_ERR_DOCKER_NOT_AVAILABLE',
+      hint: 'Ensure `docker` is in PATH and the Docker daemon is accessible.',
+    });
+  }
+
+  const containerName = `asdlc-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const createArgs = buildDockerCreateArgs({
+    name: containerName,
+    image: opts.image || DEFAULT_RUNNER_IMAGE,
+    hostEnv: opts.env || process.env,
+    sshAuthSock: opts.sshAuthSock,
+    sshAgent: opts.sshAgent,
+    sshKeyPath: opts.sshKeyPath,
+    caCertHostPath: opts.caCertHostPath,
+    cmd: ['asdlc', 'run', ...(target ? [String(target)] : []), ...(opts.stage ? ['--stage', opts.stage] : [])],
+  });
+
+  const createRes = execFn('docker', createArgs);
+  if (!createRes || createRes.status !== 0) {
+    throw new AsdlcError(`Docker create failed: ${createRes?.stderr || createRes?.status}`, {
+      code: 'ASDLC_ERR_CONTAINER_CREATE',
+    });
+  }
+  const containerId = String(createRes.stdout || '').trim() || containerName;
+
+  try {
+    stageWorkspaceToContainer(targetDir, containerId, {
+      ...opts,
+      execFn,
+      lifecycle: lifecycleInfo.lifecycle,
+    });
+
+    if (opts.stage === 'apply' && opts.slug) {
+      lockContainerSpecsRootReadOnly(containerId, opts.slug, { execFn });
+    }
+
+    const startRes = execFn('docker', ['start', '-a', containerId], {
+      stdio: opts.stdio || 'inherit',
+      timeout: opts.timeoutMs ?? 600000,
+    });
+    const exitCode = startRes?.status ?? 0;
+
+    let egress = null;
+    if (exitCode === 0 && !opts.skipEgress) {
+      egress = syncContainerEgressToHost(targetDir, containerId, lifecycleInfo.lifecycle, {
+        execFn,
+        branch: opts.branch || 'HEAD',
+      });
+    }
+
+    return {
+      containerId,
+      exitCode,
+      egress,
+      stdout: startRes?.stdout || '',
+      stderr: startRes?.stderr || '',
+    };
+  } finally {
+    execFn('docker', ['rm', '-f', containerId]);
+  }
 }
 

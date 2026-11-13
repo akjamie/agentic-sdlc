@@ -186,14 +186,22 @@ function detectIntranetIndicators({ env = process.env, policy = null, originUrl 
  * B. Configured shorthand slug (requires configured default_host; never guesses github.com in intranet/multi-subgroup contexts)
  * C. Ambient context (local git origin remote or CI env vars)
  */
-export function resolveGitHostAndRepo(targetInput = '', {
-  repoRoot = null,
-  globalConfig = null,
-  policy = null,
-  env = process.env,
-  strictIntranet = false,
-} = {}) {
-  const raw = String(targetInput ?? '').trim();
+export function resolveGitHostAndRepo(targetInput = '', options = {}) {
+  let opts = options;
+  let raw = '';
+  if (typeof targetInput === 'string') {
+    raw = targetInput.trim();
+  } else if (targetInput && typeof targetInput === 'object') {
+    raw = String(targetInput.repo || targetInput.target || targetInput.url || '').trim();
+    opts = { ...targetInput, ...options };
+  }
+  const {
+    repoRoot = null,
+    globalConfig = null,
+    policy = null,
+    env = process.env,
+    strictIntranet = false,
+  } = opts;
 
   // Tier A: Canonical full URL (GitHub, GitLab, GHES, multi-subgroup, PR/MR URL)
   if (raw) {
