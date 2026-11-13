@@ -1,0 +1,71 @@
+name: Build & Publish Runner Container
+
+on:
+  push:
+    branches:
+      - main
+      - v2
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      push:
+        description: 'Push image to GHCR'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-runner:
+    name: Build & Push asdlc-runner
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: actions/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve Version Tag
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "image_base=ghcr.io/${{ github.repository_owner }}/asdlc-base" >> "$GITHUB_OUTPUT"
+          echo "image_runner=ghcr.io/${{ github.repository_owner }}/asdlc-runner" >> "$GITHUB_OUTPUT"
+
+      - name: Build and Push Base Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.base
+          push: ${{ github.event_name != 'pull_request' && (github.event.inputs.push == 'true' || github.event_name == 'push') }}
+          tags: |
+            ${{ steps.meta.outputs.image_base }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.image_base }}:latest
+
+      - name: Build and Push Runner Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.runner
+          build-args: |
+            BASE_IMAGE=${{ steps.meta.outputs.image_base }}:${{ steps.meta.outputs.version }}
+            ASDLC_VERSION=${{ steps.meta.outputs.version }}
+          push: ${{ github.event_name != 'pull_request' && (github.event.inputs.push == 'true' || github.event_name == 'push') }}
+          tags: |
+            ${{ steps.meta.outputs.image_runner }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.image_runner }}:latest
+

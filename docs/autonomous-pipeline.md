@@ -2,7 +2,7 @@
 # 全自动容器流水线与全局治理架构方案
 
 > **Bilingual Solution Proposal (Pre-Implementation RFC) / 中英文双语架构方案（待实施设计稿）**  
-> **Status / 状态**: Implemented (v2.0.0-alpha.1) / 已进入代码实现与验证  
+> **Status / 状态**: Partially implemented (v2.0.0-alpha.1) — Container orchestration, state vector, and review triage wired; remote agent runners and container image CI in progress. / 部分实现 (v2.0.0-alpha.1) — 容器编排、状态向量及审查分流已连接；远程 Agent 运行器与容器镜像 CI 构建中。  
 > **Scope / 范围**: Global configuration (`asdlc config`), dual-mode governance switch (`spec-first` | `auto`), multi-source intake (`--from-file` / `--from-issue`), hardened non-root polyglot runner (`asdlc-runner`), and state-driven autonomous orchestrator (`asdlc run`).
 
 ---
@@ -716,6 +716,48 @@ For repositories already managed by Agentic SDLC:
 3. **Safe Egress via Remote PR or `git bundle` (Zero Host Working Tree Pollution)**:
    - In standard CI/autonomous mode, the container pushes the branch to `origin` and creates/updates the PR.
    - In local-only or offline mode, naive `docker cp` would risk overwriting unsaved host files or colliding with active IDE file locks. Instead, the container packages the new commits into a self-contained `git bundle` (`/workspace/change.bundle`). The host CLI imports the branch via `git fetch <bundle> <branch>:<branch>`, updating the host Git database without touching the active working copy. The developer can inspect the branch safely at their own pace.
+
+### 5.4 OCI Container Engine Abstraction (Docker, Podman, nerdctl) & Run Lifecycle
+
+> **Status**: Proposed amendment (supersedes the implicit "Docker-only" assumption in §2.1, §3.3, §5.2 and §5.3).
+
+The runner is an **OCI container**, not a Docker feature. `asdlc` talks to a thin `ContainerEngine` adapter; no other module may spawn `docker`/`podman` directly.
+
+#### 5.4.1 Engine selection (first match wins)
+1. CLI `--engine docker|podman|nerdctl`
+2. Env `ASDLC_CONTAINER_ENGINE`
+3. Global config `runner.engine`
+4. `auto`: probe `docker`, `podman`, `nerdctl` in that order; pick the first whose `<engine> info` succeeds.
+
+Docker-compatible front ends (Colima, Rancher Desktop with dockerd, OrbStack, `podman-docker` alias) use the same adapter. K8s is out of scope, but the adapter interface must be implementable by a Job-based backend later.
+
+#### 5.4.2 Adapter interface
+`info() · pull(image) · create(spec) · start(id) · exec(id, argv, {user, stdin, env}) · cpIn(id, src, dst) · cpOut(id, src, dst) · rm(id)`; every call returns `{ status, stdout, stderr }` and is never silently ignored.
+
+#### 5.4.3 Engine differences that MUST be handled
+| Topic | Docker | Podman (rootless) | Rule |
+| :--- | :--- | :--- | :--- |
+| UID mapping | UID 10001 == host 10001 | subuid-mapped; files copied in may have different owner | Fix ownership with `exec -u 0:0 chown`; in rootless mode container-root is an unprivileged host user. `--userns=keep-id` optional |
+| SSH agent forward | Docker Desktop alias `/run/host-services/ssh-auth.sock` | No alias; mount the real socket; add `:z` on SELinux hosts | Branch by engine + platform |
+| Image names | Falls back to docker.io | Short-name prompt/policy | Always fully-qualified (`ghcr.io/...`, internal registry prefix required) |
+| Daemon | Required | None; macOS/Windows need `podman machine` | Probe with `info`, not `--version`; `doctor` reports machine state |
+| Error codes | `ASDLC_ERR_DOCKER_NOT_AVAILABLE` | same condition | Rename to `ASDLC_ERR_ENGINE_NOT_AVAILABLE`, message names the engine tried |
+
+#### 5.4.4 Run lifecycle (normative, replaces create-then-exec-before-start)
+`docker exec` and `/dev/shm` only exist on a **running** container, so the sequence is:
+1. `create` with an idle entrypoint (`sleep infinity`), hardened flags from §5.2, no secrets in `-e`.
+2. `start`.
+3. **Stage** (running container): 3-layer workspace ingestion, `chown` to 10001, intake files, custom skills, and secrets streamed via `exec -i` into `/dev/shm` (0600).
+4. **Self-check**: inside the container assert `id -u == 10001`, `CapEff == 0`, `NoNewPrivs == 1`; abort otherwise.
+5. Root-owned spec lock (`exec -u 0:0`) when stage is `apply`/`verify`.
+6. `exec` (as 10001) `asdlc run <target> --stage <s>` with the full flag set (`--repo`, `--from-file`, `--from-issue`, `--mode`, `--model`, `--review-model`, `--target-branch`), sourcing `/dev/shm/.env` and pointing `XDG_CONFIG_HOME`/`XDG_DATA_HOME` at the staged OpenCode config.
+7. **Egress before teardown**: PR push is authoritative; for local sync use `git bundle` fetched into a dedicated ref (never into the checked-out branch). Check every result.
+8. `rm -f` in `finally`. Do not use `--rm` (it destroys the container before egress); idle entrypoint + explicit `rm` gives the same no-leftover guarantee.
+
+#### 5.4.5 Verification requirements
+- `asdlc doctor` reports engine, version, rootless/machine state, and whether `cap-drop`/`pids-limit` took effect.
+- `--dry-run` prints the selected engine and the full command lines.
+- Tests run the same scenarios against a stub `docker` and a stub `podman` binary that **rejects `exec` on a non-running container**.
 
 ---
 
@@ -1627,6 +1669,48 @@ flowchart LR
        - *脏工作区高保真注入*：开发人员常在本地存有未提交改动（WIP / Staged）时拉起容器任务。宿主机采集 `git archive HEAD`（已提交基线）与 `git diff HEAD`（本地工作区实时增量 patch），在容器内精确还原宿主机当前的真实编辑现场。
        - *增量图谱刷新*：容器跳过全量扫描，仅对近期变动文件做增量 AST 刷新，秒级进入需求状态机。
        - *安全回流（PR 或 `git bundle` 零污染拉回）*：联网时容器直接推送远端 PR；离线或本地模式下，若使用传统 `docker cp` 会覆盖宿主机正在编辑的文件或引发 IDE 锁冲突，因此容器将新生成的 Commit 打包为自包含的 `git bundle` 存入临时卷，宿主机执行 `git fetch <bundle> <branch>:<branch>` 仅更新宿主 Git 对象库，绝不粗暴覆盖宿主机当前工作区，杜绝文件冲突与丢失。
+
+### 5.4 OCI 容器引擎抽象（Docker / Podman / nerdctl）与运行生命周期
+
+> **状态**：拟议修订（取代 §2.1、§3.3、§5.2、§5.3 中隐含的“仅 Docker”假设）。
+
+Runner 是一个 **OCI 容器**，不是 Docker 专属功能。`asdlc` 只通过薄层 `ContainerEngine` 适配器调用引擎；其他模块禁止直接 spawn `docker`/`podman`。
+
+#### 5.4.1 引擎选择（先匹配者生效）
+1. CLI `--engine docker|podman|nerdctl`
+2. 环境变量 `ASDLC_CONTAINER_ENGINE`
+3. 全局配置 `runner.engine`
+4. `auto`：依次探测 `docker`、`podman`、`nerdctl`，选第一个 `<engine> info` 成功者。
+
+Docker 兼容前端（Colima、Rancher Desktop dockerd 模式、OrbStack、`podman-docker` 别名）共用同一适配器。K8s 暂不实现，但接口需允许日后用 Job 方式实现。
+
+#### 5.4.2 适配器接口
+`info() · pull(image) · create(spec) · start(id) · exec(id, argv, {user, stdin, env}) · cpIn(id, src, dst) · cpOut(id, src, dst) · rm(id)`；每次调用返回 `{ status, stdout, stderr }`，不得静默忽略失败。
+
+#### 5.4.3 必须处理的引擎差异
+| 主题 | Docker | Podman（rootless） | 规则 |
+| :--- | :--- | :--- | :--- |
+| UID 映射 | 容器 UID 10001 即宿主 10001 | 经 subuid 映射，拷入文件属主可能不同 | 用 `exec -u 0:0 chown` 修正属主；rootless 下容器内 root 只是宿主普通用户。可选 `--userns=keep-id` |
+| SSH agent 转发 | Docker Desktop 提供 `/run/host-services/ssh-auth.sock` | 无该别名，需挂载真实 socket；SELinux 主机加 `:z` | 按引擎+平台分支 |
+| 镜像名 | 默认回退 docker.io | 触发短名策略 | 始终写全限定名（`ghcr.io/...`，企业镜像必须带 registry 前缀） |
+| 守护进程 | 需要 | 无；macOS/Windows 需 `podman machine` | 用 `info` 探测而非 `--version`；`doctor` 报告 machine 状态 |
+| 错误码 | `ASDLC_ERR_DOCKER_NOT_AVAILABLE` | 同一条件 | 改名为 `ASDLC_ERR_ENGINE_NOT_AVAILABLE`，信息中写明尝试过的引擎 |
+
+#### 5.4.4 运行生命周期（规范性，取代“先 create 再在 start 前 exec”）
+`docker exec` 与 `/dev/shm` 只在**运行中**的容器上有效，因此顺序为：
+1. `create`，entrypoint 为空闲进程（`sleep infinity`），使用 §5.2 的加固参数，**不**通过 `-e` 传密钥。
+2. `start`。
+3. **注入**（容器已运行）：三层工作区摄入、属主修正为 10001、intake 文件、自定义 skills，密钥通过 `exec -i` 写入 `/dev/shm`（0600）。
+4. **自检**：容器内断言 `id -u == 10001`、`CapEff == 0`、`NoNewPrivs == 1`，不满足则中止。
+5. `apply`/`verify` 阶段执行 root 属主只读锁（`exec -u 0:0`）。
+6. 以 10001 `exec` `asdlc run <target> --stage <s>`，并透传完整参数（`--repo`、`--from-file`、`--from-issue`、`--mode`、`--model`、`--review-model`、`--target-branch`），加载 `/dev/shm/.env`，并用 `XDG_CONFIG_HOME`/`XDG_DATA_HOME` 指向已注入的 OpenCode 配置。
+7. **销毁前出口同步**：以 PR 推送为准；本地同步用 `git bundle` 拉入专用 ref（绝不拉入当前检出分支），并检查每一步结果。
+8. `finally` 中 `rm -f`。不使用 `--rm`（它会在出口同步前销毁容器）；空闲 entrypoint + 显式 `rm` 同样保证无残留。
+
+#### 5.4.5 验证要求
+- `asdlc doctor` 报告引擎、版本、rootless/machine 状态，以及 `cap-drop`/`pids-limit` 是否生效。
+- `--dry-run` 输出所选引擎与完整命令行。
+- 测试用桩 `docker` 与桩 `podman` 二进制跑同一套场景，桩须**拒绝对未运行容器的 `exec`**。
 
 ---
 

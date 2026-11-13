@@ -608,8 +608,9 @@ test('runContainerPipeline & lockContainerSpecsRootReadOnly: validates docker pr
     assert.equal(runRes.exitCode, 0);
     assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === '--version'));
     assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === 'create'));
+    assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === 'start' && c[2] === 'cid-mock-99999'));
     assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === 'exec' && c.includes('0:0')));
-    assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === 'start' && c[2] === '-a'));
+    assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === 'exec' && c.some((a) => String(a).includes('asdlc'))));
     assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === 'rm' && c[2] === '-f'));
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
@@ -717,6 +718,167 @@ test('PR error handling and triage GraphQL I/O defaults', async () => {
     assert.equal(mutationCalls.length, 2);
     assert.ok(mutationCalls[0].some((a) => a.includes('addPullRequestReviewThreadReply')));
     assert.ok(mutationCalls[1].some((a) => a.includes('resolveReviewThread')));
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('Stub Docker daemon simulation: enforces realistic daemon state machine (exec only on running, tmpfs only after start, egress before rm)', async () => {
+  const repo = mkTmp('asdlc-stub-docker-');
+  try {
+    initGitRepo(repo, { withOpenspec: true });
+    newChange('stub docker validation', { repoRoot: repo, id: 'stub-change', grill: false, openspec: false });
+
+    // Realistic state machine tracking container lifecycle
+    let containerState = 'none'; // 'none' | 'created' | 'running' | 'removed'
+    const execLog = [];
+
+    const stubDockerExec = (cmd, args) => {
+      execLog.push([cmd, ...args]);
+      if (cmd === 'docker') {
+        const sub = args[0];
+        if (sub === '--version') return { status: 0, stdout: 'Docker version 27.0.0' };
+        if (sub === 'create') {
+          containerState = 'created';
+          return { status: 0, stdout: 'cid-daemon-real\n' };
+        }
+        if (sub === 'start') {
+          if (containerState !== 'created') {
+            return { status: 1, stderr: `Error response from daemon: Container is in state ${containerState}` };
+          }
+          containerState = 'running';
+          return { status: 0 };
+        }
+        if (sub === 'exec') {
+          // Docker strictly requires running state for exec
+          if (containerState !== 'running') {
+            return { status: 1, stderr: `Error response from daemon: Container is not running (state: ${containerState})` };
+          }
+          return { status: 0 };
+        }
+        if (sub === 'cp') {
+          if (containerState === 'removed') {
+            return { status: 1, stderr: 'Error response from daemon: No such container' };
+          }
+          return { status: 0 };
+        }
+        if (sub === 'rm') {
+          containerState = 'removed';
+          return { status: 0 };
+        }
+      }
+      if (cmd === 'git') return { status: 0, stdout: '' };
+      return { status: 0 };
+    };
+
+    const res = await runContainerPipeline('stub-change', {
+      repoRoot: repo,
+      stage: 'apply',
+      slug: 'stub-change',
+      execFn: stubDockerExec,
+    });
+
+    assert.equal(res.exitCode, 0);
+    assert.equal(containerState, 'removed');
+    // Ensure that no 'exec' was ever run while state was 'created'
+    const createIndex = execLog.findIndex((c) => c[0] === 'docker' && c[1] === 'create');
+    const startIndex = execLog.findIndex((c) => c[0] === 'docker' && c[1] === 'start');
+    const firstExecIndex = execLog.findIndex((c) => c[0] === 'docker' && c[1] === 'exec');
+
+    assert.ok(createIndex >= 0 && startIndex > createIndex, 'start must follow create');
+    assert.ok(firstExecIndex > startIndex, 'all docker exec calls must happen after docker start');
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('Product integrity: autonomous mode fails fast without agents and fix stage protects review feedback', async () => {
+  const repo = mkTmp('asdlc-integrity-test-');
+  try {
+    initGitRepo(repo, { withOpenspec: true });
+    newChange('integrity test change', { repoRoot: repo, id: 'integ-change', grill: false, openspec: false });
+    const cdir = path.join(repo, 'openspec', 'changes', 'integ-change');
+    fs.writeFileSync(path.join(cdir, 'proposal.md'), '# Proposal: Integrity Change\nProvide robust integrity checks.\n');
+    fs.writeFileSync(path.join(cdir, 'design.md'), '# Technical Design\n\n## Architecture & Sequence\nIncoming payloads are verified using constant-time HMAC comparison.\n\n## Security\nMissing signatures fail closed.\n');
+    fs.mkdirSync(path.join(cdir, 'specs', 'cap'), { recursive: true });
+    fs.writeFileSync(path.join(cdir, 'specs', 'cap', 'spec.md'), [
+      '# Spec',
+      '',
+      '## Purpose',
+      'Validate HMAC signatures on incoming requests.',
+      '',
+      '## ADDED Requirements',
+      '### Requirement: One',
+      'The service SHALL validate incoming signatures.',
+      '#### Scenario: S1',
+      '- **GIVEN** valid payload',
+      '- **WHEN** received',
+      '- **THEN** return 200',
+      '- [ ] AC1: test check (test: test/a.test.js)',
+      '',
+      '## Test Strategy',
+      'Execute unit test suite.',
+      '',
+    ].join('\n'));
+    fs.writeFileSync(path.join(cdir, 'clarifications.md'), '# Clarifications\n- [SETTLED] All settled\n');
+
+    // 1. Autonomous mode without agent executor fails with ASDLC_ERR_AGENT_UNAVAILABLE (no fake approvals)
+    await assert.rejects(
+      () => runPipeline('integ-change', {
+        repoRoot: repo,
+        stage: 'spec',
+        autonomous: true,
+      }),
+      (err) => err.code === 'ASDLC_ERR_AGENT_UNAVAILABLE'
+    );
+
+    // 2. Local manual run reports honest 'skipped' or 'waiting' status rather than fake pass
+    const manualSpec = await runPipeline('integ-change', {
+      repoRoot: repo,
+      stage: 'spec',
+      skipPr: true,
+    });
+    assert.equal(manualSpec.review.status, 'skipped');
+    assert.match(manualSpec.review.summary, /AI review agent not configured/);
+
+    // 3. Fix stage preserves Category C questions and leaves threads open if no fix commit was created
+    const fixResNoCommit = await runPipeline('integ-change', {
+      repoRoot: repo,
+      stage: 'fix',
+      prContext: {
+        changeId: 'integ-change',
+        threads: [
+          { id: 'T_ACTION', path: 'src/a.js', line: 1, isResolved: false, comments: { nodes: [{ body: 'Fix this bug', author: { login: 'reviewer' } }] } },
+          { id: 'T_QUESTION', path: 'src/a.js', line: 2, isResolved: false, comments: { nodes: [{ body: 'Why did we use float here?', author: { login: 'reviewer' } }] } },
+        ],
+      },
+    });
+
+    assert.equal(fixResNoCommit.unresolvedQuestions, 1, 'Category C question preserved for human');
+    assert.equal(fixResNoCommit.resolvedThreads.length, 0, 'No threads resolved without a verified fix commit');
+    assert.equal(fixResNoCommit.fixOutput.status, 'plan_generated');
+
+    // 4. Fix stage resolves only when verified commitSha is produced
+    const repliesSent = [];
+    const fixResWithCommit = await runPipeline('integ-change', {
+      repoRoot: repo,
+      stage: 'fix',
+      commitSha: 'c0ffee1234567890',
+      fetchPrContext: async () => ({
+        reviewThreads: [
+          { id: 'T_ACTION', path: 'src/a.js', line: 1, isResolved: false, comments: { nodes: [{ body: 'Fix this bug', author: { login: 'reviewer' } }] } },
+          { id: 'T_QUESTION', path: 'src/a.js', line: 2, isResolved: false, comments: { nodes: [{ body: 'Why did we use float here?', author: { login: 'reviewer' } }] } },
+        ],
+      }),
+      fixExecutor: async ({ plan }) => ({ ok: true, commitSha: 'c0ffee1234567890' }),
+      ghRunner: (cmd, args) => {
+        repliesSent.push([cmd, ...args]);
+        return { status: 0, stdout: JSON.stringify({ data: { addPullRequestReviewThreadReply: { comment: { id: 'C1' } }, resolveReviewThread: { thread: { isResolved: true } } } }) };
+      },
+    });
+
+    assert.equal(fixResWithCommit.unresolvedQuestions, 1, 'Category C question remained open');
+    assert.equal(fixResWithCommit.resolvedThreads.length, 1, 'Only Category A actionable thread was resolved');
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }

@@ -750,8 +750,13 @@ export async function runPipeline(target, opts = {}) {
       let reviewResult = null;
       if (typeof opts.specReviewer === 'function') {
         reviewResult = await opts.specReviewer({ slug, cdir, repoRoot, reviewModel: harness.reviewModel });
+      } else if (opts.autonomous) {
+        fail('Autonomous spec stage requires an AI review agent harness.', {
+          code: 'ASDLC_ERR_AGENT_UNAVAILABLE',
+          hint: 'Configure OpenCode or Claude Code harness to enable autonomous review.',
+        });
       } else {
-        reviewResult = { status: 'passed', summary: 'spec review verified against BDD lint criteria' };
+        reviewResult = { status: 'skipped', summary: 'AI review agent not configured (deterministic BDD lint passed; human review on PR)' };
       }
       let prResult = null;
       if (!opts.skipPr) {
@@ -785,8 +790,13 @@ export async function runPipeline(target, opts = {}) {
       let implOutput = null;
       if (typeof opts.implExecutor === 'function') {
         implOutput = await opts.implExecutor({ slug, cdir, repoRoot, lockedSpecPaths, model: harness.model });
+      } else if (opts.autonomous) {
+        fail('Autonomous apply stage requires an AI implementation agent.', {
+          code: 'ASDLC_ERR_AGENT_UNAVAILABLE',
+          hint: 'Configure OpenCode or Claude Code harness to run autonomous TDD implementation.',
+        });
       } else {
-        implOutput = { status: 'ready', message: 'Spec locked 0444 read-only. Proceed with TDD tasks in tasks.md.' };
+        implOutput = { status: 'waiting_for_implementation', message: 'Spec locked 0444 read-only. Implement tasks in tasks.md, then run asdlc verify.' };
       }
       result = {
         slug,
@@ -804,8 +814,12 @@ export async function runPipeline(target, opts = {}) {
       let implReview = null;
       if (typeof opts.implReviewer === 'function') {
         implReview = await opts.implReviewer({ slug, cdir, repoRoot, reviewModel: harness.reviewModel });
+      } else if (opts.autonomous) {
+        fail('Autonomous verify stage requires an independent AI reviewer.', {
+          code: 'ASDLC_ERR_AGENT_UNAVAILABLE',
+        });
       } else {
-        implReview = { status: 'passed', summary: 'Implementation review passed verification gates.' };
+        implReview = { status: 'skipped', summary: 'Independent AI reviewer not configured' };
       }
       const verifyExitCode = runVerify(slug, {
         repoRoot,
@@ -881,20 +895,27 @@ export async function runPipeline(target, opts = {}) {
         commitMessages: prCtx.commitMessages || [],
         agentLogins: prCtx.agentLogins || prCtx.botLogins || [],
       });
-      const plan = [
+      // §6.3.4: Category C questions must NEVER be resolved automatically
+      const actionablePlan = [
         ...triage.actionableThreads,
         ...triage.suggestionThreads,
-        ...triage.questionThreads,
       ].map((t) => buildThreadResolutionPlan(t, { commitSha: opts.commitSha }));
 
       let fixOutput = null;
       if (typeof opts.fixExecutor === 'function') {
-        fixOutput = await opts.fixExecutor({ slug, prNumber, triage, plan, repoRoot });
-      } else if (plan.length > 0 && !opts.skipThreadResolution) {
-        const resolvedThreads = [];
-        for (const item of plan) {
+        fixOutput = await opts.fixExecutor({ slug, prNumber, triage, plan: actionablePlan, repoRoot });
+      }
+
+      // Threads may ONLY be resolved after a verified fix commit exists
+      const effectiveCommitSha = fixOutput?.commitSha || opts.commitSha;
+      const resolvedThreads = [];
+      if (effectiveCommitSha && fixOutput?.ok !== false && !opts.skipThreadResolution) {
+        for (const item of actionablePlan) {
           if (item.threadId) {
-            const res = await replyAndResolveGitHubThread(item.threadId, item.commitMessage || 'Resolved in automated fix session.', {
+            const replyMsg = item.commitMessage
+              ? `Applied suggestion in commit ${effectiveCommitSha.slice(0, 8)}:\n${item.commitMessage}`
+              : `Resolved in commit ${effectiveCommitSha.slice(0, 8)}.`;
+            const res = await replyAndResolveGitHubThread(item.threadId, replyMsg, {
               repoRoot,
               repo: opts.repo,
               host: opts.host,
@@ -904,7 +925,6 @@ export async function runPipeline(target, opts = {}) {
             resolvedThreads.push(res);
           }
         }
-        fixOutput = { resolvedThreads, planCount: plan.length };
       }
 
       result = {
@@ -913,8 +933,14 @@ export async function runPipeline(target, opts = {}) {
         stage: 'fix',
         phase: vectorResult.phase === 'SPEC_HUMAN_REVIEW_FIX' ? 'SPEC_HUMAN_REVIEW_FIX' : 'IMPL_HUMAN_REVIEW_FIX',
         triage,
-        resolutionPlan: plan,
-        fixOutput,
+        resolutionPlan: actionablePlan,
+        unresolvedQuestions: triage.questionThreads.length,
+        fixOutput: fixOutput || {
+          status: 'plan_generated',
+          resolvedCount: resolvedThreads.length,
+          reason: effectiveCommitSha ? 'Fix processed' : 'No fix commit executed; review threads remain open for agent/author',
+        },
+        resolvedThreads,
         exitCode: 0,
       };
     }
