@@ -324,6 +324,7 @@ test('runPipeline: Draft PR clarification pause/resume, spec-first applyGuard, 0
       repoRoot: repo,
       stage: 'verify',
       mode: 'spec-first',
+      ci: false,
       skipPush: true,
       skipCliPr: true,
       skipOpenspec: true,

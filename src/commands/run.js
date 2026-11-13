@@ -642,6 +642,8 @@ export async function runPipeline(target, opts = {}) {
         protectedBranch: targetBranch,
         base: targetBranch,
         mode: opts.mode,
+        ci: opts.ci,
+        approved: opts.approved,
         skipOpenspec: opts.skipOpenspec,
         skipExternal: opts.skipExternal,
       });
