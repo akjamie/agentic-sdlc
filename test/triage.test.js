@@ -159,7 +159,7 @@ test('Anti-Thrashing Circuit Breaker: allows rounds 1-3 and trips cleanly on rou
 
   const tripped = checkAntiThrashingCircuitBreaker({ currentRound: 4, maxRounds: 3, unresolvedThreads: unresolved, changeId: 'feat-auth', prNumber: 42 });
   assert.equal(tripped.tripped, true);
-  assert.equal(tripped.exitCode, 0);
+  assert.equal(tripped.exitCode, 2);
   assert.equal(tripped.label, 'asdlc:needs-human-arbitration');
   assert.equal(tripped.status, 'PAUSED_NEEDS_HUMAN_ARBITRATION');
   assert.match(tripped.synthesisReport, /Anti-Thrashing Circuit Breaker Tripped/);

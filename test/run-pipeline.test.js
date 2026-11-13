@@ -6,14 +6,21 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
   CONTAINER_SECURITY_BASELINE,
+  DEFAULT_RUNNER_IMAGE,
   buildDockerCreateArgs,
   detectRepoLifecycle,
+  lockContainerSpecsRootReadOnly,
   lockSpecsReadOnly,
   preScanWorkspaceForSecrets,
+  runContainerPipeline,
   stageWorkspaceToContainer,
   syncContainerEgressToHost,
   unlockSpecsWritable,
 } from '../src/lib/container.js';
+import {
+  fetchGitHubPrReviewContext,
+  replyAndResolveGitHubThread,
+} from '../src/lib/triage.js';
 import {
   CANONICAL_STAGES,
   acquireChangeMutex,
@@ -358,7 +365,7 @@ test('runPipeline: Draft PR clarification pause/resume, spec-first applyGuard, 0
     assert.equal(brokenFix.phase, 'HUMAN_ARBITRATION_REQUIRED');
     assert.equal(brokenFix.circuitBroken, true);
     assert.equal(brokenFix.escalationLabel, 'asdlc:needs-human-arbitration');
-    assert.equal(brokenFix.exitCode, 0);
+    assert.equal(brokenFix.exitCode, 2);
 
     // 6. Per-change mutex prevents concurrent runs on the same change
     const lockPath = acquireChangeMutex(cdir, { stage: 'apply' });
@@ -541,6 +548,175 @@ test('Human-centric runPipeline resolution (branch auto-detect, PR label, multi-
       }),
     });
     assert.equal(prDry.slug, 'alpha-change');
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runContainerPipeline & lockContainerSpecsRootReadOnly: validates docker preflight, root locking, lifecycle, and egress', async () => {
+  const repo = mkTmp('asdlc-cont-test-');
+  try {
+    initGitRepo(repo, { withOpenspec: true });
+    newChange('container execution test', { repoRoot: repo, id: 'cont-change', grill: false, openspec: false });
+
+    // 1. Docker preflight failure throws ASDLC_ERR_DOCKER_NOT_AVAILABLE
+    await assert.rejects(
+      () => runContainerPipeline('cont-change', {
+        repoRoot: repo,
+        execFn: (cmd, args) => {
+          if (cmd === 'docker' && args[0] === '--version') return { status: 1, stderr: 'docker: command not found' };
+          return { status: 0 };
+        },
+      }),
+      (err) => err.code === 'ASDLC_ERR_DOCKER_NOT_AVAILABLE'
+    );
+
+    // 2. lockContainerSpecsRootReadOnly executes docker exec -u 0:0 chown and chmod
+    const lockCalls = [];
+    lockContainerSpecsRootReadOnly('cid-abc', 'cont-change', {
+      execFn: (cmd, args) => {
+        lockCalls.push([cmd, ...args]);
+        return { status: 0 };
+      },
+    });
+    assert.equal(lockCalls.length, 2);
+    assert.equal(lockCalls[0][0], 'docker');
+    assert.ok(lockCalls[0].includes('-u'));
+    assert.ok(lockCalls[0].includes('0:0'));
+    assert.ok(lockCalls[0].some((a) => String(a).includes('chown -R 0:0') && String(a).includes('chmod -R 0444')));
+
+    // 3. Full container pipeline lifecycle execution
+    const containerCalls = [];
+    const runRes = await runContainerPipeline('cont-change', {
+      repoRoot: repo,
+      stage: 'apply',
+      slug: 'cont-change',
+      execFn: (cmd, args) => {
+        containerCalls.push([cmd, ...args]);
+        if (cmd === 'docker' && args[0] === '--version') return { status: 0, stdout: 'Docker version 27.0.0' };
+        if (cmd === 'docker' && args[0] === 'create') return { status: 0, stdout: 'cid-mock-99999\n' };
+        if (cmd === 'docker' && args[0] === 'start') return { status: 0, stdout: 'pipeline completed' };
+        if (cmd === 'docker' && args[0] === 'rm') return { status: 0 };
+        if (cmd === 'docker' && args[0] === 'exec') return { status: 0 };
+        if (cmd === 'docker' && args[0] === 'cp') return { status: 0 };
+        if (cmd === 'git') return { status: 0, stdout: '' };
+        return { status: 0 };
+      },
+    });
+
+    assert.equal(runRes.containerId, 'cid-mock-99999');
+    assert.equal(runRes.exitCode, 0);
+    assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === '--version'));
+    assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === 'create'));
+    assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === 'exec' && c.includes('0:0')));
+    assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === 'start' && c[2] === '-a'));
+    assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === 'rm' && c[2] === '-f'));
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('PR error handling and triage GraphQL I/O defaults', async () => {
+  const repo = mkTmp('asdlc-pr-test-');
+  try {
+    initGitRepo(repo, { withOpenspec: true });
+
+    // 1. Missing or unresolvable PR number fails fast with ASDLC_ERR_PR_NOT_FOUND
+    await assert.rejects(
+      () => runPipeline('#999', {
+        repoRoot: repo,
+        prMetadataResolver: async () => null,
+      }),
+      (err) => err.code === 'ASDLC_ERR_PR_NOT_FOUND'
+    );
+
+    // 2. fetchGitHubPrReviewContext: parses GraphQL PR review threads and comments
+    const mockGqlPayload = {
+      data: {
+        repository: {
+          pullRequest: {
+            headRefOid: 'abc1234',
+            reviewDecision: 'CHANGES_REQUESTED',
+            reviewThreads: {
+              nodes: [
+                {
+                  id: 'THREAD_1',
+                  isResolved: false,
+                  path: 'src/app.js',
+                  line: 42,
+                  comments: {
+                    nodes: [
+                      {
+                        id: 'COMMENT_1',
+                        body: '```suggestion\nconst fixed = true;\n```',
+                        author: { login: 'reviewer-alice' },
+                        createdAt: '2026-11-13T00:00:00Z',
+                      },
+                    ],
+                  },
+                },
+                {
+                  id: 'THREAD_BOT',
+                  isResolved: false,
+                  path: 'src/app.js',
+                  line: 10,
+                  comments: {
+                    nodes: [
+                      {
+                        id: 'COMMENT_BOT',
+                        body: 'Automated scan finished',
+                        author: { login: 'codecov[bot]' },
+                        createdAt: '2026-11-13T00:00:00Z',
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+
+    const ctx = await fetchGitHubPrReviewContext(42, {
+      repoRoot: repo,
+      repo: 'https://github.com/acme/repo.git',
+      fetchFn: async () => ({
+        ok: true,
+        json: async () => mockGqlPayload,
+      }),
+    });
+
+    assert.equal(ctx.prNumber, 42);
+    assert.equal(ctx.reviewDecision, 'CHANGES_REQUESTED');
+    assert.equal(ctx.reviewThreads.length, 2);
+
+    // 3. replyAndResolveGitHubThread executes GraphQL mutation
+    const mutationCalls = [];
+    const repRes = await replyAndResolveGitHubThread({
+      threadId: 'THREAD_1',
+      replyBody: 'Applied suggestion in commit abc',
+      resolve: true,
+      repoRoot: repo,
+      ghRunner: (cmd, args) => {
+        mutationCalls.push([cmd, ...args]);
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            data: {
+              addPullRequestReviewThreadReply: { comment: { id: 'NEW_C' } },
+              resolveReviewThread: { thread: { isResolved: true } },
+            },
+          }),
+        };
+      },
+    });
+
+    assert.equal(repRes.replied, true);
+    assert.equal(repRes.resolved, true);
+    assert.equal(mutationCalls.length, 2);
+    assert.ok(mutationCalls[0].some((a) => a.includes('addPullRequestReviewThreadReply')));
+    assert.ok(mutationCalls[1].some((a) => a.includes('resolveReviewThread')));
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }
