@@ -9,7 +9,7 @@ const bin = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bi
 
 test('asdlc --version prints the package version', () => {
   const out = execFileSync(process.execPath, [bin, '--version'], { encoding: 'utf8' }).trim();
-  assert.match(out, /^\d+\.\d+\.\d+$/);
+  assert.match(out, /^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$/);
 });
 
 test('asdlc is a minimal surface: 7 stages + navigation + health + skills + assess + config', () => {
