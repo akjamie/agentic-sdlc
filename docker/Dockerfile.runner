@@ -1,20 +1,23 @@
 ARG BASE_IMAGE=ghcr.io/akjamie/asdlc-base:2026.04
 FROM ${BASE_IMAGE}
 
-ARG ASDLC_VERSION=2.0.0-alpha.1
 ARG OPENCODE_VERSION=0.1.48
 ARG CLAUDE_CODE_VERSION=0.2.29
 
 USER root
 
-# Install global Agentic SDLC CLI, OpenSpec, headless AI harnesses, and AST Graphify
+# Install global OpenSpec, headless AI harnesses, and AST Graphify
 RUN npm install -g \
-    "@akjamie/agentic-sdlc@${ASDLC_VERSION}" \
     "@fission-ai/openspec@latest" \
     "opencode-ai@${OPENCODE_VERSION}" \
     "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
   && pip3 install --no-cache-dir --break-system-packages uv \
   && uv tool install --python "<3.14" graphifyy || pip3 install --no-cache-dir --break-system-packages graphifyy
+
+# Copy repository source and install asdlc CLI from local context (eliminating npm publish race)
+COPY . /tmp/asdlc
+RUN npm install -g /tmp/asdlc \
+  && rm -rf /tmp/asdlc
 
 # Pre-seed bundled global skills for non-root agent user
 USER 10001:10001

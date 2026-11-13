@@ -61,7 +61,7 @@ export function collectCorporateProxyEnv(hostEnv = process.env) {
 
 /**
  * Probes whether a container engine CLI & daemon/machine is available.
- * Probes with `<engine> info` (or `--version` fallback) to verify daemon connectivity.
+ * Probes with `<engine> info` to verify active daemon connectivity.
  *
  * @param {string} engine
  * @param {Function} [execFn]
@@ -71,16 +71,31 @@ export function isEngineAvailable(engine, execFn = defaultExec) {
   if (!engine) return false;
   try {
     const res = execFn(engine, ['info'], { stdio: 'ignore', timeout: 5000 });
-    if (res && res.status === 0) return true;
-  } catch {
-    // continue
-  }
-  try {
-    const res = execFn(engine, ['--version'], { stdio: 'ignore', timeout: 5000 });
     return Boolean(res && res.status === 0);
   } catch {
     return false;
   }
+}
+
+/**
+ * Locate executable binary on host PATH.
+ *
+ * @param {string} name
+ * @param {Function} [execFn]
+ * @returns {string|null}
+ */
+export function whichCommand(name, execFn = defaultExec) {
+  if (!name) return null;
+  const finder = process.platform === 'win32' ? 'where' : 'which';
+  try {
+    const r = execFn(finder, [name], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    if (r && r.status === 0) {
+      return r.stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)[0] ?? null;
+    }
+  } catch {
+    // continue
+  }
+  return null;
 }
 
 /**
@@ -193,6 +208,7 @@ export function buildContainerCreateArgs(opts = {}) {
   }
 
   const injectedEnv = {
+    ASDLC_CONTAINER: '1',
     GIT_CONFIG_COUNT: '1',
     GIT_CONFIG_KEY_0: 'safe.directory',
     GIT_CONFIG_VALUE_0: workdir,
@@ -477,15 +493,12 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
       }
       staged.layers.push(`untracked-files:${untracked.length}`);
     }
-
-    // Ensure non-root agent user (UID 10001:10001) owns the staged workspace
-    execFn(engine, ['exec', containerId, 'chown', '-R', '10001:10001', '/workspace'], { timeout: 60000 });
   }
 
   // External --from-file attachments
   const fromFiles = Array.isArray(opts.fromFiles) ? opts.fromFiles.filter(Boolean) : [];
   if (fromFiles.length > 0) {
-    execFn(engine, ['exec', containerId, 'mkdir', '-p', '/workspace/.asdlc-intake/files'], { timeout: 15000 });
+    execFn(engine, ['exec', '-u', '0:0', containerId, 'mkdir', '-p', '/workspace/.asdlc-intake/files'], { timeout: 15000 });
     for (const f of fromFiles) {
       const abs = path.isAbsolute(f) ? f : path.resolve(targetDir, f);
       if (fs.existsSync(abs)) {
@@ -503,7 +516,7 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
   // Tier 1 enterprise custom skills (~/.asdlc/skills/)
   const customSkillsDir = path.join(homeDir, '.asdlc', 'skills');
   if (fs.existsSync(customSkillsDir)) {
-    execFn(engine, ['exec', containerId, 'mkdir', '-p', '/workspace/.asdlc'], { timeout: 15000 });
+    execFn(engine, ['exec', '-u', '0:0', containerId, 'mkdir', '-p', '/workspace/.asdlc'], { timeout: 15000 });
     const cpRes = execFn(engine, ['cp', customSkillsDir, `${containerId}:/workspace/.asdlc/skills`], { timeout: 30000 });
     if (cpRes && cpRes.status !== 0 && !opts.ignoreErrors) {
       throw new AsdlcError(`Failed to copy custom skills into container: ${cpRes.stderr || cpRes.status}`, {
@@ -511,6 +524,14 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
       });
     }
     staged.customSkillsInjected = true;
+  }
+
+  // Ensure non-root agent user (UID 10001:10001) owns the entire staged workspace including ingested files and skills
+  const chownRes = execFn(engine, ['exec', '-u', '0:0', containerId, 'chown', '-R', '10001:10001', '/workspace'], { timeout: 60000 });
+  if (chownRes && chownRes.status !== 0 && !opts.ignoreErrors) {
+    throw new AsdlcError(`Failed to set non-root ownership on /workspace: ${chownRes.stderr || chownRes.status}`, {
+      code: 'ASDLC_ERR_CONTAINER_STAGE',
+    });
   }
 
   // Stream volatile AI auth & SSH keys directly into container tmpfs (/dev/shm) with 0600 permissions
@@ -692,8 +713,12 @@ export function buildContainerRunCommand(target, opts = {}) {
   if (opts.model) parts.push('--model', JSON.stringify(opts.model));
   if (opts.reviewModel) parts.push('--review-model', JSON.stringify(opts.reviewModel));
   if (opts.targetBranch) parts.push('--target-branch', JSON.stringify(opts.targetBranch));
-  for (const f of (opts.fromFile || [])) parts.push('--from-file', JSON.stringify(f));
+  for (const f of (opts.fromFile || [])) {
+    const stagedPath = `/workspace/.asdlc-intake/files/${path.basename(f)}`;
+    parts.push('--from-file', JSON.stringify(stagedPath));
+  }
   for (const i of (opts.fromIssue || [])) parts.push('--from-issue', JSON.stringify(i));
+  if (opts.autonomous || opts.container) parts.push('--autonomous');
   return parts.join(' ');
 }
 
