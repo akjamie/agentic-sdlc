@@ -907,6 +907,35 @@ test('Product integrity: autonomous mode fails fast without agents and fix stage
 
     assert.equal(fixResWithCommit.unresolvedQuestions, 1, 'Category C question remained open');
     assert.equal(fixResWithCommit.resolvedThreads.length, 1, 'Only Category A actionable thread was resolved');
+
+    // 5. Fix stage with agentRunner producing a new commit automatically captures headSha and resolves threads
+    const repliesAgent = [];
+    const fixResAgent = await runPipeline('integ-change', {
+      repoRoot: repo,
+      stage: 'fix',
+      ci: false,
+      whichCommand: () => '/bin/opencode',
+      agentRunner: async ({ repoRoot: dir }) => {
+        // Simulate agent making a code change and committing
+        fs.writeFileSync(path.join(dir, 'fix.txt'), 'fixed');
+        execFileSync('git', ['add', 'fix.txt'], { cwd: dir });
+        execFileSync('git', ['commit', '-qm', 'fix: resolve bug'], { cwd: dir });
+        return { ok: true, status: 'completed' };
+      },
+      fetchPrContext: async () => ({
+        reviewThreads: [
+          { id: 'T_ACTION_AUTO', path: 'src/a.js', line: 1, isResolved: false, comments: { nodes: [{ body: 'Auto fix this', author: { login: 'reviewer' } }] } },
+        ],
+      }),
+      ghRunner: (cmd, args) => {
+        repliesAgent.push([cmd, ...args]);
+        return { status: 0, stdout: JSON.stringify({ data: { addPullRequestReviewThreadReply: { comment: { id: 'C_AUTO' } }, resolveReviewThread: { thread: { isResolved: true } } } }) };
+      },
+    });
+
+    assert.equal(fixResAgent.fixOutput.status, 'completed');
+    assert.ok(fixResAgent.fixOutput.commitSha, 'Automatically captured newly created commitSha from agent');
+    assert.equal(fixResAgent.resolvedThreads.length, 1, 'Resolved thread using agent generated commitSha');
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }
