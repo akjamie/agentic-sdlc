@@ -869,6 +869,7 @@ test('Product integrity: autonomous mode fails fast without agents and fix stage
     const fixResNoCommit = await runPipeline('integ-change', {
       repoRoot: repo,
       stage: 'fix',
+      ci: false,
       whichCommand: () => null,
       prContext: {
         changeId: 'integ-change',
@@ -888,6 +889,7 @@ test('Product integrity: autonomous mode fails fast without agents and fix stage
     const fixResWithCommit = await runPipeline('integ-change', {
       repoRoot: repo,
       stage: 'fix',
+      ci: false,
       commitSha: 'c0ffee1234567890',
       whichCommand: () => null,
       fetchPrContext: async () => ({
