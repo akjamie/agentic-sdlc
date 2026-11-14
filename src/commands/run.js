@@ -24,6 +24,7 @@ import { AsdlcError, fail } from '../lib/errors.js';
 import {
   changeOnRef,
   git,
+  headSha,
   lastCommitTouching,
   resolveDefaultBranch,
 } from '../lib/git.js';
@@ -972,9 +973,16 @@ export async function runPipeline(target, opts = {}) {
         fixOutput = await opts.fixExecutor({ slug, prNumber, triage, plan: actionablePlan, repoRoot });
       } else if (hasHarnessCli && actionablePlan.length > 0) {
         log.step(`Running review comment fixes via ${harnessBin}...`);
+        const preHeadSha = headSha(repoRoot);
         const prompt = `Address review feedback on PR #${prNumber}: ${actionablePlan.map((p) => p.commentBody).filter(Boolean).join('; ')}`;
         const agentRes = await runDefaultAgent({ prompt, model: harness.model, type: 'author' });
-        fixOutput = { status: agentRes?.ok ? 'completed' : 'failed', ok: agentRes?.ok };
+        const postHeadSha = headSha(repoRoot);
+        const autoCommitSha = (postHeadSha && postHeadSha !== preHeadSha) ? postHeadSha : null;
+        fixOutput = {
+          status: agentRes?.ok ? 'completed' : 'failed',
+          ok: agentRes?.ok,
+          commitSha: autoCommitSha,
+        };
       } else if (isMandatoryAgentEnv && actionablePlan.length > 0) {
         fail('Autonomous/CI fix stage requires an AI implementation agent.', {
           code: 'ASDLC_ERR_AGENT_UNAVAILABLE',

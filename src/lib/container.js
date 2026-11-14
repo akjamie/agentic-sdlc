@@ -797,7 +797,7 @@ export async function runContainerPipeline(target, opts = {}) {
       '-u', CONTAINER_SECURITY_BASELINE.user,
       containerId,
       'sh', '-c',
-      `if [ -f /dev/shm/.env ]; then . /dev/shm/.env; fi; exec ${containerSubcommand}`,
+      `export ASDLC_IN_CONTAINER=1 ASDLC_CONTAINER=1; if [ -f /dev/shm/.env ]; then . /dev/shm/.env; fi; exec ${containerSubcommand}`,
     ], {
       stdio: opts.stdio || 'inherit',
       timeout: execTimeout,
