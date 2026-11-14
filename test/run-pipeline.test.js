@@ -286,6 +286,7 @@ test('runPipeline: Draft PR clarification pause/resume, spec-first applyGuard, 0
       skipCliPr: true,
       skipOpenspec: true,
       skipExternal: true,
+      whichCommand: () => null,
       env: { ASDLC_GITHUB_APP_TOKEN: 'ghs_specStageToken111' },
       fetchFn: async (url) => {
         if (url.endsWith('/pulls')) {
@@ -346,6 +347,7 @@ test('runPipeline: Draft PR clarification pause/resume, spec-first applyGuard, 0
       skipCliPr: true,
       skipOpenspec: true,
       skipExternal: true,
+      whichCommand: () => null,
       env: { ASDLC_GITHUB_APP_TOKEN: 'ghs_implStageToken222' },
       fetchFn: async (url) => {
         if (url.endsWith('/pulls')) {
@@ -830,30 +832,43 @@ test('Product integrity: autonomous mode fails fast without agents and fix stage
     ].join('\n'));
     fs.writeFileSync(path.join(cdir, 'clarifications.md'), '# Clarifications\n- [SETTLED] All settled\n');
 
-    // 1. Autonomous mode without agent executor fails with ASDLC_ERR_AGENT_UNAVAILABLE (no fake approvals)
+    // 1. Mandatory agent mode (container/CI/explicit -m) without agent CLI fails fast with ASDLC_ERR_AGENT_UNAVAILABLE
     await assert.rejects(
       () => runPipeline('integ-change', {
         repoRoot: repo,
         stage: 'spec',
-        autonomous: true,
+        model: 'anthropic/claude-sonnet-4-5',
         whichCommand: () => null,
       }),
       (err) => err.code === 'ASDLC_ERR_AGENT_UNAVAILABLE'
     );
 
-    // 2. Local manual run reports honest 'skipped' or 'waiting' status rather than fake pass
+    // 1.1 In CI/container environment (process.env.CI='true') without agent CLI also fails fast
+    await assert.rejects(
+      () => runPipeline('integ-change', {
+        repoRoot: repo,
+        stage: 'spec',
+        ci: true,
+        whichCommand: () => null,
+      }),
+      (err) => err.code === 'ASDLC_ERR_AGENT_UNAVAILABLE'
+    );
+
+    // 2. Local manual run without agent CLI gracefully degrades to deterministic gates (no fake passes)
     const manualSpec = await runPipeline('integ-change', {
       repoRoot: repo,
       stage: 'spec',
       skipPr: true,
+      whichCommand: () => null,
     });
     assert.equal(manualSpec.review.status, 'skipped');
-    assert.match(manualSpec.review.summary, /AI review agent not configured/);
+    assert.match(manualSpec.review.summary, /Local AI CLI \(opencode\) not found in PATH/);
 
     // 3. Fix stage preserves Category C questions and leaves threads open if no fix commit was created
     const fixResNoCommit = await runPipeline('integ-change', {
       repoRoot: repo,
       stage: 'fix',
+      whichCommand: () => null,
       prContext: {
         changeId: 'integ-change',
         threads: [
@@ -873,6 +888,7 @@ test('Product integrity: autonomous mode fails fast without agents and fix stage
       repoRoot: repo,
       stage: 'fix',
       commitSha: 'c0ffee1234567890',
+      whichCommand: () => null,
       fetchPrContext: async () => ({
         reviewThreads: [
           { id: 'T_ACTION', path: 'src/a.js', line: 1, isResolved: false, comments: { nodes: [{ body: 'Fix this bug', author: { login: 'reviewer' } }] } },

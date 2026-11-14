@@ -209,6 +209,7 @@ export function buildContainerCreateArgs(opts = {}) {
 
   const injectedEnv = {
     ASDLC_CONTAINER: '1',
+    ASDLC_IN_CONTAINER: '1',
     GIT_CONFIG_COUNT: '1',
     GIT_CONFIG_KEY_0: 'safe.directory',
     GIT_CONFIG_VALUE_0: workdir,
@@ -718,7 +719,6 @@ export function buildContainerRunCommand(target, opts = {}) {
     parts.push('--from-file', JSON.stringify(stagedPath));
   }
   for (const i of (opts.fromIssue || [])) parts.push('--from-issue', JSON.stringify(i));
-  if (opts.autonomous || opts.container) parts.push('--autonomous');
   return parts.join(' ');
 }
 
