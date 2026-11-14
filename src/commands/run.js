@@ -17,6 +17,7 @@ import {
   preScanWorkspaceForSecrets,
   resolveContainerEngine,
   runContainerPipeline,
+  whichCommand,
   DEFAULT_RUNNER_IMAGE,
 } from '../lib/container.js';
 import { AsdlcError, fail } from '../lib/errors.js';
@@ -654,6 +655,7 @@ export async function runPipeline(target, opts = {}) {
     const containerResult = await runContainerPipeline(target, {
       ...opts,
       engine: opts.engine,
+      autonomous: true,
       slug,
       prNumber,
       stage: selectedStage,
@@ -675,6 +677,23 @@ export async function runPipeline(target, opts = {}) {
     if (opts.json) jsonOut(safeContainerResult);
     return safeContainerResult;
   }
+
+  const isAutonomous = Boolean(opts.autonomous || process.env.ASDLC_CONTAINER === '1');
+  const harnessBin = harness.harness;
+  const whichFn = typeof opts.whichCommand === 'function' ? opts.whichCommand : whichCommand;
+  const hasHarnessCli = Boolean(whichFn(harnessBin));
+
+  const runDefaultAgent = async ({ prompt, model, type = 'author' }) => {
+    if (!hasHarnessCli) return null;
+    const buildArgs = type === 'reviewer' ? harness.buildReviewerArgs : harness.buildAuthorArgs;
+    const args = buildArgs(prompt, model);
+    try {
+      const res = spawnSync(harnessBin, args, { cwd: repoRoot, stdio: opts.stdio || 'inherit', env: mergedEnv });
+      return { ok: res && res.status === 0, status: res && res.status === 0 ? 'completed' : 'failed', exitCode: res?.status };
+    } catch (err) {
+      return { ok: false, status: 'error', error: err.message };
+    }
+  };
 
   // Ensure slug exists or can be scaffolded for `--stage spec`
   if (!slug && selectedStage === 'spec') {
@@ -764,10 +783,15 @@ export async function runPipeline(target, opts = {}) {
       let reviewResult = null;
       if (typeof opts.specReviewer === 'function') {
         reviewResult = await opts.specReviewer({ slug, cdir, repoRoot, reviewModel: harness.reviewModel });
-      } else if (opts.autonomous) {
+      } else if (hasHarnessCli && isAutonomous) {
+        log.step(`Running autonomous spec review via ${harnessBin}...`);
+        const prompt = `Review specification for change ${slug} in ${cdir}. Validate BDD acceptance criteria.`;
+        const res = await runDefaultAgent({ prompt, model: harness.reviewModel, type: 'reviewer' });
+        reviewResult = { status: res?.ok ? 'passed' : 'failed', summary: `Autonomous spec review via ${harnessBin}` };
+      } else if (isAutonomous) {
         fail('Autonomous spec stage requires an AI review agent harness.', {
           code: 'ASDLC_ERR_AGENT_UNAVAILABLE',
-          hint: 'Configure OpenCode or Claude Code harness to enable autonomous review.',
+          hint: `Configure OpenCode or Claude Code harness to enable autonomous review. Ensure '${harnessBin}' is installed.`,
         });
       } else {
         reviewResult = { status: 'skipped', summary: 'AI review agent not configured (deterministic BDD lint passed; human review on PR)' };
@@ -804,10 +828,15 @@ export async function runPipeline(target, opts = {}) {
       let implOutput = null;
       if (typeof opts.implExecutor === 'function') {
         implOutput = await opts.implExecutor({ slug, cdir, repoRoot, lockedSpecPaths, model: harness.model });
-      } else if (opts.autonomous) {
+      } else if (hasHarnessCli && isAutonomous) {
+        log.step(`Running autonomous implementation via ${harnessBin}...`);
+        const prompt = `Implement change ${slug} following TDD workflow in ${cdir}/tasks.md without modifying locked spec files.`;
+        const res = await runDefaultAgent({ prompt, model: harness.model, type: 'author' });
+        implOutput = { status: res?.ok ? 'implemented' : 'failed', summary: `Autonomous implementation via ${harnessBin}` };
+      } else if (isAutonomous) {
         fail('Autonomous apply stage requires an AI implementation agent.', {
           code: 'ASDLC_ERR_AGENT_UNAVAILABLE',
-          hint: 'Configure OpenCode or Claude Code harness to run autonomous TDD implementation.',
+          hint: `Configure OpenCode or Claude Code harness to run autonomous TDD implementation. Ensure '${harnessBin}' is installed.`,
         });
       } else {
         implOutput = { status: 'waiting_for_implementation', message: 'Spec locked 0444 read-only. Implement tasks in tasks.md, then run asdlc verify.' };
@@ -828,9 +857,15 @@ export async function runPipeline(target, opts = {}) {
       let implReview = null;
       if (typeof opts.implReviewer === 'function') {
         implReview = await opts.implReviewer({ slug, cdir, repoRoot, reviewModel: harness.reviewModel });
-      } else if (opts.autonomous) {
+      } else if (hasHarnessCli && isAutonomous) {
+        log.step(`Running autonomous implementation review via ${harnessBin}...`);
+        const prompt = `Review implementation for change ${slug} in ${repoRoot}. Verify against approved spec in ${cdir}.`;
+        const res = await runDefaultAgent({ prompt, model: harness.reviewModel, type: 'reviewer' });
+        implReview = { status: res?.ok ? 'passed' : 'failed', summary: `Autonomous implementation review via ${harnessBin}` };
+      } else if (isAutonomous) {
         fail('Autonomous verify stage requires an independent AI reviewer.', {
           code: 'ASDLC_ERR_AGENT_UNAVAILABLE',
+          hint: `Ensure '${harnessBin}' is installed and accessible in PATH.`,
         });
       } else {
         implReview = { status: 'skipped', summary: 'Independent AI reviewer not configured' };
@@ -918,6 +953,11 @@ export async function runPipeline(target, opts = {}) {
       let fixOutput = null;
       if (typeof opts.fixExecutor === 'function') {
         fixOutput = await opts.fixExecutor({ slug, prNumber, triage, plan: actionablePlan, repoRoot });
+      } else if (hasHarnessCli && isAutonomous && actionablePlan.length > 0) {
+        log.step(`Running autonomous review comment fixes via ${harnessBin}...`);
+        const prompt = `Address review feedback on PR #${prNumber}: ${actionablePlan.map((p) => p.commentBody).filter(Boolean).join('; ')}`;
+        const agentRes = await runDefaultAgent({ prompt, model: harness.model, type: 'author' });
+        fixOutput = { status: agentRes?.ok ? 'completed' : 'failed', ok: agentRes?.ok };
       }
 
       // Threads may ONLY be resolved after a verified fix commit exists
@@ -982,6 +1022,7 @@ export function register(program) {
     .option('--issue <id>', 'alias for --from-issue (repeatable)', collectRepeatable, [])
     .option('--container', 'run in isolated hardened UID 10001:10001 container runtime')
     .option('--engine <engine>', 'container engine to use: docker | podman (default: auto)')
+    .option('--autonomous', 'enforce autonomous agent execution (fail closed if harness is unavailable)')
     .option('--dry-run', 'print deterministic execution & security plan without executing')
     .option('--mode <mode>', 'override workflow mode: spec-first | supervised | auto')
     .option('--target-branch <branch>', 'target protected branch (defaults to repo default)')

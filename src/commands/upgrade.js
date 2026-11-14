@@ -7,6 +7,7 @@ import { installSchema, builtinSchemaVersion } from '../lib/schema.js';
 import { updateRepo } from './update.js';
 import { doctor } from './doctor.js';
 import { log } from '../lib/log.js';
+import { resolveContainerEngine, isEngineAvailable } from '../lib/container.js';
 
 import { detectTools, installSkills } from './init.js';
 
@@ -19,19 +20,27 @@ export function resolveRunnerImageTag(opts = {}) {
 export function upgradeRunnerImage(opts = {}) {
   const image = resolveRunnerImageTag(opts);
   const execFn = opts.execFn || spawnSync;
-  const hasDocker = Boolean(opts.execFn || which('docker'));
-  if (!hasDocker) {
-    log.info(`note: docker CLI not found; runner image pinned at ${image}`);
+  let engine = null;
+  try {
+    engine = resolveContainerEngine(opts, execFn);
+  } catch {
+    engine = isEngineAvailable('docker', execFn) ? 'docker' : (isEngineAvailable('podman', execFn) ? 'podman' : null);
+  }
+  if (!engine && opts.execFn) {
+    engine = opts.engine || 'docker';
+  }
+  if (!engine) {
+    log.info(`note: container engine (docker/podman) not found; runner image pinned at ${image}`);
     return { pulled: false, skipped: true, image };
   }
-  log.step(`syncing runner container image ${image}...`);
-  const res = execFn('docker', ['pull', image], { encoding: 'utf8', stdio: opts.execFn ? 'pipe' : 'inherit' });
+  log.step(`syncing runner container image ${image} via ${engine}...`);
+  const res = execFn(engine, ['pull', image], { encoding: 'utf8', stdio: opts.execFn ? 'pipe' : 'inherit' });
   if (res && res.status === 0) {
     log.ok(`synced runner image ${image}`);
-    return { pulled: true, skipped: false, image };
+    return { pulled: true, skipped: false, image, engine };
   }
   log.warn(`runner image pull failed (${image}); container mode will attempt pull on first launch`);
-  return { pulled: false, skipped: false, image };
+  return { pulled: false, skipped: false, image, engine };
 }
 
 function which(name) {

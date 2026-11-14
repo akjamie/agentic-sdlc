@@ -471,7 +471,7 @@ test('Container 3-layer ingestion, egress sync, SSH Patterns A/B/C, init --onboa
       fs.rmSync(greenDir, { recursive: true, force: true });
     }
 
-    // 4. upgradeRunnerImage aligns image tag & invokes docker pull
+    // 4. upgradeRunnerImage aligns image tag & invokes docker/podman pull
     const tag = resolveRunnerImageTag();
     assert.match(tag, /^ghcr\.io\/akjamie\/asdlc-runner:/);
     const pulled = [];
@@ -483,7 +483,10 @@ test('Container 3-layer ingestion, egress sync, SSH Patterns A/B/C, init --onboa
       },
     });
     assert.equal(upgRes.pulled, true);
-    assert.deepEqual(pulled, [['docker', 'pull', 'ghcr.io/akjamie/asdlc-runner:2.0.0-alpha.1']]);
+    assert.deepEqual(pulled, [
+      ['docker', 'info'],
+      ['docker', 'pull', 'ghcr.io/akjamie/asdlc-runner:2.0.0-alpha.1'],
+    ]);
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
     fs.rmSync(fakeHome, { recursive: true, force: true });
@@ -833,6 +836,7 @@ test('Product integrity: autonomous mode fails fast without agents and fix stage
         repoRoot: repo,
         stage: 'spec',
         autonomous: true,
+        whichCommand: () => null,
       }),
       (err) => err.code === 'ASDLC_ERR_AGENT_UNAVAILABLE'
     );
