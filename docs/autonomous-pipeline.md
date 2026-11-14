@@ -731,7 +731,7 @@ The runner is an **OCI container**, not a Docker-specific feature. `asdlc` inter
 1. CLI `--engine docker|podman`
 2. Env `ASDLC_CONTAINER_ENGINE`
 3. Global config `runner.engine`
-4. `auto` (default): probe `docker`, then `podman` in order; pick the first whose `<engine> info` (or `--version`) succeeds.
+4. `auto` (default): probe `docker`, then `podman` in order; pick the first whose `<engine> info` succeeds. (Strictly checks daemon/machine connectivity; does not rely on `--version` which could false-positive when the daemon is offline).
 
 If an unsupported engine (such as `nerdctl` or `k8s`) is specified, the CLI fails fast with `ASDLC_ERR_INVALID_ENGINE`. If no supported engine is available on the machine, execution fails closed with `ASDLC_ERR_ENGINE_NOT_AVAILABLE`.
 
@@ -744,14 +744,14 @@ If an unsupported engine (such as `nerdctl` or `k8s`) is specified, the CLI fail
 | UID mapping | UID 10001 == host 10001 | subuid-mapped; files copied in may have different owner | Fix ownership with `exec -u 0:0 chown`; in rootless mode container-root is an unprivileged host user |
 | SSH agent forward | Docker Desktop alias `/run/host-services/ssh-auth.sock` | No alias; mount the real host `SSH_AUTH_SOCK`; add `:ro,z` on Linux hosts | Branch by engine + platform in `buildContainerCreateArgs` |
 | Image names | Falls back to docker.io | Short-name prompt/policy | Always fully-qualified (`ghcr.io/akjamie/asdlc-runner:<version>`) |
-| Daemon | Required (`dockerd`) | Daemonless; macOS/Windows use `podman machine` | Probe with `info` to verify daemon/machine connectivity, with `--version` fallback; `doctor` reports state |
+| Daemon | Required (`dockerd`) | Daemonless; macOS/Windows use `podman machine` | Probe with `info` to verify daemon/machine connectivity (no `--version` fallback); `doctor` reports state |
 | Error codes | `ASDLC_ERR_ENGINE_NOT_AVAILABLE` | `ASDLC_ERR_ENGINE_NOT_AVAILABLE` | Unified error code naming the engine attempted |
 
 #### 5.4.4 Run lifecycle (normative, replaces create-then-exec-before-start)
 `docker/podman exec` and `/dev/shm` only exist on a **running** container, so the sequence is:
 1. `create` with an idle entrypoint (`sleep infinity`), hardened flags from §5.2, no secrets in `-e`.
 2. `start` container in background.
-3. **Stage** (running container): 3-layer workspace ingestion, `chown` to 10001, intake files, custom skills, and secrets streamed via `exec -i` into `/dev/shm` (0600).
+3. **Stage** (running container): 3-layer workspace ingestion, external intake files (`--from-file` mapped to `/workspace/.asdlc-intake/files/<name>`), enterprise custom skills (`~/.asdlc/skills`), and `exec -u 0:0 chown -R 10001:10001 /workspace` executed strictly after all cp transfers. Volatile AI auth & secrets streamed via `exec -i` into `/dev/shm` (0600).
 4. **Self-check**: inside the container assert `id -u == 10001`, `CapEff == 0`, `NoNewPrivs == 1`; abort otherwise.
 5. Root-owned spec lock (`exec -u 0:0`) when stage is `apply`/`verify`.
 6. `exec` (as 10001) `asdlc run <target> --stage <s>` with the full flag set (`--repo`, `--from-file`, `--from-issue`, `--mode`, `--model`, `--review-model`, `--target-branch`), sourcing `/dev/shm/.env` and pointing `XDG_CONFIG_HOME`/`XDG_DATA_HOME` at the staged OpenCode config.
@@ -837,6 +837,18 @@ The autonomous lifecycle is factored cleanly into **three forward production sta
 | `--stage apply` | Forward Production | Change ID with merged Spec | Enforce `0444` kernel lock on specs $\to$ Execute Task-level TDD Loop (Red $\to$ Green $\to$ Refactor) | Unit tests PASS | N/A |
 | `--stage verify` | Forward Production | Change ID with completed tasks | Independent AI Impl Review $\to$ Run `asdlc verify` (14-gate suite) $\to$ Open/Update Impl PR | `asdlc verify` PASS | `--stage impl-review` |
 | `--stage fix` | Reactive Collaboration | PR Number (`#N`) or URL | 3-Tier Triage Engine: Fetch unresolved review comments $\to$ Classify $\to$ Apply fixes / Reply / Resolve | Re-lint (Spec) or Re-verify (Impl) | `--stage fix-comments` |
+
+##### 0. Zero-Flag Context Inference (No Ambiguous `--autonomous` Flag)
+To preserve CLI ergonomics and prevent semantic conflict with `workflow_mode: auto` (`--mode auto`), `asdlc run` **requires zero new flags** to drive AI agents:
+1. **Mandatory AI Agent Execution**:
+   - Container environments: `--container`, `--engine`, or `ASDLC_CONTAINER=1` / `ASDLC_IN_CONTAINER=1`.
+   - CI/CD pipelines: `--ci`, or `CI=true` / `GITHUB_ACTIONS=true`.
+   - Explicit runtime model overrides: `-m, --model`, `--review-model`, or `--agent-config`.
+   - *Failure Mode*: In these mandatory unattended environments, if the local AI CLI (`opencode` or `claude`) is missing in PATH, execution **fails fast closed** with `ASDLC_ERR_AGENT_UNAVAILABLE`.
+2. **Interactive Host Execution (Without Container)**:
+   - When run locally without container flags, `asdlc run` detects if `opencode` or `claude` is installed in PATH.
+   - If installed: automatically executes the AI agent to draft specs, implement code, or address comments.
+   - If missing: gracefully falls back to deterministic gates (BDD lint, 0444 lock, verify checks) with an informative log: `[INFO] Local AI CLI (opencode) not found in PATH; executed deterministic gates only.`
 
 ##### 1. Explicit Stage Execution (Deterministic & CI/CD Native)
 When invoking `asdlc run` with an explicit `--stage`, zero heuristic guesswork is performed:
@@ -1688,7 +1700,7 @@ Runner 是一个标准的 **OCI 容器**，并非 Docker 专有特性。`asdlc` 
 1. CLI `--engine docker|podman`
 2. 环境变量 `ASDLC_CONTAINER_ENGINE`
 3. 全局配置 `runner.engine`
-4. `auto`（默认）：依次探测 `docker`、`podman`，选第一个 `<engine> info`（或 `--version` 备用）成功者。
+4. `auto`（默认）：依次探测 `docker`、`podman`，选第一个 `<engine> info` 连通成功者（严格检查守护进程探活，避免 `--version` 在守护进程未起时的误判）。
 
 若指定了不支持的引擎（如 `nerdctl` 或 `k8s`），CLI 会以 `ASDLC_ERR_INVALID_ENGINE` 快速拦截失败；若机器上未发现任何受支持的可用引擎，则以 `ASDLC_ERR_ENGINE_NOT_AVAILABLE` 闭环退出。
 
@@ -1701,14 +1713,14 @@ Runner 是一个标准的 **OCI 容器**，并非 Docker 专有特性。`asdlc` 
 | UID 映射 | 容器 UID 10001 即宿主 10001 | 经 subuid 映射，拷入文件属主可能不同 | 用 `exec -u 0:0 chown` 修正属主；rootless 下容器内 root 只是宿主普通用户 |
 | SSH agent 转发 | Docker Desktop 提供 `/run/host-services/ssh-auth.sock` | 无该别名，需挂载真实 host `SSH_AUTH_SOCK`；SELinux 主机加 `:ro,z` | 在 `buildContainerCreateArgs` 中按引擎 + 平台分支处理 |
 | 镜像名 | 默认回退 docker.io | 触发短名交互提示 | 始终写全限定名（`ghcr.io/akjamie/asdlc-runner:<version>`） |
-| 守护进程 | 需要 (`dockerd`) | 无守护进程；macOS/Windows 需 `podman machine` | 优先用 `info` 探测以验证守护进程/machine 连通性，`--version` 兜底；`doctor` 报告状态 |
+| 守护进程 | 需要 (`dockerd`) | 无守护进程；macOS/Windows 需 `podman machine` | 优先用 `info` 探测以验证守护进程/machine 连通性（不使用 `--version` 兜底）；`doctor` 报告状态 |
 | 错误码 | `ASDLC_ERR_ENGINE_NOT_AVAILABLE` | `ASDLC_ERR_ENGINE_NOT_AVAILABLE` | 统一错误码，提示信息中写明尝试过的引擎 |
 
 #### 5.4.4 运行生命周期（规范性，取代“先 create 再在 start 前 exec”）
 `docker/podman exec` 与 `/dev/shm` 只在**运行中**的容器上有效，因此顺序为：
 1. `create`，entrypoint 为空闲进程（`sleep infinity`），使用 §5.2 的加固参数，**不**通过 `-e` 传密钥。
 2. 后台启动容器 `start`。
-3. **注入**（容器已运行）：三层工作区摄入、属主修正为 10001、intake 文件、自定义 skills，密钥通过 `exec -i` 写入 `/dev/shm`（0600）。
+3. **注入**（容器已运行）：三层工作区摄入、外部输入文件（`--from-file` 映射为 `/workspace/.asdlc-intake/files/<name>`）、企业自定义 skills（`~/.asdlc/skills`），并在所有 cp 操作完成后显式以 root 执行 `exec -u 0:0 chown -R 10001:10001 /workspace` 修正属主。密钥通过 `exec -i` 写入 `/dev/shm`（0600）。
 4. **自检**：容器内断言 `id -u == 10001`、`CapEff == 0`、`NoNewPrivs == 1`，不满足则中止。
 5. `apply`/`verify` 阶段执行 root 属主只读锁（`exec -u 0:0`）。
 6. 以 10001 `exec` `asdlc run <target> --stage <s>`，并透传完整参数（`--repo`、`--from-file`、`--from-issue`、`--mode`、`--model`、`--review-model`、`--target-branch`），加载 `/dev/shm/.env`，并用 `XDG_CONFIG_HOME`/`XDG_DATA_HOME` 指向已注入的 OpenCode 配置。
@@ -1794,6 +1806,17 @@ Runner 是一个标准的 **OCI 容器**，并非 Docker 专有特性。`asdlc` 
 | `--stage apply` | 前向生产 | 主干已合入 Spec 的变更 ID | 启用 Spec `0444` 内核只读锁 $\to$ 执行任务级 TDD 红绿重构循环 | 单元测试全 PASS | 无 |
 | `--stage verify` | 前向生产 | 代码已完成的变更 ID | 派生独立进程跑 Impl Review $\to$ 跑通 `asdlc verify`（14 项物理门禁） $\to$ 提单/更新 Impl PR | `asdlc verify` PASS | `--stage impl-review` |
 | `--stage fix` | 响应协作 | PR 编号（`#N`）或 PR URL | 调用 3-Tier 甄别引擎：拉取未解决评论 $\to$ 语义分类 $\to$ 修复/答疑/提交 $\to$ 标记 Resolve | 重跑 lint 或 verify | `--stage fix-comments` |
+
+##### 0. 零新增 Flag 上下文自动推导（拒绝语义冲突的 `--autonomous`）
+为杜绝与 `workflow_mode: auto`（`--mode auto`）产生语义混淆并提升 CLI 人机工程学，`asdlc run` **无需任何 `--autonomous` 参数**，直接通过运行上下文实现确定性驱动：
+1. **强无人值守场景（强制要求 AI Agent 介入，缺失则 Fail-Closed）**：
+   - 容器沙箱内运行：`--container`、`--engine`、或 `ASDLC_CONTAINER=1` / `ASDLC_IN_CONTAINER=1`；
+   - CI/CD 流水线：`--ci`、或 `CI=true` / `GITHUB_ACTIONS=true`；
+   - 显式运行时模型覆盖：`-m, --model`、`--review-model` 或 `--agent-config`。
+   - *故障边界*：在上述强无人值守场景下，若 PATH 中缺少可用 Agent CLI（`opencode` / `claude`），立即抛出 `ASDLC_ERR_AGENT_UNAVAILABLE`，拒绝虚假通过。
+2. **宿主机直接运行（无容器的智能降级）**：
+   - 本地检测到 `opencode` 或 `claude` 时：自动调用本地 Agent 完成规格审查、TDD 编码或评审修复；
+   - 本地未安装 Agent CLI 时：优雅降级为跑确定性物理门禁（BDD lint、0444 锁、verify 验证），并输出提示：`[INFO] Local AI CLI (opencode) not found in PATH; executed deterministic gates only.`
 
 ##### 1. 显式阶段执行（确定性、无歧义、指哪打哪）
 当使用显式 `--stage` 启动时，容器直奔目标，零黑盒猜测：
