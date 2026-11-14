@@ -678,7 +678,9 @@ export async function runPipeline(target, opts = {}) {
   }
 
   // Zero-flag context inference: determine if AI agent execution is mandatory
-  const isCiEnv = Boolean(opts.ci || mergedEnv?.CI === 'true' || mergedEnv?.GITHUB_ACTIONS === 'true');
+  // When opts.ci is explicitly false, it suppresses CI autodetection (e.g. running in local test harnesses under CI runners)
+  const isCiExplicitFalse = opts.ci === false;
+  const isCiEnv = !isCiExplicitFalse && Boolean(opts.ci || mergedEnv?.CI === 'true' || mergedEnv?.GITHUB_ACTIONS === 'true');
   const isContainerEnv = Boolean(isContainerRun || mergedEnv?.ASDLC_CONTAINER === '1' || mergedEnv?.ASDLC_IN_CONTAINER === '1');
   const hasExplicitModelOverride = Boolean(opts.model || opts.reviewModel || opts.agentConfig);
   const isMandatoryAgentEnv = Boolean(isContainerEnv || isCiEnv || hasExplicitModelOverride || opts.autonomous);

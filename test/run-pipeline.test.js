@@ -858,6 +858,7 @@ test('Product integrity: autonomous mode fails fast without agents and fix stage
     const manualSpec = await runPipeline('integ-change', {
       repoRoot: repo,
       stage: 'spec',
+      ci: false,
       skipPr: true,
       whichCommand: () => null,
     });
