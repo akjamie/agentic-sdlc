@@ -161,8 +161,10 @@ This is the biggest gap. IDE skills are **not wrappers around CLI** — they are
     SKILL.md            ← INTERNAL engine (batch-grill-me frontier interview)
   asdlc-lint/
     SKILL.md            ← /asdlc:lint (deterministic BDD & AC verification)
-  asdlc-review/
-    SKILL.md            ← /asdlc:review (independent 6-dimension referee review)
+  asdlc-spec-review/
+    SKILL.md            ← /asdlc:spec-review (independent spec & architecture review)
+  asdlc-impl-review/
+    SKILL.md            ← /asdlc:impl-review (independent code review & implementation review)
   asdlc-approve/
     SKILL.md            ← /asdlc:approve (spec PR merge verification, SHA lock, tag, TDD task scaffolding)
   asdlc-apply/
@@ -442,7 +444,7 @@ All tests pass before any skill work begins.
 
 ### Phase 4 — Full skill suite
 
-11. `asdlc-apply`, `asdlc-verify`, `asdlc-archive`, `asdlc-review`, `asdlc-init`
+11. `asdlc-apply`, `asdlc-verify`, `asdlc-archive`, `asdlc-spec-review`, `asdlc-impl-review`, `asdlc-init`
 12. Update `AGENTS.md` routing block to list all slash commands
 
 ### Phase 5 — CI integration

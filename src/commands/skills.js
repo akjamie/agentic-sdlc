@@ -1,13 +1,13 @@
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
-import { exists, listDir, readText, copyTree, ensureDir } from '../lib/fs.js';
+import { exists, listDir, readText, copyTree, ensureDir, removeDir } from '../lib/fs.js';
 import { skillsAssetDir, resolveRepoRoot, openspecDir } from '../lib/paths.js';
 import { detectTools, installSkills } from './init.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
 
-import { TOOL_REGISTRY, getToolDefinition } from '../lib/tools.js';
+import { TOOL_REGISTRY, getToolDefinition, DEPRECATED_SKILLS } from '../lib/tools.js';
 
 /**
  * Parse YAML frontmatter from a SKILL.md file
@@ -123,6 +123,14 @@ export function installGlobalSkills(opts = {}) {
       copyTree(skillsAssetDir, dest);
       log.ok(`installed skills -> ~/${dir}/skills/`);
       installedCount++;
+    }
+    // Prune deprecated legacy skills from global user agent directory
+    for (const dep of DEPRECATED_SKILLS) {
+      const depPath = path.join(dest, dep);
+      if (exists(depPath)) {
+        removeDir(depPath);
+        log.ok(`pruned deprecated skill '${dep}' from ~/${dir}/skills/`);
+      }
     }
   }
 
