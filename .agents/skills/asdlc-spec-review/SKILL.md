@@ -1,8 +1,9 @@
 ---
 name: asdlc-spec-review
-description: "Independent AI Spec Review (Stage 3): evaluate a spec PR or local change for completeness, ambiguity, contradiction, testability, and security before human TL approval. Accepts a GitHub PR URL or local CHANGE_ID."
+description: "Independent AI Spec & Architecture Review (Stage 3). Evaluates a spec PR, RFC, design doc, proposal.md, or OpenSpec change for completeness, ambiguity, contradiction, testability, and security before human TL approval. Triggers on 'review spec', 'review proposal', 'spec review', or Spec PRs carrying the 'asdlc:spec-review' label. Accepts a GitHub PR URL or local CHANGE_ID."
 aliases:
   - spec-review
+  - proposal-review
 ---
 
 # /asdlc:spec-review — Independent Spec Review Agent
@@ -26,8 +27,9 @@ It applies the **Player ≠ Referee** principle: the reviewing agent MUST NOT be
 ## Invocation & Triggers
 
 This skill can be invoked:
-1. **Locally by an independent agent**: `/asdlc:spec-review <CHANGE_ID>`
-2. **Automatically on PRs** carrying the `asdlc:spec-review` label via PR automation workflows:
+1. **Interactive Prompt**: Whenever the user asks to "review spec", "review proposal", "review design", "review RFC", or provides a Spec PR URL.
+2. **Locally by an independent agent**: `/asdlc:spec-review <CHANGE_ID>`
+3. **Automatically on PRs** carrying the `asdlc:spec-review` label via PR automation workflows:
 
 ```yaml
 # GitHub Actions / PR Automation example

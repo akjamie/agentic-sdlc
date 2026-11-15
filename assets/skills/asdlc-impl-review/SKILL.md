@@ -1,9 +1,11 @@
 ---
 name: asdlc-impl-review
-description: "Independent AI Implementation Review (Stage 6.5): evaluate an Impl PR for spec conformance, code quality, test fidelity, and production readiness before human lead approval. Incorporates Anthropic code review principles (anti-thrashing convergence, 3-round cap, repo-level REVIEW.md contracts, introduced-vs-preexisting defect attribution, and risk tiering). Accepts a GitHub PR URL or local CHANGE_ID."
+description: "Comprehensive code review & independent implementation review (Stage 6.5). Evaluates any PR, code review request, or local change for spec conformance, bug classes, code quality, test fidelity, and production readiness. Triggers on 'review PR', 'code review', 'impl review', PR URLs (https://github.com/.../pull/...), PR numbers (#N), or local CHANGE_ID. Supports standalone PR-only review without requiring local repo checkout or OpenSpec artifacts."
 aliases:
   - impl-review
   - code-review-asdlc
+  - pr-review
+  - code-review
 ---
 
 # /asdlc:impl-review — Independent Implementation Review Agent
@@ -26,7 +28,7 @@ Drawing from Anthropic's engineering practices for scaling AI code reviews, this
 
 > [!IMPORTANT]
 > **Scope**: Reviews *implementation conformance and code quality* — spec adherence, test rigor, architecture, and production safety.
-> Requires `asdlc test <CHANGE_ID>` and `asdlc verify <CHANGE_ID>` to have passed before this review can issue an APPROVE verdict.
+> When reviewing an OpenSpec change, requires `asdlc test <CHANGE_ID>` and `asdlc verify <CHANGE_ID>` to have passed before this review can issue an APPROVE verdict. For standalone PRs without OpenSpec artifacts, checks CI status (`gh pr checks`) and test coverage directly.
 > Does NOT review spec intent — that is `asdlc-spec-review`.
 >
 > **Output Routing Contract (PR vs. Local)**:
@@ -38,8 +40,9 @@ Drawing from Anthropic's engineering practices for scaling AI code reviews, this
 ## Invocation & Triggers
 
 This skill can be invoked:
-1. **Locally by an independent agent**: `/asdlc:impl-review <CHANGE_ID>`
-2. **Automatically on PRs** carrying the `asdlc:impl-review` label via PR automation workflows:
+1. **Interactive Prompt**: Whenever the user asks to "review PR", "code review", "review this PR", passes a GitHub/GitLab PR URL (`https://github.com/owner/repo/pull/123`), or gives a PR number (`#123`).
+2. **Locally by an independent agent**: `/asdlc:impl-review <CHANGE_ID>` or `/asdlc:impl-review <PR_URL>`
+3. **Automatically on PRs** carrying the `asdlc:impl-review` label via PR automation workflows:
 
 ```yaml
 # GitHub Actions / PR Automation example
@@ -100,19 +103,21 @@ Classify the PR into one of three risk tiers based on files changed (**highest-r
 - **Tier 3 (High Risk)**: Auth/security, payment/billing, cryptography, DB migrations, core CI/governance engine, or **any PR modifying `REVIEW.md` or governance files**.
   *Protocol*: Rigorous scrutiny, failure-mode analysis, strict zero-tolerance for untested edge cases, mandatory human lead sign-off. Flag governance modification explicitly in the review body.
 
-#### Read Approved Spec Ground Truth
+#### Read Approved Spec Ground Truth (if available)
 ```bash
-# Read the approved spec from the base branch
-git show origin/<baseRefName>:openspec/changes/<CHANGE_ID>/specs/<capability>/spec.md
-git show origin/<baseRefName>:openspec/changes/<CHANGE_ID>/tasks.md
+# Read the approved spec from the base branch (when CHANGE_ID / OpenSpec is used)
+git show origin/<baseRefName>:openspec/changes/<CHANGE_ID>/specs/<capability>/spec.md 2>/dev/null || true
+git show origin/<baseRefName>:openspec/changes/<CHANGE_ID>/tasks.md 2>/dev/null || true
 
-# Execute Acceptance Tests in CI (Player != Referee gate)
-asdlc test <CHANGE_ID> --json
+# Execute Acceptance Tests in CI (Player != Referee gate) when local checkout and asdlc are available
+asdlc test <CHANGE_ID> --json 2>/dev/null || true
 ```
 
 > [!NOTE]
-> Read the **spec first**, then the implementation diff. The spec is the ground truth; the code is the candidate.
-> Enforce **Player ≠ Referee**: CI executes `asdlc test <CHANGE_ID> --json` independently rather than trusting claims in `tasks.md`.
+> **OpenSpec vs. Standalone PR Mode**:
+> - If the repository uses OpenSpec / changesets (`openspec/changes/<CHANGE_ID>`), read the **spec first**, then the implementation diff. The spec is the ground truth; the code is the candidate.
+> - If this is a standalone PR without OpenSpec artifacts or local clone (e.g. reviewed via PR URL only), derive requirements directly from the PR title, PR description, linked issue context, and repository `REVIEW.md` contract. Lack of an OpenSpec `CHANGE_ID` **NEVER blocks** reviewing the PR.
+> - Enforce **Player ≠ Referee**: When local checkout exists, CI executes `asdlc test <CHANGE_ID> --json` independently rather than trusting claims in `tasks.md`. In standalone PR-only mode, inspect CI test run checks via `gh pr checks $PR_NUMBER --repo $REPO`.
 
 ---
 
