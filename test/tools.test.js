@@ -96,6 +96,34 @@ test('tools: installSkills installs bundled skills across detected tools', () =>
   assert.ok(fs.existsSync(path.join(repo, '.antigravity', 'skills', 'asdlc-apply', 'SKILL.md')));
 });
 
+test('tools: installSkills prunes deprecated legacy skills (e.g. asdlc-review) from target directories', () => {
+  const repo = tmpRepo();
+  fs.mkdirSync(path.join(repo, '.claude'));
+  fs.mkdirSync(path.join(repo, '.opencode'));
+
+  // Pre-seed deprecated skill asdlc-review in target directories (simulate legacy stock project)
+  const legacyAgentsReview = path.join(repo, '.agents', 'skills', 'asdlc-review');
+  const legacyClaudeReview = path.join(repo, '.claude', 'skills', 'asdlc-review');
+  fs.mkdirSync(legacyAgentsReview, { recursive: true });
+  fs.writeFileSync(path.join(legacyAgentsReview, 'SKILL.md'), '# Legacy Review');
+  fs.mkdirSync(legacyClaudeReview, { recursive: true });
+  fs.writeFileSync(path.join(legacyClaudeReview, 'SKILL.md'), '# Legacy Review');
+
+  assert.ok(fs.existsSync(legacyAgentsReview));
+  assert.ok(fs.existsSync(legacyClaudeReview));
+
+  const tools = detectTools(repo);
+  installSkills(repo, tools);
+
+  // Assert deprecated skill was completely pruned
+  assert.equal(fs.existsSync(legacyAgentsReview), false);
+  assert.equal(fs.existsSync(legacyClaudeReview), false);
+
+  // Assert active review skills exist
+  assert.ok(fs.existsSync(path.join(repo, '.agents', 'skills', 'asdlc-impl-review', 'SKILL.md')));
+  assert.ok(fs.existsSync(path.join(repo, '.agents', 'skills', 'asdlc-spec-review', 'SKILL.md')));
+});
+
 test('tools: installCommands installs slash commands with tool-native extensions and formats', () => {
   const repo = tmpRepo();
   fs.mkdirSync(path.join(repo, '.claude'));

@@ -1,7 +1,9 @@
 import path from 'node:path';
-import { exists, listDir, copyTree, ensureDir, readText, writeText } from './fs.js';
+import { exists, listDir, copyTree, ensureDir, readText, writeText, removeDir } from './fs.js';
 import { skillsAssetDir, commandsAssetDir } from './paths.js';
 import { log } from './log.js';
+
+export const DEPRECATED_SKILLS = ['asdlc-review'];
 
 export const TOOL_REGISTRY = {
   claude: {
@@ -207,6 +209,14 @@ export function installSkills(repoRoot, tools = []) {
   for (const dir of targetDirs) {
     const dest = path.join(repoRoot, dir);
     copyTree(skillsAssetDir, dest);
+    // Prune deprecated legacy skills from target directory to prevent orphan skill pollution
+    for (const dep of DEPRECATED_SKILLS) {
+      const depPath = path.join(dest, dep);
+      if (exists(depPath)) {
+        removeDir(depPath);
+        log.ok(`pruned deprecated skill '${dep}' from ${dir}/`);
+      }
+    }
     log.ok(`installed bundled skills (${count} skills) -> ${dir}/`);
   }
 }
