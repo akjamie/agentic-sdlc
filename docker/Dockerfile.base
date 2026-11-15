@@ -1,4 +1,4 @@
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG GO_VERSION=1.24.2
@@ -18,10 +18,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     openjdk-21-jdk-headless \
     maven \
+    gradle \
     unzip \
     tar \
     xz-utils \
   && rm -rf /var/lib/apt/lists/*
+
+# Install uv (astral.sh) fast Python package runner into shared system path
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="/usr/local/bin" sh
 
 # Install Node.js 22 LTS
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \

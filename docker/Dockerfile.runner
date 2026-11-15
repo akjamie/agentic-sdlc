@@ -11,12 +11,14 @@ RUN npm install -g \
     "@fission-ai/openspec@latest" \
     "opencode-ai@${OPENCODE_VERSION}" \
     "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
-  && pip3 install --no-cache-dir --break-system-packages uv \
-  && uv tool install --python "<3.14" graphifyy || pip3 install --no-cache-dir --break-system-packages graphifyy
+  && (uv tool install --python "<3.14" graphifyy || pip3 install --no-cache-dir --break-system-packages graphifyy)
 
-# Copy repository source and install asdlc CLI from local context (eliminating npm publish race)
+# Copy repository source, package as standalone tarball, and install asdlc CLI globally
 COPY . /tmp/asdlc
-RUN npm install -g /tmp/asdlc \
+RUN cd /tmp/asdlc \
+  && npm pack \
+  && npm install -g *.tgz \
+  && cd / \
   && rm -rf /tmp/asdlc
 
 # Pre-seed bundled global skills for non-root agent user

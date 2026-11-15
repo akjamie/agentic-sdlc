@@ -1,0 +1,15 @@
+node_modules
+npm-debug.log
+.git
+.github
+graphify-out
+.claude
+.agents
+.opencode
+.antigravity
+.gemini
+coverage
+tmp
+dist
+build
+*.tgz
