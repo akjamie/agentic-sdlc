@@ -2,7 +2,9 @@ name: Release & Publish
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - v2
   workflow_dispatch:
     inputs:
       bump:
@@ -16,9 +18,9 @@ on:
           - 'minor'
           - 'major'
       tag:
-        description: 'NPM dist-tag (default: latest)'
+        description: 'NPM dist-tag (default: latest for main, alpha/next for v2)'
         required: false
-        default: 'latest'
+        default: ''
 
 permissions:
   contents: write
@@ -39,7 +41,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
 
       # If manual bump was requested via workflow_dispatch, bump and push commit
@@ -61,6 +63,23 @@ jobs:
           echo "Current package: $PKG_NAME@$PKG_VER"
           echo "pkg_name=$PKG_NAME" >> "$GITHUB_OUTPUT"
           echo "pkg_ver=$PKG_VER" >> "$GITHUB_OUTPUT"
+
+          # Determine NPM dist-tag
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          elif [[ "$PKG_VER" == *-alpha* ]]; then
+            TAG="alpha"
+          elif [[ "$PKG_VER" == *-beta* ]]; then
+            TAG="beta"
+          elif [[ "$PKG_VER" == *-rc* ]]; then
+            TAG="rc"
+          elif [ "${{ github.ref }}" = "refs/heads/v2" ]; then
+            TAG="next"
+          else
+            TAG="latest"
+          fi
+          echo "dist_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Computed dist_tag: $TAG"
 
           # 1. Check public NPM registry
           NPM_VER=$(npm view "$PKG_NAME@$PKG_VER" version 2>/dev/null || echo "")
@@ -123,7 +142,7 @@ jobs:
           TAG="v$VER"
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             PRERELEASE_FLAG=""
-            if [[ "$VER" == *-* ]] || { [ -n "${{ github.event.inputs.tag }}" ] && [ "${{ github.event.inputs.tag }}" != "latest" ]; }; then
+            if [[ "$VER" == *-* ]] || [ "${{ steps.version_check.outputs.dist_tag }}" != "latest" ]; then
               PRERELEASE_FLAG="--prerelease"
             fi
             gh release create "$TAG" --title "$TAG" --generate-notes $PRERELEASE_FLAG
@@ -133,7 +152,7 @@ jobs:
 
       - name: Publish to NPM (npmjs.org)
         if: steps.version_check.outputs.release_npm == 'true'
-        run: npm publish --access public --tag ${{ github.event.inputs.tag || 'latest' }}
+        run: npm publish --access public --tag ${{ steps.version_check.outputs.dist_tag }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -142,6 +161,6 @@ jobs:
         run: |
           echo "@akjamie:registry=https://npm.pkg.github.com" > /tmp/gpr.npmrc
           echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> /tmp/gpr.npmrc
-          NPM_CONFIG_USERCONFIG=/tmp/gpr.npmrc npm publish --registry=https://npm.pkg.github.com --tag ${{ github.event.inputs.tag || 'latest' }}
+          NPM_CONFIG_USERCONFIG=/tmp/gpr.npmrc npm publish --registry=https://npm.pkg.github.com --tag ${{ steps.version_check.outputs.dist_tag }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
