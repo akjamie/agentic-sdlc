@@ -1,6 +1,6 @@
 ---
 name: asdlc-review
-description: "Independent fresh-context spec review helper. Primary reviews run via asdlc-spec-review and asdlc-impl-review agent sessions."
+description: "DEPRECATED legacy alias for local spec review dry-run helper. For PR reviews or code reviews, use asdlc-impl-review; for spec and architecture reviews, use asdlc-spec-review."
 ---
 
 # /asdlc:review - Independent Spec Review Helper
