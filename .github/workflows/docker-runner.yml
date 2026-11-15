@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: actions/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
@@ -42,9 +42,10 @@ jobs:
         id: meta
         run: |
           VERSION=$(node -p "require('./package.json').version")
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "image_base=ghcr.io/${{ github.repository_owner }}/asdlc-base" >> "$GITHUB_OUTPUT"
-          echo "image_runner=ghcr.io/${{ github.repository_owner }}/asdlc-runner" >> "$GITHUB_OUTPUT"
+          echo "image_base=ghcr.io/${OWNER}/asdlc-base" >> "$GITHUB_OUTPUT"
+          echo "image_runner=ghcr.io/${OWNER}/asdlc-runner" >> "$GITHUB_OUTPUT"
 
       - name: Build and Push Base Image
         uses: docker/build-push-action@v5
