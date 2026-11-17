@@ -397,7 +397,7 @@ function parsePrReference(target) {
 
 function extractSlugFromBranchName(branchName) {
   const b = String(branchName || '').trim();
-  const m = b.match(/^(?:change|spec|impl|feat|fix)\/([a-z0-9._-]+)$/i);
+  const m = b.match(/^(?:asdlc\/)?(?:change|spec|impl|feat|feature|fix)\/([a-z0-9._-]+)$/i);
   return m ? toChangeSlug(m[1]) : null;
 }
 
@@ -422,6 +422,10 @@ function extractSlugFromPrMetadata(prMeta, activeSlugs = []) {
     if (String(prMeta.title || '').toLowerCase().includes(s.toLowerCase())) {
       return s;
     }
+  }
+  const titleMatch = String(prMeta.title || '').match(/^(?:asdlc\/)?(?:impl|spec|change|feat|feature|fix)\(([^)]+)\)/i);
+  if (titleMatch) {
+    return toChangeSlug(titleMatch[1]);
   }
   return null;
 }
@@ -495,9 +499,10 @@ export async function runPipeline(target, opts = {}) {
   }
 
   const workDir = path.resolve(opts.repoRoot || opts.cwd || process.cwd());
-  const lifecycleInfo = opts.repo
+  const detected = detectRepoLifecycle(workDir);
+  const lifecycleInfo = opts.repo && !detected.isGitRepo
     ? { lifecycle: 'remote', isGitRepo: false, hasOpenspec: false }
-    : detectRepoLifecycle(workDir);
+    : detected;
 
   if (lifecycleInfo.lifecycle === 'greenfield' && !opts.createRepo && !opts.repo) {
     assertGitRepositoryInitialized(workDir, { repo: opts.repo, createRepo: opts.createRepo });
@@ -545,16 +550,22 @@ export async function runPipeline(target, opts = {}) {
     let prMeta = opts.prContext || null;
     if (!prMeta && typeof opts.prMetadataResolver === 'function') {
       prMeta = await opts.prMetadataResolver(prNumber, { repo: opts.repo, host: opts.host, env: mergedEnv });
-    } else if (!prMeta && lifecycleInfo.isGitRepo) {
+    } else if (!prMeta) {
       try {
-        const ghRes = spawnSync('gh', ['pr', 'view', String(prNumber), '--json', 'number,title,headRefName,labels,state'], {
-          cwd: repoRoot,
-          encoding: 'utf8',
-          env: mergedEnv,
-          timeout: 8000,
-        });
-        if (ghRes.status === 0 && ghRes.stdout) {
-          prMeta = JSON.parse(ghRes.stdout);
+        const ghArgs = ['pr', 'view', String(prNumber), '--json', 'number,title,headRefName,labels,state'];
+        if (hostRepo?.fullSlug) {
+          ghArgs.push('--repo', hostRepo.fullSlug);
+        }
+        if (lifecycleInfo.isGitRepo || hostRepo?.fullSlug) {
+          const ghRes = spawnSync('gh', ghArgs, {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env: mergedEnv,
+            timeout: 8000,
+          });
+          if (ghRes.status === 0 && ghRes.stdout) {
+            prMeta = JSON.parse(ghRes.stdout);
+          }
         }
       } catch {
         // offline fallback
@@ -562,6 +573,13 @@ export async function runPipeline(target, opts = {}) {
     }
     slug = (prMeta?.changeId ? toChangeSlug(prMeta.changeId) : null)
       || extractSlugFromPrMetadata(prMeta, activeSlugs);
+    if (!slug && (explicitStage === 'verify' || explicitStage === 'impl-review')) {
+      if (prMeta?.headRefName) {
+        slug = toChangeSlug(prMeta.headRefName);
+      } else {
+        slug = `pr-${prNumber}`;
+      }
+    }
     if (!slug && !opts.dryRun && explicitStage !== 'spec') {
       fail(`Could not resolve active change associated with PR #${prNumber}.`, {
         code: 'ASDLC_ERR_PR_NOT_FOUND',
@@ -664,6 +682,7 @@ export async function runPipeline(target, opts = {}) {
     const containerResult = await runContainerPipeline(target, {
       ...opts,
       engine: opts.engine,
+      hostRepo,
       slug,
       prNumber,
       stage: selectedStage,
@@ -884,7 +903,9 @@ export async function runPipeline(target, opts = {}) {
         implReview = await opts.implReviewer({ slug, cdir, repoRoot, reviewModel: harness.reviewModel });
       } else if (hasHarnessCli) {
         log.step(`Running implementation review via ${harnessBin}...`);
-        const prompt = `Review implementation for change ${slug} in ${repoRoot}. Verify against approved spec in ${cdir}.`;
+        const prompt = prNumber
+          ? `Review implementation for PR #${prNumber} (change ${slug}) in ${repoRoot}. Verify against approved spec in ${cdir}.`
+          : `Review implementation for change ${slug} in ${repoRoot}. Verify against approved spec in ${cdir}.`;
         const res = await runDefaultAgent({ prompt, model: harness.reviewModel, type: 'reviewer' });
         implReview = { status: res?.ok ? 'passed' : 'failed', summary: `Implementation review via ${harnessBin}` };
       } else if (isMandatoryAgentEnv) {
@@ -908,7 +929,7 @@ export async function runPipeline(target, opts = {}) {
       });
       const verifyResult = { pass: verifyExitCode === 0, exitCode: verifyExitCode };
       let prResult = null;
-      if (!opts.skipPr && verifyResult.pass) {
+      if (!opts.skipPr && !prNumber && verifyResult.pass) {
         prResult = await createPR(slug, targetBranch, {
           repoRoot,
           mode: opts.mode,

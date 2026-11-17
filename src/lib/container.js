@@ -434,7 +434,83 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
     shmCredentials: [],
   };
 
-  if (lifecycle === 'greenfield') {
+  // Stream volatile AI auth & SSH keys directly into container tmpfs (/dev/shm) with 0600 permissions
+  const streamShmFile = (containerDestPath, content) => {
+    const dir = path.posix.dirname(containerDestPath);
+    execFn(engine, ['exec', '-i', containerId, 'sh', '-c', `mkdir -p ${dir} && chmod 700 ${dir} && cat > ${containerDestPath} && chmod 600 ${containerDestPath}`], {
+      input: typeof content === 'string' ? content : JSON.stringify(content, null, 2),
+      timeout: 30000,
+    });
+    staged.shmCredentials.push(containerDestPath);
+  };
+
+  if (opts.harness?.baseConfigPath && fs.existsSync(opts.harness.baseConfigPath)) {
+    streamShmFile('/dev/shm/opencode/opencode.json', fs.readFileSync(opts.harness.baseConfigPath, 'utf8'));
+  } else if (opts.harness?.generatedConfig) {
+    streamShmFile('/dev/shm/opencode/opencode.json', opts.harness.generatedConfig);
+  }
+
+  if (opts.harness?.authPath && fs.existsSync(opts.harness.authPath)) {
+    streamShmFile('/dev/shm/opencode/auth.json', fs.readFileSync(opts.harness.authPath, 'utf8'));
+  } else if (opts.harness?.authPayload) {
+    streamShmFile('/dev/shm/opencode/auth.json', opts.harness.authPayload);
+  }
+
+  if (opts.sshKeyPath && fs.existsSync(opts.sshKeyPath)) {
+    streamShmFile('/dev/shm/.ssh/id_ed25519', fs.readFileSync(opts.sshKeyPath, 'utf8'));
+  } else if (opts.sshKeyContent) {
+    streamShmFile('/dev/shm/.ssh/id_ed25519', opts.sshKeyContent);
+  }
+
+  // Stream Git / tool credentials and API tokens into /dev/shm/.env with export syntax
+  const shmEnv = {};
+  if (opts.creds?.token) {
+    shmEnv.GH_TOKEN = opts.creds.token;
+    shmEnv.GITHUB_TOKEN = opts.creds.token;
+  }
+  for (const [k, v] of Object.entries(opts.env || {})) {
+    if (isSensitiveEnvKey(k) && v !== undefined && v !== null && String(v).length > 0) {
+      shmEnv[k] = String(v);
+    }
+  }
+  if (Object.keys(shmEnv).length > 0) {
+    const envLines = Object.entries(shmEnv)
+      .map(([k, v]) => `export ${k}=${JSON.stringify(v)}`)
+      .join('\n') + '\n';
+    streamShmFile('/dev/shm/.env', envLines);
+  }
+
+  // Ensure OpenCode agent finds configuration in /dev/shm
+  execFn(engine, [
+    'exec', containerId, 'sh', '-c',
+    'mkdir -p /home/agent/.config /home/agent/.local/share && ln -sfn /dev/shm/opencode /home/agent/.config/opencode && ln -sfn /dev/shm/opencode /home/agent/.local/share/opencode'
+  ], { timeout: 15000 });
+
+  if (opts.repo && (lifecycle === 'remote' || !isGitRepo(targetDir))) {
+    // Remote or zero-checkout container flow: initialize /workspace from remote repository
+    const targetRepoSlug = opts.hostRepo?.fullSlug || opts.repo;
+    const cloneScript = [
+      'mkdir -p /workspace',
+      'cd /workspace',
+      'if [ ! -d .git ]; then',
+      '  if [ -f /dev/shm/.env ]; then . /dev/shm/.env; fi',
+      '  if [ -n "$GH_TOKEN" ] && which gh >/dev/null 2>&1; then',
+      `    gh repo clone "${targetRepoSlug}" . || git clone "${opts.repo}" .`,
+      '  else',
+      `    git clone "${opts.repo}" .`,
+      '  fi',
+      'fi',
+      opts.prNumber ? `git fetch origin pull/${opts.prNumber}/head:pr-${opts.prNumber} 2>/dev/null && git checkout pr-${opts.prNumber} 2>/dev/null || true` : '',
+    ].filter(Boolean).join('\n');
+
+    const cloneRes = execFn(engine, ['exec', containerId, 'sh', '-c', cloneScript], { timeout: 120000 });
+    if (cloneRes && cloneRes.status !== 0 && !opts.ignoreErrors) {
+      throw new AsdlcError(`Failed to clone remote repository into container: ${cloneRes.stderr || cloneRes.status}`, {
+        code: 'ASDLC_ERR_CONTAINER_STAGE',
+      });
+    }
+    staged.layers.push('remote-repo-clone');
+  } else if (lifecycle === 'greenfield') {
     const res = execFn(engine, ['exec', containerId, 'sh', '-c', 'mkdir -p /workspace'], { cwd: targetDir });
     if (res && res.status !== 0 && !opts.ignoreErrors) {
       throw new AsdlcError(`Failed to initialize /workspace in greenfield container: ${res.stderr || res.status}`, {
@@ -534,58 +610,6 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
       code: 'ASDLC_ERR_CONTAINER_STAGE',
     });
   }
-
-  // Stream volatile AI auth & SSH keys directly into container tmpfs (/dev/shm) with 0600 permissions
-  const streamShmFile = (containerDestPath, content) => {
-    const dir = path.posix.dirname(containerDestPath);
-    execFn(engine, ['exec', '-i', containerId, 'sh', '-c', `mkdir -p ${dir} && chmod 700 ${dir} && cat > ${containerDestPath} && chmod 600 ${containerDestPath}`], {
-      input: typeof content === 'string' ? content : JSON.stringify(content, null, 2),
-      timeout: 30000,
-    });
-    staged.shmCredentials.push(containerDestPath);
-  };
-
-  if (opts.harness?.baseConfigPath && fs.existsSync(opts.harness.baseConfigPath)) {
-    streamShmFile('/dev/shm/opencode/opencode.json', fs.readFileSync(opts.harness.baseConfigPath, 'utf8'));
-  } else if (opts.harness?.generatedConfig) {
-    streamShmFile('/dev/shm/opencode/opencode.json', opts.harness.generatedConfig);
-  }
-
-  if (opts.harness?.authPath && fs.existsSync(opts.harness.authPath)) {
-    streamShmFile('/dev/shm/opencode/auth.json', fs.readFileSync(opts.harness.authPath, 'utf8'));
-  } else if (opts.harness?.authPayload) {
-    streamShmFile('/dev/shm/opencode/auth.json', opts.harness.authPayload);
-  }
-
-  if (opts.sshKeyPath && fs.existsSync(opts.sshKeyPath)) {
-    streamShmFile('/dev/shm/.ssh/id_ed25519', fs.readFileSync(opts.sshKeyPath, 'utf8'));
-  } else if (opts.sshKeyContent) {
-    streamShmFile('/dev/shm/.ssh/id_ed25519', opts.sshKeyContent);
-  }
-
-  // Stream Git / tool credentials and API tokens into /dev/shm/.env with export syntax
-  const shmEnv = {};
-  if (opts.creds?.token) {
-    shmEnv.GH_TOKEN = opts.creds.token;
-    shmEnv.GITHUB_TOKEN = opts.creds.token;
-  }
-  for (const [k, v] of Object.entries(opts.env || {})) {
-    if (isSensitiveEnvKey(k) && v !== undefined && v !== null && String(v).length > 0) {
-      shmEnv[k] = String(v);
-    }
-  }
-  if (Object.keys(shmEnv).length > 0) {
-    const envLines = Object.entries(shmEnv)
-      .map(([k, v]) => `export ${k}=${JSON.stringify(v)}`)
-      .join('\n') + '\n';
-    streamShmFile('/dev/shm/.env', envLines);
-  }
-
-  // Ensure OpenCode agent finds configuration in /dev/shm
-  execFn(engine, [
-    'exec', containerId, 'sh', '-c',
-    'mkdir -p /home/agent/.config /home/agent/.local/share && ln -sfn /dev/shm/opencode /home/agent/.config/opencode && ln -sfn /dev/shm/opencode /home/agent/.local/share/opencode'
-  ], { timeout: 15000 });
 
   return staged;
 }
