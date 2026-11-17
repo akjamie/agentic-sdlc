@@ -488,19 +488,20 @@ export function stageWorkspaceToContainer(repoDir, containerId, opts = {}) {
 
   if (opts.repo && (lifecycle === 'remote' || !isGitRepo(targetDir))) {
     // Remote or zero-checkout container flow: initialize /workspace from remote repository
-    const targetRepoSlug = opts.hostRepo?.fullSlug || opts.repo;
     const cloneScript = [
       'mkdir -p /workspace',
       'cd /workspace',
       'if [ ! -d .git ]; then',
       '  if [ -f /dev/shm/.env ]; then . /dev/shm/.env; fi',
-      '  if [ -n "$GH_TOKEN" ] && which gh >/dev/null 2>&1; then',
-      `    gh repo clone "${targetRepoSlug}" . || git clone "${opts.repo}" .`,
-      '  else',
-      `    git clone "${opts.repo}" .`,
-      '  fi',
+      '  git init /workspace',
+      '  cd /workspace',
+      `  git remote add origin "${opts.repo}" 2>/dev/null || git remote set-url origin "${opts.repo}"`,
+      '  if [ -n "$GH_TOKEN" ] && which gh >/dev/null 2>&1; then gh auth setup-git 2>/dev/null || true; fi',
+      '  git fetch --depth=50 origin 2>/dev/null || git fetch origin 2>/dev/null || true',
+      '  DEF_BRANCH=$(git remote show origin 2>/dev/null | grep "HEAD branch" | cut -d" " -f5)',
+      '  if [ -n "$DEF_BRANCH" ]; then git checkout -f "$DEF_BRANCH" 2>/dev/null || true; fi',
       'fi',
-      opts.prNumber ? `git fetch origin pull/${opts.prNumber}/head:pr-${opts.prNumber} 2>/dev/null && git checkout pr-${opts.prNumber} 2>/dev/null || true` : '',
+      opts.prNumber ? `cd /workspace && (git fetch origin pull/${opts.prNumber}/head:pr-${opts.prNumber} 2>/dev/null || git fetch origin refs/pull/${opts.prNumber}/head:pr-${opts.prNumber} 2>/dev/null || git fetch origin refs/merge-requests/${opts.prNumber}/head:pr-${opts.prNumber} 2>/dev/null || true) && git checkout -f pr-${opts.prNumber} 2>/dev/null || true` : '',
     ].filter(Boolean).join('\n');
 
     const cloneRes = execFn(engine, ['exec', containerId, 'sh', '-c', cloneScript], { timeout: 120000 });

@@ -571,21 +571,16 @@ export async function runPipeline(target, opts = {}) {
         // offline fallback
       }
     }
-    slug = (prMeta?.changeId ? toChangeSlug(prMeta.changeId) : null)
-      || extractSlugFromPrMetadata(prMeta, activeSlugs);
-    if (!slug && (explicitStage === 'verify' || explicitStage === 'impl-review')) {
-      if (prMeta?.headRefName) {
-        slug = toChangeSlug(prMeta.headRefName);
-      } else {
-        slug = `pr-${prNumber}`;
-      }
-    }
-    if (!slug && !opts.dryRun && explicitStage !== 'spec') {
+    if (!prMeta && !opts.dryRun) {
       fail(`Could not resolve active change associated with PR #${prNumber}.`, {
         code: 'ASDLC_ERR_PR_NOT_FOUND',
-        hint: `Ensure PR #${prNumber} has label 'asdlc:change-id: <slug>' or branch 'spec/<slug>' / 'impl/<slug>'.`,
+        hint: `Ensure PR #${prNumber} exists and has label 'asdlc:change-id: <slug>' or branch 'spec/<slug>' / 'impl/<slug>'.`,
       });
     }
+    slug = (prMeta?.changeId ? toChangeSlug(prMeta.changeId) : null)
+      || extractSlugFromPrMetadata(prMeta, activeSlugs)
+      || (prMeta?.headRefName ? toChangeSlug(prMeta.headRefName) : null)
+      || `pr-${prNumber}`;
   } else if (opts.prContext?.changeId) {
     slug = toChangeSlug(opts.prContext.changeId);
   } else if (fromIssues.length && lifecycleInfo.hasOpenspec) {
@@ -895,41 +890,67 @@ export async function runPipeline(target, opts = {}) {
         exitCode: 0,
       };
     } else if (selectedStage === 'verify') {
-      if (!slug || !cdir || !exists(cdir)) {
-        fail(`Change '${slug || target}' not found for 'verify' stage.`);
-      }
+      const isSpecDriven = Boolean(slug && cdir && exists(cdir));
       let implReview = null;
-      if (typeof opts.implReviewer === 'function') {
-        implReview = await opts.implReviewer({ slug, cdir, repoRoot, reviewModel: harness.reviewModel });
-      } else if (hasHarnessCli) {
-        log.step(`Running implementation review via ${harnessBin}...`);
-        const prompt = prNumber
-          ? `Review implementation for PR #${prNumber} (change ${slug}) in ${repoRoot}. Verify against approved spec in ${cdir}.`
-          : `Review implementation for change ${slug} in ${repoRoot}. Verify against approved spec in ${cdir}.`;
-        const res = await runDefaultAgent({ prompt, model: harness.reviewModel, type: 'reviewer' });
-        implReview = { status: res?.ok ? 'passed' : 'failed', summary: `Implementation review via ${harnessBin}` };
-      } else if (isMandatoryAgentEnv) {
-        fail('Autonomous/CI verify stage requires an independent AI reviewer.', {
-          code: 'ASDLC_ERR_AGENT_UNAVAILABLE',
-          hint: `Ensure '${harnessBin}' is installed and accessible in PATH.`,
+      let verifyResult = null;
+
+      if (isSpecDriven) {
+        // Track 1: Spec-driven verification (OpenSpec change exists)
+        if (typeof opts.implReviewer === 'function') {
+          implReview = await opts.implReviewer({ slug, cdir, repoRoot, reviewModel: harness.reviewModel });
+        } else if (hasHarnessCli) {
+          log.step(`Running implementation review via ${harnessBin}...`);
+          const prompt = prNumber
+            ? `Review implementation for PR #${prNumber} (change ${slug}) in ${repoRoot}. Verify against approved spec in ${cdir}.`
+            : `Review implementation for change ${slug} in ${repoRoot}. Verify against approved spec in ${cdir}.`;
+          const res = await runDefaultAgent({ prompt, model: harness.reviewModel, type: 'reviewer' });
+          implReview = { status: res?.ok ? 'passed' : 'failed', summary: `Implementation review via ${harnessBin}` };
+        } else if (isMandatoryAgentEnv) {
+          fail('Autonomous/CI verify stage requires an independent AI reviewer.', {
+            code: 'ASDLC_ERR_AGENT_UNAVAILABLE',
+            hint: `Ensure '${harnessBin}' is installed and accessible in PATH.`,
+          });
+        } else {
+          if (!opts.json) log.info(`[INFO] Local AI CLI (${harnessBin}) not found in PATH; executed deterministic gates only.`);
+          implReview = { status: 'skipped', summary: `Local AI CLI (${harnessBin}) not found in PATH; independent AI reviewer not configured` };
+        }
+        const verifyExitCode = runVerify(slug, {
+          repoRoot,
+          protectedBranch: targetBranch,
+          base: targetBranch,
+          mode: opts.mode,
+          ci: opts.ci,
+          approved: opts.approved,
+          skipOpenspec: opts.skipOpenspec,
+          skipExternal: opts.skipExternal,
         });
+        verifyResult = { pass: verifyExitCode === 0, exitCode: verifyExitCode, mode: 'spec-driven' };
       } else {
-        if (!opts.json) log.info(`[INFO] Local AI CLI (${harnessBin}) not found in PATH; executed deterministic gates only.`);
-        implReview = { status: 'skipped', summary: `Local AI CLI (${harnessBin}) not found in PATH; independent AI reviewer not configured` };
+        // Track 2: Standalone Implementation Review (Brownfield / General PR)
+        log.step(`Running standalone implementation review for ${prNumber ? `PR #${prNumber}` : slug}...`);
+        if (typeof opts.implReviewer === 'function') {
+          implReview = await opts.implReviewer({ slug, prNumber, repoRoot, reviewModel: harness.reviewModel, standalone: true });
+        } else if (hasHarnessCli) {
+          log.step(`Running independent AI reviewer via ${harnessBin}...`);
+          const prompt = prNumber
+            ? `Review PR #${prNumber} (${hostRepo?.fullSlug || 'repository'}) in ${repoRoot}. Evaluate implementation code quality, test rigor, bug classes, and production safety according to asdlc-impl-review rubric.`
+            : `Review code changes in ${repoRoot} for change '${slug}'. Evaluate implementation quality, test rigor, and bug classes according to asdlc-impl-review rubric.`;
+          const res = await runDefaultAgent({ prompt, model: harness.reviewModel, type: 'reviewer' });
+          implReview = { status: res?.ok ? 'passed' : 'failed', summary: `Standalone implementation review via ${harnessBin}` };
+        } else if (isMandatoryAgentEnv) {
+          fail('Autonomous/CI verify stage requires an independent AI reviewer.', {
+            code: 'ASDLC_ERR_AGENT_UNAVAILABLE',
+            hint: `Ensure '${harnessBin}' is installed and accessible in PATH.`,
+          });
+        } else {
+          if (!opts.json) log.info(`[INFO] Local AI CLI (${harnessBin}) not found in PATH; executed standalone review without AI agent.`);
+          implReview = { status: 'skipped', summary: `Local AI CLI (${harnessBin}) not found in PATH` };
+        }
+        verifyResult = { pass: implReview.status !== 'failed', exitCode: implReview.status === 'failed' ? 1 : 0, mode: 'standalone' };
       }
-      const verifyExitCode = runVerify(slug, {
-        repoRoot,
-        protectedBranch: targetBranch,
-        base: targetBranch,
-        mode: opts.mode,
-        ci: opts.ci,
-        approved: opts.approved,
-        skipOpenspec: opts.skipOpenspec,
-        skipExternal: opts.skipExternal,
-      });
-      const verifyResult = { pass: verifyExitCode === 0, exitCode: verifyExitCode };
+
       let prResult = null;
-      if (!opts.skipPr && !prNumber && verifyResult.pass) {
+      if (!opts.skipPr && !prNumber && isSpecDriven && verifyResult.pass) {
         prResult = await createPR(slug, targetBranch, {
           repoRoot,
           mode: opts.mode,
@@ -944,7 +965,8 @@ export async function runPipeline(target, opts = {}) {
       result = {
         slug,
         stage: 'verify',
-        phase: verifyResult.pass ? 'OPEN_IMPL_PR' : 'IMPL_REVIEW_AND_VERIFY',
+        phase: verifyResult.pass ? (isSpecDriven ? 'OPEN_IMPL_PR' : 'IMPL_REVIEW_COMPLETE') : 'IMPL_REVIEW_AND_VERIFY',
+        mode: isSpecDriven ? 'spec-driven' : 'standalone',
         review: implReview,
         verify: verifyResult,
         pr: prResult,
