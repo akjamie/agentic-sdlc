@@ -480,6 +480,14 @@ export async function runPipeline(target, opts = {}) {
   const explicitStage = normalizeStage(opts.stage);
   const env = opts.env || process.env;
 
+  // If no explicit --repo was provided but target is a canonical PR/MR URL, auto-derive canonical repo URL
+  if (!opts.repo && target && /^https?:\/\//i.test(String(target).trim())) {
+    const urlRepoMatch = String(target).trim().match(/^(https?:\/\/[^/]+\/[^/]+\/[^/]+?)(?:\/(?:pull|merge_requests|issues)(?:[/?#]|$)|$)/i);
+    if (urlRepoMatch) {
+      opts.repo = `${urlRepoMatch[1]}.git`;
+    }
+  }
+
   // Resolve remote host/repo if `--repo` is provided (enforces intranet zero-guessing policy)
   let hostRepo = null;
   if (opts.repo) {
