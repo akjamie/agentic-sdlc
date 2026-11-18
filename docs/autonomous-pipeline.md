@@ -674,6 +674,10 @@ Enforced internally on every container launch without exposing CLI flags to weak
 - **Host Network Alignment & Transparent Corporate Proxy Passthrough**:
   - The container runner adheres directly to the host machine's networking topology (standard bridge or host network), avoiding brittle container-level firewall rules.
   - Transparently inherits host proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`), corporate DNS, and custom TLS CA certificates (`/etc/ssl/certs/corporate-ca.crt`).
+- **Runner Image Pull & Daemon-Level Proxy Boundary**:
+  - Shell-level `HTTP_PROXY`/`HTTPS_PROXY` env vars do NOT apply to image pulls: `docker pull`/`docker create` are executed by the container daemon/machine, which maintains its own network configuration.
+  - `asdlc run --container` therefore performs an explicit, observable image acquisition before `container create`: a local-cache check (`image inspect`, skip when cached) followed by a transparent `pull`. Failures surface as `ASDLC_ERR_IMAGE_PULL` with daemon-level remediation hints instead of a cryptic daemon error.
+  - To make a corporate/national proxy effective for image pulls, configure it at the daemon level: Docker Desktop -> Settings -> Resources -> Proxies (Windows/macOS), or a systemd drop-in (`/etc/systemd/system/docker.service.d/http-proxy.conf` with `Environment=HTTPS_PROXY=...`, then `systemctl daemon-reload && systemctl restart docker`) on Linux. Alternatively pin a ghcr mirror via `ASDLC_RUNNER_IMAGE` (e.g. `ghcr.nju.edu.cn/akjamie/asdlc-runner:<tag>` or `docker.m.daocloud.io/ghcr.io/akjamie/asdlc-runner:<tag>`).
 - **Zero Host Mount Spec Immutability & Remote CI Gate**:
   - In container mode, the sandbox runs in complete isolation—it does NOT bind-mount host workspace directories or rely on host file locks.
   - Spec immutability is governed strictly via:

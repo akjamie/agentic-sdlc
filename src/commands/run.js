@@ -16,9 +16,9 @@ import {
   lockSpecsReadOnly,
   preScanWorkspaceForSecrets,
   resolveContainerEngine,
+  resolveRunnerImage,
   runContainerPipeline,
   whichCommand,
-  DEFAULT_RUNNER_IMAGE,
 } from '../lib/container.js';
 import { AsdlcError, fail } from '../lib/errors.js';
 import {
@@ -673,7 +673,7 @@ export async function runPipeline(target, opts = {}) {
 
   // Full Container Execution Mode
   if (isContainerRun && !opts.dryRun) {
-    log.step(`Launching container pipeline (${opts.image || DEFAULT_RUNNER_IMAGE})...`);
+    log.step(`Launching container pipeline (${resolveRunnerImage({ image: opts.image })})...`);
     const containerResult = await runContainerPipeline(target, {
       ...opts,
       engine: opts.engine,

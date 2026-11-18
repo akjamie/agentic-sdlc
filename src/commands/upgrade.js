@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { exists } from '../lib/fs.js';
 import { resolveRepoRoot, schemaAssetDir, openspecDir } from '../lib/paths.js';
@@ -7,14 +6,12 @@ import { installSchema, builtinSchemaVersion } from '../lib/schema.js';
 import { updateRepo } from './update.js';
 import { doctor } from './doctor.js';
 import { log } from '../lib/log.js';
-import { resolveContainerEngine, isEngineAvailable } from '../lib/container.js';
+import { resolveContainerEngine, isEngineAvailable, resolveRunnerImage } from '../lib/container.js';
 
 import { detectTools, installSkills } from './init.js';
 
-const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
-
 export function resolveRunnerImageTag(opts = {}) {
-  return opts.image || process.env.ASDLC_RUNNER_IMAGE || `ghcr.io/akjamie/asdlc-runner:${pkg.version}`;
+  return resolveRunnerImage({ image: opts.image }, process.env);
 }
 
 export function upgradeRunnerImage(opts = {}) {

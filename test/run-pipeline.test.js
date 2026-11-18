@@ -12,11 +12,13 @@ import {
   buildDockerCreateArgs,
   checkContainerEngineHealth,
   detectRepoLifecycle,
+  ensureRunnerImage,
   isEngineAvailable,
   lockContainerSpecsRootReadOnly,
   lockSpecsReadOnly,
   preScanWorkspaceForSecrets,
   resolveContainerEngine,
+  resolveRunnerImage,
   runContainerPipeline,
   stageWorkspaceToContainer,
   syncContainerEgressToHost,
@@ -622,6 +624,119 @@ test('runContainerPipeline & lockContainerSpecsRootReadOnly: validates docker pr
     assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === 'exec' && c.includes('0:0')));
     assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === 'exec' && c.some((a) => String(a).includes('asdlc'))));
     assert.ok(containerCalls.some((c) => c[0] === 'docker' && c[1] === 'rm' && c[2] === '-f'));
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('ensureRunnerImage & resolveRunnerImage: cache skip, explicit pull, mirror override, actionable pull failure', async () => {
+  // 1. resolveRunnerImage precedence: opts.image > ASDLC_RUNNER_IMAGE > version-pinned default
+  assert.equal(resolveRunnerImage({ image: 'mirror.example/akjamie/asdlc-runner:9' }, {}), 'mirror.example/akjamie/asdlc-runner:9');
+  assert.equal(
+    resolveRunnerImage({}, { ASDLC_RUNNER_IMAGE: 'ghcr.nju.edu.cn/akjamie/asdlc-runner:2.0.0-alpha.1' }),
+    'ghcr.nju.edu.cn/akjamie/asdlc-runner:2.0.0-alpha.1'
+  );
+  assert.match(resolveRunnerImage({}, {}), /^ghcr\.io\/akjamie\/asdlc-runner:/);
+
+  // 2. Locally cached image skips pull entirely
+  const cachedCalls = [];
+  const cachedRes = ensureRunnerImage('docker', 'ghcr.io/akjamie/asdlc-runner:2.0.0-alpha.1', {
+    execFn: (cmd, args) => {
+      cachedCalls.push([cmd, ...args]);
+      return { status: 0 };
+    },
+  });
+  assert.deepEqual(cachedRes, { pulled: false, cached: true, image: 'ghcr.io/akjamie/asdlc-runner:2.0.0-alpha.1', engine: 'docker' });
+  assert.ok(cachedCalls.some((c) => c[1] === 'image' && c[2] === 'inspect'));
+  assert.ok(!cachedCalls.some((c) => c[1] === 'pull'));
+
+  // 3. Cache miss triggers an explicit pull
+  const pullCalls = [];
+  const pullRes = ensureRunnerImage('docker', 'img:missing', {
+    execFn: (cmd, args) => {
+      pullCalls.push([cmd, ...args]);
+      return args[0] === 'image' ? { status: 1, stderr: 'no such image' } : { status: 0 };
+    },
+  });
+  assert.equal(pullRes.pulled, true);
+  assert.ok(pullCalls.some((c) => c[1] === 'pull' && c[2] === 'img:missing'));
+
+  // 4. Pull failure raises ASDLC_ERR_IMAGE_PULL with daemon-level proxy remediation hints
+  await assert.rejects(
+    async () => ensureRunnerImage('docker', 'img:missing', {
+      execFn: (cmd, args) => (args[0] === 'image'
+        ? { status: 1, stderr: 'no such image' }
+        : { status: 1, stderr: 'Error response from daemon: Get "https://ghcr.io/v2/": dial tcp 443: i/o timeout' }),
+    }),
+    (err) => {
+      assert.equal(err.code, 'ASDLC_ERR_IMAGE_PULL');
+      assert.match(err.message, /dial tcp 443: i\/o timeout/);
+      assert.match(err.hint, /does NOT inherit shell proxy env vars/);
+      assert.match(err.hint, /ASDLC_RUNNER_IMAGE/);
+      assert.match(err.hint, /Docker Desktop/);
+      return true;
+    }
+  );
+});
+
+test('runContainerPipeline: explicit image pull precedes container create and honors ASDLC_RUNNER_IMAGE override', async () => {
+  const repo = mkTmp('asdlc-cont-pull-');
+  const prevMirror = process.env.ASDLC_RUNNER_IMAGE;
+  process.env.ASDLC_RUNNER_IMAGE = 'ghcr.nju.edu.cn/akjamie/asdlc-runner:2.0.0-alpha.1';
+  try {
+    initGitRepo(repo, { withOpenspec: true });
+    newChange('image pull ordering test', { repoRoot: repo, id: 'pull-change', grill: false, openspec: false });
+
+    // 1. inspect (cache miss) -> pull -> create ordering with mirror image
+    const calls = [];
+    const res = await runContainerPipeline('pull-change', {
+      repoRoot: repo,
+      stage: 'verify',
+      execFn: (cmd, args) => {
+        calls.push([cmd, ...args]);
+        if (cmd === 'docker' && args[0] === 'image') return { status: 1, stderr: 'not found' };
+        if (cmd === 'docker' && args[0] === 'create') return { status: 0, stdout: 'cid-pull-42\n' };
+        return { status: 0 };
+      },
+    });
+
+    assert.equal(res.exitCode, 0);
+    const inspectIdx = calls.findIndex((c) => c[1] === 'image' && c[2] === 'inspect');
+    const pullIdx = calls.findIndex((c) => c[1] === 'pull');
+    const createIdx = calls.findIndex((c) => c[1] === 'create');
+    assert.ok(inspectIdx >= 0, 'image inspect preflight expected');
+    assert.ok(pullIdx > inspectIdx, 'pull must run after cache miss');
+    assert.ok(createIdx > pullIdx, 'create must run after explicit pull');
+    assert.ok(calls[inspectIdx].includes('ghcr.nju.edu.cn/akjamie/asdlc-runner:2.0.0-alpha.1'));
+    assert.ok(calls[createIdx].includes('ghcr.nju.edu.cn/akjamie/asdlc-runner:2.0.0-alpha.1'));
+  } finally {
+    if (prevMirror === undefined) delete process.env.ASDLC_RUNNER_IMAGE;
+    else process.env.ASDLC_RUNNER_IMAGE = prevMirror;
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runContainerPipeline: image pull failure fails fast with ASDLC_ERR_IMAGE_PULL before container create', async () => {
+  const repo = mkTmp('asdlc-cont-pullfail-');
+  try {
+    initGitRepo(repo, { withOpenspec: true });
+    newChange('image pull failure test', { repoRoot: repo, id: 'pullfail-change', grill: false, openspec: false });
+
+    let createAttempted = false;
+    await assert.rejects(
+      async () => runContainerPipeline('pullfail-change', {
+        repoRoot: repo,
+        stage: 'verify',
+        execFn: (cmd, args) => {
+          if (cmd === 'docker' && args[0] === 'image') return { status: 1 };
+          if (cmd === 'docker' && args[0] === 'pull') return { status: 1, stderr: 'dial tcp: i/o timeout' };
+          if (cmd === 'docker' && args[0] === 'create') createAttempted = true;
+          return { status: 0 };
+        },
+      }),
+      (err) => err.code === 'ASDLC_ERR_IMAGE_PULL'
+    );
+    assert.equal(createAttempted, false, 'container create must not run when image pull fails');
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }

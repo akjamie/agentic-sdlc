@@ -11,6 +11,20 @@ export const DEFAULT_RUNNER_IMAGE = `ghcr.io/akjamie/asdlc-runner:${pkg.version}
 export const SUPPORTED_CONTAINER_ENGINES = Object.freeze(['docker', 'podman']);
 
 /**
+ * Resolve the runner container image with precedence:
+ * 1. Explicit CLI option `opts.image`
+ * 2. Environment variable `ASDLC_RUNNER_IMAGE` (mirror / intranet registry override)
+ * 3. Version-pinned default `ghcr.io/akjamie/asdlc-runner:<pkg.version>`
+ *
+ * @param {object} [opts]
+ * @param {Record<string, string|undefined>} [hostEnv]
+ * @returns {string}
+ */
+export function resolveRunnerImage(opts = {}, hostEnv = process.env) {
+  return opts.image || hostEnv?.ASDLC_RUNNER_IMAGE || DEFAULT_RUNNER_IMAGE;
+}
+
+/**
  * Container security baseline enforced internally on every sandbox launch.
  * Never exposes CLI flags to run as root or grant Linux capabilities.
  */
@@ -57,6 +71,88 @@ export function collectCorporateProxyEnv(hostEnv = process.env) {
     }
   }
   return out;
+}
+
+function tailText(text, maxLines = 5, maxLen = 500) {
+  const lines = String(text || '').trim().split(/\r?\n/).filter(Boolean).slice(-maxLines);
+  const joined = lines.join(' | ');
+  return joined.length > maxLen ? `${joined.slice(0, maxLen)}...` : joined;
+}
+
+/**
+ * Build actionable remediation hints for a failed runner image pull.
+ * Key fact: the image pull is performed by the container daemon/machine (or
+ * rootless backend process), which does NOT inherit shell-level
+ * HTTP_PROXY/HTTPS_PROXY env vars. Proxy passthrough via `-e` flags only
+ * covers traffic INSIDE the container, never the daemon-side pull.
+ *
+ * @param {string} engine
+ * @param {string} image
+ * @returns {string}
+ */
+export function buildImagePullHint(engine, image) {
+  const shellProxySet = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy'].some((k) => process.env[k]);
+  const lines = [
+    'The image pull is executed by the container daemon/machine, which does NOT inherit shell proxy env vars (HTTP_PROXY/HTTPS_PROXY).',
+  ];
+  if (shellProxySet) {
+    lines.push(`Your shell proxy env is set, but the ${engine} daemon/machine cannot use it for image pulls.`);
+  }
+  lines.push(
+    'Fix with any one option:',
+    `  1. Configure the proxy at the daemon level, then re-run:`,
+    `     - Windows/macOS (${engine === 'podman' ? 'Podman Desktop / podman machine' : 'Docker Desktop'}): Settings -> Resources -> Proxies, enable manual proxy, Apply & Restart.`,
+    `     - Linux: /etc/systemd/system/${engine}.service.d/http-proxy.conf with Environment=HTTPS_PROXY=... , then 'systemctl daemon-reload && systemctl restart ${engine}'.`,
+    `  2. Pre-pull through your network path once: ${engine} pull ${image}`,
+    `  3. Use a ghcr mirror/intranet registry via env override and re-run, e.g.:`,
+    `     ASDLC_RUNNER_IMAGE=ghcr.nju.edu.cn/akjamie/asdlc-runner:<tag>   (NJU mirror)`,
+    `     ASDLC_RUNNER_IMAGE=docker.m.daocloud.io/ghcr.io/akjamie/asdlc-runner:<tag>   (DaoCloud proxy)`,
+    '  4. Or run without --container.'
+  );
+  return lines.join('\n');
+}
+
+/**
+ * Ensures the runner image is available locally before `container create`.
+ *
+ * Image resolution is daemon-side: `docker create` triggers an implicit pull
+ * that inherits NO shell proxy env, so in proxied/censored networks the pull
+ * fails with a cryptic daemon error. This helper makes the pull explicit,
+ * skips it when the image is already cached, and converts failures into an
+ * actionable ASDLC_ERR_IMAGE_PULL error.
+ *
+ * @param {string} engine
+ * @param {string} image
+ * @param {object} [opts]
+ * @param {Function} [opts.execFn]
+ * @param {string} [opts.stdio]
+ * @returns {{ pulled: boolean, cached: boolean, image: string, engine: string }}
+ */
+export function ensureRunnerImage(engine, image, opts = {}) {
+  const execFn = opts.execFn || defaultExec;
+  let cached = false;
+  try {
+    const inspect = execFn(engine, ['image', 'inspect', image], { stdio: 'ignore' });
+    cached = Boolean(inspect && inspect.status === 0);
+  } catch {
+    cached = false;
+  }
+  if (cached) {
+    return { pulled: false, cached: true, image, engine };
+  }
+
+  const pullRes = execFn(engine, ['pull', image], { stdio: opts.stdio || 'inherit' });
+  if (!pullRes || pullRes.status !== 0) {
+    const stderr = tailText(pullRes?.stderr || pullRes?.stdout || '');
+    throw new AsdlcError(
+      `Failed to pull runner image '${image}' via ${engine}.${stderr ? ` Last error: ${stderr}` : ''}`,
+      {
+        code: 'ASDLC_ERR_IMAGE_PULL',
+        hint: buildImagePullHint(engine, image),
+      }
+    );
+  }
+  return { pulled: true, cached: false, image, engine };
 }
 
 /**
@@ -768,6 +864,14 @@ export async function runContainerPipeline(target, opts = {}) {
   const lifecycleInfo = detectRepoLifecycle(targetDir);
 
   const engine = resolveContainerEngine(opts, execFn);
+  const image = resolveRunnerImage({ image: opts.image });
+
+  // Explicit, observable image acquisition (local-cache check + pull with
+  // actionable proxy diagnostics) instead of a cryptic daemon-side pull
+  // hidden inside `container create`.
+  if (!opts.skipImagePull) {
+    ensureRunnerImage(engine, image, { execFn, stdio: opts.stdio || 'inherit' });
+  }
 
   const containerName = `asdlc-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const containerSubcommand = buildContainerRunCommand(target, opts);
@@ -775,7 +879,7 @@ export async function runContainerPipeline(target, opts = {}) {
   const createArgs = buildContainerCreateArgs({
     name: containerName,
     engine,
-    image: opts.image || DEFAULT_RUNNER_IMAGE,
+    image,
     hostEnv: opts.env || process.env,
     sshAuthSock: opts.sshAuthSock,
     sshAgent: opts.sshAgent,
