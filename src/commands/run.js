@@ -673,10 +673,13 @@ export async function runPipeline(target, opts = {}) {
 
   // Full Container Execution Mode
   if (isContainerRun && !opts.dryRun) {
-    log.step(`Launching container pipeline (${resolveRunnerImage({ image: opts.image })})...`);
+    const resolvedImage = resolveRunnerImage({ image: opts.image }, mergedEnv || process.env);
+    log.step(`Launching container pipeline (${resolvedImage})...`);
     const containerResult = await runContainerPipeline(target, {
       ...opts,
       engine: opts.engine,
+      image: opts.image,
+      pull: opts.pull ?? opts.pullPolicy,
       hostRepo,
       slug,
       prNumber,
@@ -1105,6 +1108,8 @@ export function register(program) {
     .option('--issue <id>', 'alias for --from-issue (repeatable)', collectRepeatable, [])
     .option('--container', 'run in isolated hardened UID 10001:10001 container runtime')
     .option('--engine <engine>', 'container engine to use: docker | podman (default: auto)')
+    .option('--image <image>', 'override runner container image (defaults to ASDLC_RUNNER_IMAGE or ghcr.io/akjamie/asdlc-runner:<version>)')
+    .option('--pull <policy>', 'runner image pull policy: missing | always | never (default: missing)')
     .option('--dry-run', 'print deterministic execution & security plan without executing')
     .option('--mode <mode>', 'override workflow mode: spec-first | supervised | auto')
     .option('--target-branch <branch>', 'target protected branch (defaults to repo default)')

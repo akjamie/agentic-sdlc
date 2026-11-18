@@ -10,12 +10,14 @@ import {
   SUPPORTED_CONTAINER_ENGINES,
   buildContainerCreateArgs,
   buildDockerCreateArgs,
+  buildImagePullHint,
   checkContainerEngineHealth,
   detectRepoLifecycle,
   ensureRunnerImage,
   isEngineAvailable,
   lockContainerSpecsRootReadOnly,
   lockSpecsReadOnly,
+  normalizePullPolicy,
   preScanWorkspaceForSecrets,
   resolveContainerEngine,
   resolveRunnerImage,
@@ -638,7 +640,17 @@ test('ensureRunnerImage & resolveRunnerImage: cache skip, explicit pull, mirror 
   );
   assert.match(resolveRunnerImage({}, {}), /^ghcr\.io\/akjamie\/asdlc-runner:/);
 
-  // 2. Locally cached image skips pull entirely
+  // 2. normalizePullPolicy handles canonical values, k8s alias, booleans, and rejects invalid
+  assert.equal(normalizePullPolicy(), 'missing');
+  assert.equal(normalizePullPolicy('missing'), 'missing');
+  assert.equal(normalizePullPolicy('if-not-present'), 'missing');
+  assert.equal(normalizePullPolicy('always'), 'always');
+  assert.equal(normalizePullPolicy(true), 'always');
+  assert.equal(normalizePullPolicy('never'), 'never');
+  assert.equal(normalizePullPolicy(false), 'never');
+  assert.throws(() => normalizePullPolicy('invalid-policy'), (err) => err.code === 'ASDLC_ERR_INVALID_PARAM');
+
+  // 3. Locally cached image with default policy (missing) skips pull entirely
   const cachedCalls = [];
   const cachedRes = ensureRunnerImage('docker', 'ghcr.io/akjamie/asdlc-runner:2.0.0-alpha.1', {
     execFn: (cmd, args) => {
@@ -646,11 +658,48 @@ test('ensureRunnerImage & resolveRunnerImage: cache skip, explicit pull, mirror 
       return { status: 0 };
     },
   });
-  assert.deepEqual(cachedRes, { pulled: false, cached: true, image: 'ghcr.io/akjamie/asdlc-runner:2.0.0-alpha.1', engine: 'docker' });
+  assert.deepEqual(cachedRes, { pulled: false, cached: true, image: 'ghcr.io/akjamie/asdlc-runner:2.0.0-alpha.1', engine: 'docker', policy: 'missing' });
   assert.ok(cachedCalls.some((c) => c[1] === 'image' && c[2] === 'inspect'));
   assert.ok(!cachedCalls.some((c) => c[1] === 'pull'));
 
-  // 3. Cache miss triggers an explicit pull
+  // 4. Policy 'always' forces pull even when image is locally cached
+  const alwaysCalls = [];
+  const alwaysRes = ensureRunnerImage('docker', 'ghcr.io/akjamie/asdlc-runner:2.0.0-alpha.1', {
+    pull: 'always',
+    execFn: (cmd, args) => {
+      alwaysCalls.push([cmd, ...args]);
+      return { status: 0 };
+    },
+  });
+  assert.equal(alwaysRes.pulled, true);
+  assert.equal(alwaysRes.policy, 'always');
+  assert.ok(alwaysCalls.some((c) => c[1] === 'pull'));
+
+  // 5. Policy 'never' succeeds on cache hit without pull, fails fast on cache miss
+  const neverCalls = [];
+  const neverCachedRes = ensureRunnerImage('docker', 'img:local', {
+    pull: 'never',
+    execFn: (cmd, args) => {
+      neverCalls.push([cmd, ...args]);
+      return { status: 0 };
+    },
+  });
+  assert.equal(neverCachedRes.cached, true);
+  assert.ok(!neverCalls.some((c) => c[1] === 'pull'));
+
+  await assert.rejects(
+    async () => ensureRunnerImage('docker', 'img:missing-local', {
+      pull: 'never',
+      execFn: () => ({ status: 1 }),
+    }),
+    (err) => {
+      assert.equal(err.code, 'ASDLC_ERR_IMAGE_NOT_FOUND');
+      assert.match(err.message, /pull policy is set to 'never'/);
+      return true;
+    }
+  );
+
+  // 6. Cache miss triggers an explicit pull
   const pullCalls = [];
   const pullRes = ensureRunnerImage('docker', 'img:missing', {
     execFn: (cmd, args) => {
@@ -661,9 +710,10 @@ test('ensureRunnerImage & resolveRunnerImage: cache skip, explicit pull, mirror 
   assert.equal(pullRes.pulled, true);
   assert.ok(pullCalls.some((c) => c[1] === 'pull' && c[2] === 'img:missing'));
 
-  // 4. Pull failure raises ASDLC_ERR_IMAGE_PULL with daemon-level proxy remediation hints
+  // 7. Pull failure raises ASDLC_ERR_IMAGE_PULL with daemon-level proxy remediation hints & DI env
   await assert.rejects(
     async () => ensureRunnerImage('docker', 'img:missing', {
+      env: { HTTPS_PROXY: 'http://127.0.0.1:7890' },
       execFn: (cmd, args) => (args[0] === 'image'
         ? { status: 1, stderr: 'no such image' }
         : { status: 1, stderr: 'Error response from daemon: Get "https://ghcr.io/v2/": dial tcp 443: i/o timeout' }),
@@ -672,11 +722,31 @@ test('ensureRunnerImage & resolveRunnerImage: cache skip, explicit pull, mirror 
       assert.equal(err.code, 'ASDLC_ERR_IMAGE_PULL');
       assert.match(err.message, /dial tcp 443: i\/o timeout/);
       assert.match(err.hint, /does NOT inherit shell proxy env vars/);
+      assert.match(err.hint, /Your shell proxy env is set/);
       assert.match(err.hint, /ASDLC_RUNNER_IMAGE/);
       assert.match(err.hint, /Docker Desktop/);
       return true;
     }
   );
+
+  // 8. Pull failure with stdio: inherit uses informative fallback in message
+  await assert.rejects(
+    async () => ensureRunnerImage('docker', 'img:missing', {
+      stdio: 'inherit',
+      execFn: (cmd, args) => (args[0] === 'image' ? { status: 1 } : { status: 1, stderr: null, stdout: null }),
+    }),
+    (err) => {
+      assert.equal(err.code, 'ASDLC_ERR_IMAGE_PULL');
+      assert.match(err.message, /see terminal output above/);
+      return true;
+    }
+  );
+
+  // 9. buildImagePullHint DI verification without mutating global process.env
+  const hintWithProxy = buildImagePullHint('docker', 'myimg', { HTTPS_PROXY: 'http://corp.proxy:8080' });
+  assert.match(hintWithProxy, /Your shell proxy env is set/);
+  const hintNoProxy = buildImagePullHint('docker', 'myimg', {});
+  assert.ok(!hintNoProxy.includes('Your shell proxy env is set'));
 });
 
 test('runContainerPipeline: explicit image pull precedes container create and honors ASDLC_RUNNER_IMAGE override', async () => {
@@ -737,6 +807,48 @@ test('runContainerPipeline: image pull failure fails fast with ASDLC_ERR_IMAGE_P
       (err) => err.code === 'ASDLC_ERR_IMAGE_PULL'
     );
     assert.equal(createAttempted, false, 'container create must not run when image pull fails');
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runContainerPipeline: honors opts.pull = "never" and DI opts.env override without global mutation', async () => {
+  const repo = mkTmp('asdlc-cont-pullnever-');
+  try {
+    initGitRepo(repo, { withOpenspec: true });
+    newChange('pull never test', { repoRoot: repo, id: 'pullnever-change', grill: false, openspec: false });
+
+    // 1. pull = 'never' succeeds when image is present locally
+    const calls = [];
+    const res = await runContainerPipeline('pullnever-change', {
+      repoRoot: repo,
+      stage: 'verify',
+      pull: 'never',
+      env: { ASDLC_RUNNER_IMAGE: 'custom-registry.internal/runner:v2' },
+      execFn: (cmd, args) => {
+        calls.push([cmd, ...args]);
+        if (cmd === 'docker' && args[0] === 'create') return { status: 0, stdout: 'cid-never-1\n' };
+        return { status: 0 };
+      },
+    });
+
+    assert.equal(res.exitCode, 0);
+    assert.ok(calls.some((c) => c[1] === 'image' && c[2] === 'inspect' && c[3] === 'custom-registry.internal/runner:v2'));
+    assert.ok(!calls.some((c) => c[1] === 'pull'), 'pull must never be called with pull: never');
+
+    // 2. pull = 'never' fails fast when image is missing locally
+    await assert.rejects(
+      async () => runContainerPipeline('pullnever-change', {
+        repoRoot: repo,
+        stage: 'verify',
+        pull: 'never',
+        execFn: (cmd, args) => {
+          if (cmd === 'docker' && args[0] === 'image') return { status: 1 };
+          return { status: 0 };
+        },
+      }),
+      (err) => err.code === 'ASDLC_ERR_IMAGE_NOT_FOUND'
+    );
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }

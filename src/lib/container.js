@@ -80,6 +80,28 @@ function tailText(text, maxLines = 5, maxLen = 500) {
 }
 
 /**
+ * Normalizes container image pull policy into one of: 'missing' | 'always' | 'never'.
+ * Also supports Kubernetes-style 'if-not-present' and boolean true/false.
+ *
+ * @param {string|boolean|undefined} [policy]
+ * @returns {'missing' | 'always' | 'never'}
+ */
+export function normalizePullPolicy(policy = 'missing') {
+  if (policy === true || policy === 'always') return 'always';
+  if (policy === false || policy === 'never') return 'never';
+  const norm = String(policy || 'missing').trim().toLowerCase();
+  if (norm === 'missing' || norm === 'if-not-present' || norm === 'ifnotpresent' || !policy) {
+    return 'missing';
+  }
+  if (norm === 'always') return 'always';
+  if (norm === 'never') return 'never';
+  throw new AsdlcError(
+    `Invalid pull policy '${policy}'. Valid options: missing (or if-not-present) | always | never`,
+    { code: 'ASDLC_ERR_INVALID_PARAM' }
+  );
+}
+
+/**
  * Build actionable remediation hints for a failed runner image pull.
  * Key fact: the image pull is performed by the container daemon/machine (or
  * rootless backend process), which does NOT inherit shell-level
@@ -88,10 +110,11 @@ function tailText(text, maxLines = 5, maxLen = 500) {
  *
  * @param {string} engine
  * @param {string} image
+ * @param {Record<string, string|undefined>} [hostEnv]
  * @returns {string}
  */
-export function buildImagePullHint(engine, image) {
-  const shellProxySet = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy'].some((k) => process.env[k]);
+export function buildImagePullHint(engine, image, hostEnv = process.env) {
+  const shellProxySet = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy'].some((k) => hostEnv?.[k]);
   const lines = [
     'The image pull is executed by the container daemon/machine, which does NOT inherit shell proxy env vars (HTTP_PROXY/HTTPS_PROXY).',
   ];
@@ -118,18 +141,24 @@ export function buildImagePullHint(engine, image) {
  * Image resolution is daemon-side: `docker create` triggers an implicit pull
  * that inherits NO shell proxy env, so in proxied/censored networks the pull
  * fails with a cryptic daemon error. This helper makes the pull explicit,
- * skips it when the image is already cached, and converts failures into an
- * actionable ASDLC_ERR_IMAGE_PULL error.
+ * observes the configured pull policy ('missing' | 'always' | 'never'),
+ * and converts failures into an actionable ASDLC_ERR_IMAGE_PULL error.
  *
  * @param {string} engine
  * @param {string} image
  * @param {object} [opts]
  * @param {Function} [opts.execFn]
  * @param {string} [opts.stdio]
- * @returns {{ pulled: boolean, cached: boolean, image: string, engine: string }}
+ * @param {string|boolean} [opts.pull] pull policy: missing | always | never
+ * @param {string|boolean} [opts.pullPolicy] alias for opts.pull
+ * @param {Record<string, string|undefined>} [opts.env] host environment
+ * @returns {{ pulled: boolean, cached: boolean, image: string, engine: string, policy: string }}
  */
 export function ensureRunnerImage(engine, image, opts = {}) {
   const execFn = opts.execFn || defaultExec;
+  const hostEnv = opts.env || process.env;
+  const policy = normalizePullPolicy(opts.pull ?? opts.pullPolicy ?? 'missing');
+
   let cached = false;
   try {
     const inspect = execFn(engine, ['image', 'inspect', image], { stdio: 'ignore' });
@@ -137,22 +166,43 @@ export function ensureRunnerImage(engine, image, opts = {}) {
   } catch {
     cached = false;
   }
-  if (cached) {
-    return { pulled: false, cached: true, image, engine };
-  }
 
-  const pullRes = execFn(engine, ['pull', image], { stdio: opts.stdio || 'inherit' });
-  if (!pullRes || pullRes.status !== 0) {
-    const stderr = tailText(pullRes?.stderr || pullRes?.stdout || '');
+  // If policy is 'never', strictly enforce local-only execution
+  if (policy === 'never') {
+    if (cached) {
+      return { pulled: false, cached: true, image, engine, policy };
+    }
     throw new AsdlcError(
-      `Failed to pull runner image '${image}' via ${engine}.${stderr ? ` Last error: ${stderr}` : ''}`,
+      `Runner image '${image}' is not available locally and pull policy is set to 'never'.`,
       {
-        code: 'ASDLC_ERR_IMAGE_PULL',
-        hint: buildImagePullHint(engine, image),
+        code: 'ASDLC_ERR_IMAGE_NOT_FOUND',
+        hint: `Run '${engine} pull ${image}' to fetch it, or re-run without '--pull never'.`,
       }
     );
   }
-  return { pulled: true, cached: false, image, engine };
+
+  // If policy is 'missing' and already present locally, skip the pull
+  if (policy === 'missing' && cached) {
+    return { pulled: false, cached: true, image, engine, policy };
+  }
+
+  // Otherwise ('always', or 'missing' with cache miss), pull the image
+  const pullRes = execFn(engine, ['pull', image], { stdio: opts.stdio || 'inherit' });
+  if (!pullRes || pullRes.status !== 0) {
+    const rawError = pullRes?.stderr || pullRes?.stdout || '';
+    const stderr = tailText(rawError);
+    const detailMsg = stderr
+      ? ` Last error: ${stderr}`
+      : (opts.stdio === 'inherit' || !opts.stdio ? ' (see terminal output above for daemon details)' : '');
+    throw new AsdlcError(
+      `Failed to pull runner image '${image}' via ${engine}.${detailMsg}`,
+      {
+        code: 'ASDLC_ERR_IMAGE_PULL',
+        hint: buildImagePullHint(engine, image, hostEnv),
+      }
+    );
+  }
+  return { pulled: true, cached: false, image, engine, policy };
 }
 
 /**
@@ -864,13 +914,19 @@ export async function runContainerPipeline(target, opts = {}) {
   const lifecycleInfo = detectRepoLifecycle(targetDir);
 
   const engine = resolveContainerEngine(opts, execFn);
-  const image = resolveRunnerImage({ image: opts.image });
+  const hostEnv = opts.env || process.env;
+  const image = resolveRunnerImage({ image: opts.image }, hostEnv);
 
   // Explicit, observable image acquisition (local-cache check + pull with
   // actionable proxy diagnostics) instead of a cryptic daemon-side pull
   // hidden inside `container create`.
   if (!opts.skipImagePull) {
-    ensureRunnerImage(engine, image, { execFn, stdio: opts.stdio || 'inherit' });
+    ensureRunnerImage(engine, image, {
+      execFn,
+      stdio: opts.stdio || 'inherit',
+      pull: opts.pull ?? opts.pullPolicy,
+      env: hostEnv,
+    });
   }
 
   const containerName = `asdlc-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

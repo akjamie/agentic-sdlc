@@ -5,10 +5,13 @@ All notable changes to `@akjamie/agentic-sdlc` are documented in this file.
 ## [Unreleased] (v2)
 
 ### Changed & Fixed
-- **Runner Image Pull Proxy Diagnostics (container mode)**:
+- **Runner Image Pull Proxy Diagnostics & Pull Policy (container mode)**:
   - `asdlc run --container` now performs an explicit image acquisition before `container create`: local-cache check (`image inspect`, skip when cached) followed by a transparent `docker/podman pull`, replacing the previously implicit daemon-side pull that failed cryptically in proxy-required networks.
-  - Pull failures now surface as `ASDLC_ERR_IMAGE_PULL` with actionable daemon-level remediation hints (Docker Desktop proxy settings, systemd drop-in for Linux, pre-pull, or `ASDLC_RUNNER_IMAGE` mirror override).
+  - Pull failures now surface as `ASDLC_ERR_IMAGE_PULL` with actionable daemon-level remediation hints (Docker Desktop proxy settings, systemd drop-in for Linux, pre-pull, or `ASDLC_RUNNER_IMAGE` mirror override) and explicit daemon output guidance.
+  - Added first-class `--pull <policy>` CLI flag (`missing` [default], `always`, `never`, with Kubernetes-style `if-not-present` alias): `--pull always` forces re-pulling mutable tags, while `--pull never` enables strict offline/air-gapped execution failing fast with `ASDLC_ERR_IMAGE_NOT_FOUND` if un-cached.
+  - Added `--image <image>` CLI flag to `asdlc run` for runtime image overrides.
   - Runner image resolution unified in `resolveRunnerImage()` (`--image` > `ASDLC_RUNNER_IMAGE` > version-pinned `ghcr.io/akjamie/asdlc-runner:<pkg.version>`); `ASDLC_RUNNER_IMAGE` now also works for `asdlc run --container` (previously only `asdlc upgrade --pull-image`), enabling ghcr mirror/intranet registry overrides (e.g. `ghcr.nju.edu.cn`, `docker.m.daocloud.io`).
+  - Improved dependency injection: `ensureRunnerImage`, `buildImagePullHint`, and `runContainerPipeline` support caller-supplied environment objects (`opts.env`) without global `process.env` mutation.
 
 ## [1.9.2] - 2026-11-13
 
