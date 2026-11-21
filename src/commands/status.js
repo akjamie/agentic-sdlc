@@ -7,6 +7,7 @@ import { verdictOf } from './lint.js';
 import { countUncheckedTasks } from './verify.js';
 import { log } from '../lib/log.js';
 import { resolveTopology } from '../lib/level.js';
+import { computeTeamMetrics, renderMetricsDashboard } from '../lib/telemetry.js';
 
 // "Where am I?" for a change - a read-only view of the 7 stages from the working
 // tree + git. Useful for humans and for an agent deciding the next command.
@@ -243,16 +244,33 @@ export function statusPortfolio(opts = {}) {
   return 0;
 }
 
+export function statusMetrics(opts = {}) {
+  const repoRoot = requireRepo(opts);
+  const metrics = computeTeamMetrics(repoRoot, { days: opts.days ? Number(opts.days) : 30 });
+  if (opts.json) {
+    jsonOut(metrics);
+  } else {
+    log.plain(renderMetricsDashboard(metrics));
+  }
+  return 0;
+}
+
 export function register(program) {
   program
     .command('status [changeId]')
     .description('show where a change is in the 7 stages + the next command (or portfolio overview if omitted)')
     .option('--protected-branch <ref>', 'branch the approved spec must be merged into', 'origin/main')
     .option('--mode <mode>', 'workflow mode: supervised (default) | spec-first | auto')
+    .option('--metrics', 'show team governance metrics & gate friction dashboard')
+    .option('--days <count>', 'number of days to aggregate metrics for', '30')
     .option('--repo-root <path>')
     .option('--json', 'output machine-readable JSON')
     .action((changeId, opts) => {
-      process.exitCode = changeId ? statusChange(changeId, opts) : statusPortfolio(opts);
+      if (opts.metrics) {
+        process.exitCode = statusMetrics(opts);
+      } else {
+        process.exitCode = changeId ? statusChange(changeId, opts) : statusPortfolio(opts);
+      }
     });
 }
 

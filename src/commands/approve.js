@@ -9,6 +9,7 @@ import { classifyPR } from '../lib/prtype.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
 import { resolveTopology } from '../lib/level.js';
+import { recordEvent } from '../lib/telemetry.js';
 
 function upsertKey(text, key, value) {
   const re = new RegExp(`^\\s*${key}:\\s*.*$`, 'm');
@@ -176,6 +177,13 @@ export function mergeChange(changeId, opts = {}) {
       log.warn('nothing to commit (already stamped)');
     }
   }
+
+  recordEvent('lifecycle.transition', {
+    stage: 'approve',
+    change: slug,
+    toState: 'READY_FOR_IMPL',
+    approvedSha,
+  }, { repoRoot });
 
   log.info('');
   log.info('Next (automatic chain):');

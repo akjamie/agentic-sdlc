@@ -10,6 +10,7 @@ import { isSinglePrLevel, readEffectiveLevel } from '../lib/level.js';
 import { resolveWorkflowMode } from '../lib/config.js';
 import { assess } from '../assess/index.js';
 import { triagePullRequest, PULL_REQUEST_THREADS_QUERY } from '../lib/triage.js';
+import { recordEvent } from '../lib/telemetry.js';
 
 // Guard before implementing: the spec must be APPROVED on the target branch
 // (i.e. the Spec PR has been merged into targetBranch, locking proposal.md & specs/**).
@@ -236,6 +237,14 @@ export function applyGuard(changeId, opts = {}) {
     }
     const triage = triagePullRequest(prCtx || {});
     log.info(`[PR #${prRef}] Triaged review feedback: ${triage.actionableThreads.length} actionable, ${triage.questionThreads.length} question(s), ${triage.suggestionThreads.length} suggestion(s).`);
+    recordEvent('pr.triage', {
+      stage: 'apply',
+      change: slug,
+      pr: prNum,
+      actionableCount: triage.actionableThreads.length,
+      questionCount: triage.questionThreads.length,
+      suggestionCount: triage.suggestionThreads.length,
+    }, { repoRoot });
   }
 
   if (isAutoPr) {
