@@ -41,12 +41,50 @@ const DEFAULT_AGENT_LOGINS = [
 ];
 
 const THREAD_TRAILER_RE = /\bref:\s*#([A-Za-z0-9_=-]+)/g;
+export const REVIEW_ROUND_ANCHOR_RE = /<!--\s*asdlc:review-round:(\d+)\s*-->/i;
 const SUGGESTION_BLOCK_RE = /```suggestion\r?\n([\s\S]*?)```/;
 
 const ACTION_IMPERATIVE_RE = /\b(please|fix|add|remove|delete|rename|change|update|handle|refactor|avoid|should|must|need to|needs to|missing|bug|error|broken|fail|invalid|nullable|null check|throw|catch|test)\b/i;
 const MIXED_SIGNAL_RE = /\b(lgtm|looks good|nice|great|good)\b.*\b(but|however|except|though|although|nit|please)\b/i;
 const QUESTION_RE = /(\?|\b(why|how|what if|could you explain|can you explain|what does|is this|are we|should this)\b)/i;
 const PRAISE_ONLY_RE = /^(?:lgtm|looks good(?: to me)?|nice(?: work| approach| job)?|good(?: job| catch| work)?|great|awesome|ship it|\+1|👍|🎉|🚀|✅)[!.\s]*$/i;
+
+/**
+ * Computes the current PR review round (1..maxRounds) according to §6.3.
+ * Counts formal hidden review anchors <!-- asdlc:review-round:N -->,
+ * or derives round from past commit batches containing `(ref: #PRRT_...)` trailers.
+ */
+export function computeReviewRound({ issueComments = [], commitMessages = [], reviews = [] } = {}) {
+  let maxAnchorRound = 1;
+  let foundAnchor = false;
+
+  const allTexts = [
+    ...issueComments.map((c) => (typeof c === 'string' ? c : c?.body || '')),
+    ...reviews.map((r) => (typeof r === 'string' ? r : r?.body || '')),
+  ];
+
+  for (const text of allTexts) {
+    const m = String(text).match(REVIEW_ROUND_ANCHOR_RE);
+    if (m) {
+      foundAnchor = true;
+      const num = parseInt(m[1], 10);
+      if (num > maxAnchorRound) maxAnchorRound = num;
+    }
+  }
+
+  if (foundAnchor) {
+    return maxAnchorRound;
+  }
+
+  let fixCommits = 0;
+  for (const msg of commitMessages) {
+    if (/\bref:\s*#([A-Za-z0-9_=-]+)/.test(String(msg))) {
+      fixCommits += 1;
+    }
+  }
+
+  return fixCommits + 1;
+}
 
 /**
  * Extracts review thread IDs already resolved via commit trailers (`ref: #<threadId>`).
@@ -187,7 +225,7 @@ export function classifyReviewComment(body, { path = null, line = null } = {}) {
  * Evaluates a full Pull Request payload through Tier 1 filtering + Tier 2 classification.
  * Captures actionable feedback regardless of whether reviewDecision is COMMENTED or CHANGES_REQUESTED.
  */
-export function triagePullRequest(prPayload = {}, { commitMessages = [], agentLogins = DEFAULT_AGENT_LOGINS } = {}) {
+export function triagePullRequest(prPayload = {}, { commitMessages = [], agentLogins = DEFAULT_AGENT_LOGINS, maxRounds = 3 } = {}) {
   const threads = prPayload.reviewThreads?.nodes || prPayload.reviewThreads || [];
   const unaddressed = filterUnaddressedThreads(threads, { commitMessages, agentLogins });
 
@@ -225,6 +263,12 @@ export function triagePullRequest(prPayload = {}, { commitMessages = [], agentLo
   }
 
   const reviewDecision = prPayload.reviewDecision || null;
+  const round = computeReviewRound({
+    issueComments: prPayload.issueComments || [],
+    commitMessages,
+    reviews: prPayload.reviews || [],
+  });
+
   const hasHumanFeedback = reviewDecision === 'CHANGES_REQUESTED'
     || actionableThreads.length > 0
     || suggestionThreads.length > 0
@@ -233,6 +277,8 @@ export function triagePullRequest(prPayload = {}, { commitMessages = [], agentLo
 
   return {
     reviewDecision,
+    round,
+    maxRounds,
     unaddressedCount: unaddressed.length,
     actionableThreads,
     suggestionThreads,
@@ -276,9 +322,27 @@ export function applySuggestionToLines(fileContent, { startLine = null, endLine 
  * Generates traceable commit trailer, GraphQL reply mutation, and optional thread resolution mutation.
  * Category C informational answers reply without committing or force-resolving the thread.
  */
-export function buildThreadResolutionPlan(triagedThread, { commitSha = null, summary = '', answerBody = null } = {}) {
+export function buildThreadResolutionPlan(triagedThread, { commitSha = null, summary = '', answerBody = null, disputed = false, specRef = null } = {}) {
   const intent = triagedThread?.classification?.intent;
   const threadId = triagedThread.id;
+
+  // §6.2 Player != Referee: An Author Agent is strictly forbidden from auto-resolving disputed feedback
+  if (disputed) {
+    const specCitation = specRef ? `Per approved specification \`${specRef}\`` : 'Per approved specification';
+    const replyBody = answerBody || `Spec Conflict: ${specCitation}, requested change contradicts approved design. Escalated for human review.`;
+    return {
+      threadId,
+      commitMessage: null,
+      shouldResolve: false,
+      disputed: true,
+      escalationLabel: 'asdlc:needs-human-arbitration',
+      replyMutation: {
+        query: 'mutation ReplyThread($threadId: ID!, $body: String!) { addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $threadId, body: $body }) { comment { id } } }',
+        variables: { threadId, body: replyBody },
+      },
+      resolveMutation: null,
+    };
+  }
 
   if (intent === 'INFORMATIONAL_QUESTION') {
     const replyBody = answerBody || summary || 'Answered in technical explanation above.';

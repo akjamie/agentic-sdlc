@@ -23,6 +23,7 @@ const SENSITIVE_OR_DUMP_PATTERNS = [
   { re: /\.(hprof|dmp|core|heapdump)$/i, reason: 'crash/memory dump' },
   { re: /(^|\/)core\.\d+$/i, reason: 'core dump' },
   { re: /\.log(\.\d+)?$/i, reason: 'log artifact' },
+  { re: /(^|\/)\.sdlc\/events\.jsonl$/i, reason: 'local friction telemetry log' },
 ];
 
 /**

@@ -10,6 +10,8 @@ import {
   applySuggestionToLines,
   buildThreadResolutionPlan,
   checkAntiThrashingCircuitBreaker,
+  computeReviewRound,
+  REVIEW_ROUND_ANCHOR_RE,
 } from '../src/lib/triage.js';
 
 test('Tier 1 filtering: ignores resolved, commit-trailer-addressed, and bot threads; captures human COMMENTED reviews', () => {
@@ -164,4 +166,42 @@ test('Anti-Thrashing Circuit Breaker: allows rounds 1-3 and trips cleanly on rou
   assert.equal(tripped.status, 'PAUSED_NEEDS_HUMAN_ARBITRATION');
   assert.match(tripped.synthesisReport, /Anti-Thrashing Circuit Breaker Tripped/);
   assert.match(tripped.synthesisReport, /PRRT_loop/);
+});
+
+test('§6.2 Player != Referee: Disputed review thread cannot be auto-resolved by author agent', () => {
+  const planDisputed = buildThreadResolutionPlan({
+    id: 'PRRT_conflict_1',
+    classification: { intent: 'ACTION_REQUIRED' },
+  }, {
+    disputed: true,
+    specRef: 'specs/refund/spec.md#decision-2',
+  });
+
+  assert.equal(planDisputed.shouldResolve, false);
+  assert.equal(planDisputed.resolveMutation, null);
+  assert.equal(planDisputed.disputed, true);
+  assert.equal(planDisputed.escalationLabel, 'asdlc:needs-human-arbitration');
+  assert.match(planDisputed.replyMutation.variables.body, /Spec Conflict: Per approved specification `specs\/refund\/spec\.md#decision-2`/);
+});
+
+test('§6.3 computeReviewRound: parses formal review anchors and falls back to commit trailer batches', () => {
+  assert.match('<!-- asdlc:review-round:2 -->', REVIEW_ROUND_ANCHOR_RE);
+
+  // 1. From anchor comment
+  const roundFromAnchor = computeReviewRound({
+    issueComments: [{ body: 'Review started <!-- asdlc:review-round:2 -->' }],
+  });
+  assert.equal(roundFromAnchor, 2);
+
+  // 2. From commit trailer batches
+  const roundFromCommits = computeReviewRound({
+    commitMessages: [
+      'fix(review): address item 1 (ref: #PRRT_1)',
+      'fix(review): address item 2 (ref: #PRRT_2)',
+    ],
+  });
+  assert.equal(roundFromCommits, 3);
+
+  // 3. Clean default
+  assert.equal(computeReviewRound(), 1);
 });

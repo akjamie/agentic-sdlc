@@ -9,6 +9,7 @@ import { classifyPR } from '../lib/prtype.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
 import { resolveTopology } from '../lib/level.js';
+import { recordEvent } from '../lib/telemetry.js';
 
 function upsertKey(text, key, value) {
   const re = new RegExp(`^\\s*${key}:\\s*.*$`, 'm');
@@ -109,6 +110,14 @@ export function mergeChange(changeId, opts = {}) {
         log.info(`${slug}: status=${topology.declaredStatus} preserved (no status regression).`);
       }
 
+      recordEvent('lifecycle.transition', {
+        stage: 'approve',
+        change: slug,
+        toState: 'READY_FOR_IMPL',
+        mode: 'single-pr',
+        level: topology.effectiveLevel,
+      }, { repoRoot });
+
       log.ok(`${slug}: Single-PR mode (${topology.effectiveLevel}) - spec approval is co-located with implementation PR.`);
       log.info('final approval = human Approve on the single PR (NOT waived).');
       log.info('note: final governance level is re-assessed by `asdlc apply` when implementation context is available.');
@@ -176,6 +185,13 @@ export function mergeChange(changeId, opts = {}) {
       log.warn('nothing to commit (already stamped)');
     }
   }
+
+  recordEvent('lifecycle.transition', {
+    stage: 'approve',
+    change: slug,
+    toState: 'READY_FOR_IMPL',
+    approvedSha,
+  }, { repoRoot });
 
   log.info('');
   log.info('Next (automatic chain):');

@@ -9,6 +9,7 @@ import { ensureFreshGraph } from '../lib/graphify.js';
 import { git } from '../lib/git.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
+import { recordEvent } from '../lib/telemetry.js';
 
 export const CONSTITUTIONAL_PATHS = [
   'AGENTS.md',
@@ -109,6 +110,12 @@ export function archiveChange(changeId, opts = {}) {
     refreshAgents(repoRoot, { systemStatus: true });
     log.ok('updated AGENTS.md (explicit --agents or constitutional governance change)');
   }
+
+  recordEvent('lifecycle.transition', {
+    stage: 'archive',
+    change: slug,
+    toState: 'ARCHIVED',
+  }, { repoRoot });
 
   log.ok(`archive complete for ${slug}`);
   return 0;
