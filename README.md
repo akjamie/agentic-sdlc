@@ -285,8 +285,7 @@ CLI (--mode) > Env (ASDLC_WORKFLOW_MODE) > Repo (.sdlc/policy.yaml) > Global (~/
 | Skill | Role in Agentic SDLC |
 | :--- | :--- |
 | [`asdlc-init`](assets/skills/asdlc-init/SKILL.md) | One-command bootstrapping of OpenSpec, Graphify AST, policies, and automatic tech stack / test runner discovery. |
-| [`asdlc-intake`](assets/skills/asdlc-intake/SKILL.md) | Multi-source PRD/file (`--from-file`) and ticket (`--from-issue` for GitHub/Jira/Confluence) intake with prompt-injection fencing. |
-| [`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Scaffolds change, ingests files/tickets, queries AST hubs, runs conversational anti-fatigue `grill-me`. |
+| [`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Stage 1 & 2: Multi-source intake (`--from-file`, `--from-issue`), AST explore, and conversational `grill-me`. |
 | [`asdlc-lint`](assets/skills/asdlc-lint/SKILL.md) | Enforces deterministic BDD GIVEN/WHEN/THEN, R5 scenario-to-AC coverage, and `[OPEN]` clarification gates. |
 | [`asdlc-pr`](assets/skills/asdlc-pr/SKILL.md) | Smart PR dispatcher: automatically handles Spec PR vs. Implementation PR. |
 | [`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md) | Stamps Git `specSha` lock and truthful merge provenance upon Spec PR merge (Track A Dual-PR; waived for Track B Single-PR). |
@@ -298,11 +297,13 @@ CLI (--mode) > Env (ASDLC_WORKFLOW_MODE) > Repo (.sdlc/policy.yaml) > Global (~/
 | [`asdlc-doctor`](assets/skills/asdlc-doctor/SKILL.md) | 12-invariant diagnostic engine with 1-click automated remediation (`--fix`). |
 | [`asdlc-status`](assets/skills/asdlc-status/SKILL.md) | Real-time change lifecycle dashboard and next actionable command guidance. |
 
+> *Note: Specialized sub-skills (such as [`asdlc-intake`](assets/skills/asdlc-intake/SKILL.md) for enterprise issue tracker SSO/MCP customization) are internal helpers invoked by primary stage skills like `asdlc-new` and do not require standalone user execution.*
+
 ---
 
-## 🔍 What `asdlc verify` Checks (12 Local & CI Gates)
+## 🔍 What `asdlc verify` Checks (13 Local & CI Gates)
 
-Every implementation diff must pass the 12 deterministic gates in `asdlc verify`:
+Every implementation diff must pass the 13 deterministic gates in `asdlc verify`:
 
 ```mermaid
 flowchart TD
