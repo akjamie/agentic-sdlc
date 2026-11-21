@@ -110,6 +110,14 @@ export function mergeChange(changeId, opts = {}) {
         log.info(`${slug}: status=${topology.declaredStatus} preserved (no status regression).`);
       }
 
+      recordEvent('lifecycle.transition', {
+        stage: 'approve',
+        change: slug,
+        toState: 'READY_FOR_IMPL',
+        mode: 'single-pr',
+        level: topology.effectiveLevel,
+      }, { repoRoot });
+
       log.ok(`${slug}: Single-PR mode (${topology.effectiveLevel}) - spec approval is co-located with implementation PR.`);
       log.info('final approval = human Approve on the single PR (NOT waived).');
       log.info('note: final governance level is re-assessed by `asdlc apply` when implementation context is available.');

@@ -10,6 +10,25 @@ events.jsonl
 *.log
 `;
 
+const MAX_EVENTS_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
+const RETAIN_EVENT_LINES = 2000;
+
+function trimEventsFileIfNeeded(targetFile) {
+  try {
+    const st = fs.statSync(targetFile);
+    if (st.size > MAX_EVENTS_FILE_BYTES) {
+      const content = fs.readFileSync(targetFile, 'utf8');
+      const lines = content.split(/\r?\n/).filter(Boolean);
+      if (lines.length > RETAIN_EVENT_LINES) {
+        const retained = lines.slice(-RETAIN_EVENT_LINES);
+        fs.writeFileSync(targetFile, retained.join('\n') + '\n', 'utf8');
+      }
+    }
+  } catch {
+    // fail-silent
+  }
+}
+
 /**
  * Records an immutable lifecycle/gate telemetry event into .sdlc/events.jsonl.
  * Fail-silent contract: Any I/O error is swallowed; never throws and never affects command execution.
@@ -48,6 +67,7 @@ export function recordEvent(type, payload = {}, { repoRoot = process.cwd() } = {
 
     const targetFile = path.join(sdlcDir, 'events.jsonl');
     fs.appendFileSync(targetFile, JSON.stringify(event) + '\n', 'utf8');
+    trimEventsFileIfNeeded(targetFile);
   } catch {
     // Fail-silent contract: Telemetry failures must never break core workflow
   }
@@ -81,11 +101,11 @@ export function readLocalEvents(repoRoot, { change = null, stage = null, type = 
 }
 
 /**
- * Derives current verification iteration for a change by scanning local events.
+ * Derives current verification or lint iteration for a change by scanning local events.
  */
-export function getChangeIteration(repoRoot, changeId) {
+export function getChangeIteration(repoRoot, changeId, stage = 'verify') {
   try {
-    const events = readLocalEvents(repoRoot, { change: changeId, stage: 'verify' });
+    const events = readLocalEvents(repoRoot, { change: changeId, stage });
     const verifySummaries = events.filter((e) => e.type === 'gate.verified');
     return verifySummaries.length + 1;
   } catch {
@@ -113,6 +133,20 @@ function parseChangeDirTimestamp(dirName) {
     return new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00Z`).getTime();
   }
   return null;
+}
+
+function getChangeGitTimestamps(repoRoot, cdirRel) {
+  try {
+    const out = git(['log', '--follow', '--format=%aI', '--', cdirRel], repoRoot, { allowFail: true });
+    if (!out) return null;
+    const lines = out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) return null;
+    const latestMs = new Date(lines[0]).getTime();
+    const earliestMs = new Date(lines[lines.length - 1]).getTime();
+    return { earliestMs, latestMs };
+  } catch {
+    return null;
+  }
 }
 
 function calculatePercentile(numbers, p) {
@@ -145,9 +179,11 @@ export function computeTeamMetrics(repoRoot, { days = 30 } = {}) {
     for (const ent of entries) {
       if (!ent.isDirectory()) continue;
       const cdir = path.join(archiveBase, ent.name);
+      const cdirRel = path.relative(repoRoot, cdir).replace(/\\/g, '/');
+      const gitTimes = getChangeGitTimestamps(repoRoot, cdirRel);
       const stampMs = parseChangeDirTimestamp(ent.name);
 
-      let dirTime = stampMs;
+      let dirTime = stampMs || gitTimes?.latestMs;
       if (!dirTime) {
         try {
           const st = fs.statSync(cdir);
@@ -176,7 +212,7 @@ export function computeTeamMetrics(repoRoot, { days = 30 } = {}) {
       // 2. Lead Time Calculation
       let tStart = null;
       let tApprove = null;
-      let tArchive = dirTime;
+      let tArchive = gitTimes?.latestMs || dirTime;
 
       // Check intake index for start timestamp
       const intakePath = path.join(cdir, 'intake', 'index.yaml');
@@ -198,11 +234,15 @@ export function computeTeamMetrics(repoRoot, { days = 30 } = {}) {
         } catch {}
       }
 
-      if (!tStart && exists(path.join(cdir, 'proposal.md'))) {
-        try {
-          const st = fs.statSync(path.join(cdir, 'proposal.md'));
-          tStart = st.birthtimeMs || st.mtimeMs;
-        } catch {}
+      if (!tStart) {
+        if (gitTimes?.earliestMs) {
+          tStart = gitTimes.earliestMs;
+        } else if (exists(path.join(cdir, 'proposal.md'))) {
+          try {
+            const st = fs.statSync(path.join(cdir, 'proposal.md'));
+            tStart = st.birthtimeMs || st.mtimeMs;
+          } catch {}
+        }
       }
 
       if (tStart && tApprove && tApprove >= tStart) {
@@ -216,9 +256,15 @@ export function computeTeamMetrics(repoRoot, { days = 30 } = {}) {
       if (/asdlc:needs-human-arbitration/i.test(reviewText)) {
         convergenceRounds.escalated += 1;
       } else {
-        const trailerMatches = (reviewText.match(/\(ref:\s*#PRRT_[^)]+\)/g) || []).length;
-        if (trailerMatches === 0) convergenceRounds.r1 += 1;
-        else if (trailerMatches === 1) convergenceRounds.r2 += 1;
+        let trailerCount = (reviewText.match(/\(ref:\s*#PRRT_[^)]+\)/g) || []).length;
+        try {
+          const logOut = git(['log', '--grep=ref: #PRRT_', '--format=%B', '--', cdirRel], repoRoot, { allowFail: true }) || '';
+          const commitMatches = (logOut.match(/\(ref:\s*#PRRT_[^)]+\)/g) || []).length;
+          trailerCount = Math.max(trailerCount, commitMatches);
+        } catch {}
+
+        if (trailerCount === 0) convergenceRounds.r1 += 1;
+        else if (trailerCount === 1) convergenceRounds.r2 += 1;
         else convergenceRounds.r3 += 1;
       }
     }
@@ -241,7 +287,7 @@ export function computeTeamMetrics(repoRoot, { days = 30 } = {}) {
   const frictionLeaderboard = [...gateFailMap.values()].sort((a, b) => b.count - a.count).slice(0, 5);
 
   const total = trackedChanges.length;
-  const r1Pct = total > 0 ? Math.round((convergenceRounds.r1 / total) * 100) : 100;
+  const r1Pct = total > 0 ? Math.round((convergenceRounds.r1 / total) * 100) : 0;
   const r2Pct = total > 0 ? Math.round((convergenceRounds.r2 / total) * 100) : 0;
   const r3Pct = total > 0 ? Math.round((convergenceRounds.r3 / total) * 100) : 0;
   const escPct = total > 0 ? Math.round((convergenceRounds.escalated / total) * 100) : 0;

@@ -101,9 +101,12 @@ function finish(results, policy, opts = {}) {
     recordEvent('gate.verified', {
       stage: 'verify',
       change: opts.changeId || null,
+      status: failed === 0 ? 'pass' : 'fail',
       verdict: failed === 0 ? 'pass' : 'fail',
       totalGates: processed.length,
       passedGates: processed.length - failed,
+      passed: processed.length - failed,
+      failed,
       iteration: opts.iteration || 1,
       durationMs: opts.startTime ? (Date.now() - opts.startTime) : null,
       addressedThreadIds: opts.addressedThreadIds || [],
@@ -115,12 +118,15 @@ function finish(results, policy, opts = {}) {
         return `| \`${r.name}\` | ${icon} | ${r.detail || ''} |`;
       }).join('\n');
       const verdictBadge = failed === 0 ? '✅ PASS' : '❌ FAIL';
+      const addressedRow = (opts.addressedThreadIds && opts.addressedThreadIds.length > 0)
+        ? `\n- **Addressed Review Threads**: ${opts.addressedThreadIds.map((id) => `\`#${id}\``).join(', ')}`
+        : '';
       const md = `### 🏛️ ASDLC Gate Results: \`${opts.changeId || 'unknown'}\`
+- **Verdict**: ${verdictBadge} (${processed.length - failed}/${processed.length} Passed, Iteration ${opts.iteration || 1})${addressedRow}
+
 | Gate | Status | Detail |
 | :--- | :--- | :--- |
 ${tableRows}
-
-**Verdict: ${verdictBadge} (${processed.length - failed}/${processed.length} Passed, Iteration ${opts.iteration || 1})**
 `;
       writeGitHubStepSummary(md);
     }
@@ -318,7 +324,14 @@ export function runVerify(changeId, opts = {}) {
   const cdir = changeDir(repoRoot, slug);
   if (!exists(cdir)) {
     add('change', 'fail', `change '${slug}' not found`);
-    return finish(results, policy, opts);
+    return finish(results, policy, {
+      ...opts,
+      repoRoot,
+      changeId: slug,
+      iteration,
+      startTime,
+      addressedThreadIds,
+    });
   }
   add('change', 'pass', slug);
   const effLevel = readEffectiveLevel(repoRoot, changeId, { baseRef: base });

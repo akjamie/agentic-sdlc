@@ -22,6 +22,7 @@ function setupTestRepo() {
   execFileSync('git', ['init', tmp], { stdio: 'ignore' });
   execFileSync('git', ['-C', tmp, 'config', 'user.name', 'test'], { stdio: 'ignore' });
   execFileSync('git', ['-C', tmp, 'config', 'user.email', 'test@example.com'], { stdio: 'ignore' });
+  execFileSync('git', ['-C', tmp, 'commit', '--allow-empty', '-m', 'root'], { stdio: 'ignore' });
   fs.mkdirSync(path.join(tmp, 'openspec', 'changes'), { recursive: true });
   return tmp;
 }
@@ -163,6 +164,16 @@ test('telemetry computeTeamMetrics & renderMetricsDashboard: aggregates archives
     assert.equal(metrics.frictionLeaderboard[0].gate, 'anti-test-weakening');
     assert.equal(metrics.frictionLeaderboard[0].count, 2);
 
+    // Empty archive edge case: r1Pct should be 0%, not 100%
+    const emptyRepo = setupTestRepo();
+    try {
+      const emptyMetrics = computeTeamMetrics(emptyRepo, { days: 30 });
+      assert.equal(emptyMetrics.totalTrackedChanges, 0);
+      assert.equal(emptyMetrics.convergence.r1Pct, 0);
+    } finally {
+      fs.rmSync(emptyRepo, { recursive: true, force: true });
+    }
+
     // Render dashboard
     const dashboard = renderMetricsDashboard(metrics);
     assert.match(dashboard, /ASDLC HARNESS OBSERVABILITY/);
@@ -247,3 +258,51 @@ test('CLI lint and verify: record telemetry events and populate GITHUB_STEP_SUMM
     fs.rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('telemetry events log size limit protection: trims file when exceeding 5MB', () => {
+  const repo = setupTestRepo();
+  try {
+    const sdlcDir = path.join(repo, '.sdlc');
+    fs.mkdirSync(sdlcDir, { recursive: true });
+    const eventsFile = path.join(sdlcDir, 'events.jsonl');
+
+    // Create a 6MB file with 3000 lines
+    const dummyLine = JSON.stringify({ v: 1, type: 'dummy', payload: 'a'.repeat(2000) }) + '\n';
+    const lines = [];
+    for (let i = 0; i < 3000; i++) lines.push(dummyLine);
+    fs.writeFileSync(eventsFile, lines.join(''), 'utf8');
+
+    const beforeStat = fs.statSync(eventsFile);
+    assert.ok(beforeStat.size > 5 * 1024 * 1024);
+
+    // Recording an event triggers trimming
+    recordEvent('trigger.trim', { stage: 'test' }, { repoRoot: repo });
+
+    const afterContent = fs.readFileSync(eventsFile, 'utf8');
+    const remainingLines = afterContent.split(/\r?\n/).filter(Boolean);
+    // Should retain at most 2001 lines (2000 retained + 1 newly appended)
+    assert.ok(remainingLines.length <= 2001);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('asdlc approve: records lifecycle.transition in Single-PR mode', () => {
+  const repo = setupTestRepo();
+  try {
+    const cdir = path.join(repo, 'openspec', 'changes', 'doc-fix');
+    fs.mkdirSync(cdir, { recursive: true });
+    fs.writeFileSync(path.join(cdir, '.openspec.yaml'), 'level: "L0"\nstatus: "draft"\n');
+
+    execFileSync(process.execPath, [bin, 'approve', 'doc-fix', '--repo-root', repo], { encoding: 'utf8' });
+
+    const events = readLocalEvents(repo, { change: 'doc-fix', stage: 'approve' });
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, 'lifecycle.transition');
+    assert.equal(events[0].toState, 'READY_FOR_IMPL');
+    assert.equal(events[0].mode, 'single-pr');
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
