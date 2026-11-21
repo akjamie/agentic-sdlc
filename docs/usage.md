@@ -32,6 +32,8 @@ The engines (OpenSpec, Graphify) are installed by `asdlc init`, not by hand.
 ```bash
 cd your-repo
 asdlc init
+# or auto-discover Java/Python/Go/Rust/Node stack & test commands for brownfield repos:
+asdlc init --onboard
 ```
 
 This one command:
@@ -83,8 +85,8 @@ This one command:
 
 ```bash
 asdlc new "i want to build jwt authentication for payment api"
-# or with a Jira ticket:
-asdlc new "TECH-1234: add rate limiting"
+# or snapshot local PRD/design docs and external Jira/GitHub/Confluence tickets:
+asdlc new "add rate limiting" --from-file ./docs/prd.md --from-issue TECH-1234
 # or with explicit ID override:
 asdlc new "add rate limiting" --id tech-1234
 ```
@@ -135,6 +137,8 @@ asdlc approve TECH-1234
 
 ```bash
 asdlc apply TECH-1234
+# or triage review comments & threads from an open GitHub PR:
+asdlc apply TECH-1234 --from-pr #42
 ```
 
 Refuses if the spec is not approved. Then implement with `/opsx-apply` in your

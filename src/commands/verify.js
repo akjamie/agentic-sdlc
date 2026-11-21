@@ -16,6 +16,7 @@ import { resolveWorkflowMode } from '../lib/config.js';
 import { assess, renderCheckSummary, loadRiskHistory } from '../assess/index.js';
 import { checkTestPresence, checkTaskEvidence } from '../lib/tdd.js';
 import { runTests, parseSpecAcceptanceCriteria } from './test.js';
+import { verdictOf, reviewedShaOf, hasBlockingFindings } from './lint.js';
 import { log, dim } from '../lib/log.js';
 
 // THE implementation check (v10: gate absorbed verify). Deterministic checks
@@ -192,6 +193,55 @@ export function extractJson(text) {
   }
 }
 
+const TEST_FILE_RE = /(?:^|\/)(?:test|tests|__tests__)\/|\.(?:test|spec)\.[a-z0-9]+$/i;
+const TEST_SKIP_PATTERNS = [
+  { label: '.skip(', re: /\b(?:it|test|describe)\.skip\s*\(/ },
+  { label: 'xit/xtest/xdescribe', re: /\bx(?:it|test|describe)\s*\(/ },
+  { label: '@pytest.mark.skip', re: /@pytest\.mark\.skip\b/ },
+  { label: '@Disabled', re: /@Disabled\b/ },
+  { label: '#[ignore]', re: /#\[ignore\]/ },
+];
+
+/**
+ * Anti-Test-Weakening Gate:
+ * Fails if the implementation diff deletes test files or adds new skip/disable annotations.
+ */
+export function checkTestWeakening(repoRoot, base, head, changedFiles = [], opts = {}) {
+  const issues = [];
+  const nameStatusRaw = typeof opts.nameStatusText === 'string'
+    ? opts.nameStatusText
+    : (git(['diff', '--name-status', '--no-renames', `${base}...${head}`], repoRoot, { allowFail: true }) ?? '');
+
+  for (const line of nameStatusRaw.split(/\r?\n/)) {
+    const m = line.match(/^D\s+(.+)$/);
+    if (m && TEST_FILE_RE.test(m[1].trim())) {
+      issues.push(`deleted test file: ${m[1].trim()}`);
+    }
+  }
+
+  const testFiles = (changedFiles || []).filter((f) => TEST_FILE_RE.test(f));
+  if (testFiles.length > 0 || typeof opts.diffText === 'string') {
+    const diffText = typeof opts.diffText === 'string'
+      ? opts.diffText
+      : (git(['diff', '-U0', '--no-renames', `${base}...${head}`, '--', ...testFiles], repoRoot, { allowFail: true }) ?? '');
+    for (const line of diffText.split(/\r?\n/)) {
+      if (!line.startsWith('+') || line.startsWith('+++')) continue;
+      for (const pat of TEST_SKIP_PATTERNS) {
+        if (pat.re.test(line)) {
+          issues.push(`newly skipped/disabled test (${pat.label}): ${line.slice(1).trim().slice(0, 80)}`);
+          break;
+        }
+      }
+    }
+  }
+
+  return {
+    ok: issues.length === 0,
+    issues,
+    detail: issues.length === 0 ? 'no deleted or newly skipped tests' : issues.join('; '),
+  };
+}
+
 export function runVerify(changeId, opts = {}) {
   const results = [];
   const add = (name, status, detail) => results.push({ name, status, detail });
@@ -228,7 +278,7 @@ export function runVerify(changeId, opts = {}) {
   const { specSha, status } = metaInfo;
   const changeLevel = effLevel?.effectiveLevel || metaInfo.level || null;
 
-  const changedFiles = (git(['diff', '--name-only', `${base}...${head}`], repoRoot, { allowFail: true }) ?? '')
+  const changedFiles = (git(['diff', '--name-only', '--no-renames', `${base}...${head}`], repoRoot, { allowFail: true }) ?? '')
     .split(/\r?\n/).filter(Boolean);
   const changeOnMain = changeOnRef(repoRoot, branch, slug);
 
@@ -346,8 +396,15 @@ export function runVerify(changeId, opts = {}) {
       }
     } else {
       const reviewPath = path.join(cdir, 'review.md');
-      const isApprovedInReview = exists(reviewPath) && /##\s*Verdict\s*\n+\s*APPROVE/i.test(readText(reviewPath));
-      if (isApprovedInReview || opts.approved) {
+      const reviewText = exists(reviewPath) ? readText(reviewPath) : '';
+      const revVerdict = reviewText ? verdictOf(reviewText) : null;
+      const revSha = reviewText ? reviewedShaOf(reviewText) : null;
+      const headCommit = git(['rev-parse', head], repoRoot, { allowFail: true });
+      const shaMatches = !revSha || !headCommit || headCommit.startsWith(revSha) || revSha.startsWith(headCommit.slice(0, 7));
+      const isApprovedInReview = Boolean(revVerdict === 'APPROVE' && !hasBlockingFindings(reviewText) && shaMatches);
+      if (revVerdict === 'APPROVE' && !shaMatches) {
+        add('human-gate', 'fail', `${effectiveLevel}: review.md reviewedSha (${revSha.slice(0, 8)}) is stale and does not match HEAD (${headCommit.slice(0, 8)})`);
+      } else if (isApprovedInReview || opts.approved) {
         add('human-gate', 'pass', `${effectiveLevel}: local lead review staged (APPROVE in review.md)`);
       } else {
         add('human-gate', 'pass', `${effectiveLevel}: mandatory human lead approval required before merge (auto-merge DENIED)`);
@@ -364,6 +421,9 @@ export function runVerify(changeId, opts = {}) {
 
   const testDiff = checkTestPresence(changedFiles);
   add('test-presence', testDiff.ok ? 'pass' : 'fail', testDiff.detail);
+
+  const weakening = checkTestWeakening(repoRoot, base, head, changedFiles, opts);
+  add('anti-test-weakening', weakening.ok ? 'pass' : 'fail', weakening.detail);
 
   if (exists(tasksPath)) {
     const evidence = checkTaskEvidence(readText(tasksPath));
@@ -412,9 +472,14 @@ export function runVerify(changeId, opts = {}) {
       );
       if (hasMappedAcs) {
         try {
-          const testExit = runTests(slug, { repoRoot, silent: true });
+          const capture = {};
+          const testExit = runTests(slug, { repoRoot, silent: true, captureOutput: capture });
+          const rawDetail = (capture.stderr || capture.stdout || '').trim();
+          const detail = rawDetail
+            ? rawDetail.split(/\r?\n/).filter(Boolean).slice(-2).join(' | ').slice(0, 300)
+            : 'one or more spec-mapped acceptance tests failed';
           add('acceptance-tests', testExit === 0 ? 'pass' : 'fail',
-            testExit === 0 ? 'all spec-mapped acceptance tests passed' : 'one or more spec-mapped acceptance tests failed');
+            testExit === 0 ? 'all spec-mapped acceptance tests passed' : detail);
         } catch (err) {
           add('acceptance-tests', 'fail', err.message);
         }
@@ -426,9 +491,13 @@ export function runVerify(changeId, opts = {}) {
   const command = process.env.ASDLC_VERIFY_COMMAND ?? vcfg.command;
   const required2 = Boolean(opts.required ?? vcfg.required ?? false);
   if (!command) {
-    add('AI verification', required2 ? 'fail' : 'skip', required2 ? 'no verifier configured (set ASDLC_VERIFY_COMMAND)' : 'no verifier configured');
+    if (opts.aiReviewResult && (opts.aiReviewResult.status === 'passed' || opts.aiReviewResult.status === 'failed')) {
+      add('AI verification', opts.aiReviewResult.status === 'passed' ? 'pass' : 'fail', opts.aiReviewResult.summary || 'independent AI implementation review');
+    } else {
+      add('AI verification', required2 ? 'fail' : 'skip', required2 ? 'no verifier configured (set ASDLC_VERIFY_COMMAND)' : 'no verifier configured');
+    }
   } else {
-    const diff = git(['diff', `${base}...${head}`], repoRoot, { allowFail: true }) ?? '';
+    const diff = git(['diff', '--no-renames', `${base}...${head}`, '--', '.', ':(exclude)*.zip*', ':(exclude)*.tar*', ':(exclude)*.bin*', ':(exclude)*.onnx*', ':(exclude)*.safetensors*', ':(exclude)*.pt', ':(exclude)*.pth'], repoRoot, { allowFail: true }) ?? '';
     const maxDiffChars = opts.maxDiffChars ?? vcfg.maxDiffChars ?? DEFAULT_MAX_DIFF_CHARS;
     const res = runShell(command, repoRoot, {
       input: buildPrompt(changeId, intent(cdir), diff, base, { maxDiffChars }),

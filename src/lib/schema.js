@@ -35,10 +35,18 @@ export function installSchema(opts = {}) {
     const installed = readInstalledVersion(opts);
     if (installed) return dest;
   }
-  removeDir(dest); // always replace -> no stale half-copies
-  ensureDir(globalSchemasDir(opts));
-  copyTree(schemaAssetDir, dest);
-  return dest;
+  try {
+    removeDir(dest); // always replace -> no stale half-copies
+    ensureDir(globalSchemasDir(opts));
+    copyTree(schemaAssetDir, dest);
+    return dest;
+  } catch (err) {
+    if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {
+      const xdgBase = ensureRuntimeSchemaXdgDir();
+      return path.join(xdgBase, 'openspec', 'schemas', SCHEMA_NAME);
+    }
+    throw err;
+  }
 }
 
 export function readInstalledVersion(opts = {}) {

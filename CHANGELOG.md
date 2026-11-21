@@ -2,6 +2,21 @@
 
 All notable changes to `@akjamie/agentic-sdlc` are documented in this file.
 
+## [1.9.4] - 2026-11-21
+
+### Added
+- **Anti-Test-Weakening Gate (`anti-test-weakening`)**: `asdlc verify` now detects and blocks diffs that delete test files or introduce new skip/disable annotations (`.skip(`, `xit`/`xdescribe`, `@pytest.mark.skip`, `@Disabled`, `#[ignore]`) across Java, Python, Go, Rust, and JS/TS.
+- **Unresolved Clarifications Gate (`clarifications`)**: `asdlc lint` now fails if `clarifications.md` contains unresolved `[OPEN]` markers or non-empty questions under `## Open questions`.
+- **Multi-Source Intake (`--from-file` / `--from-issue` & `asdlc-intake` Skill)**: `asdlc new` supports repeatable `--from-file` (`--file`) and `--from-issue` (`--ticket` / `--issue`) flags to snapshot local design documents and external GitHub/Jira/Confluence tickets into `openspec/changes/<id>/intake/` with `<untrusted-external-ticket>` prompt-injection fencing.
+- **Brownfield Stack Auto-Discovery (`asdlc init --onboard` & `--headless`)**: Automatically discovers language stack (Java Maven/Gradle, Python, Go, Rust, Node.js) and configures `test.runner` in `openspec/config.yaml` and `AGENTS.md`.
+- **PR Review Comment Triage (`asdlc apply <id> --from-pr #<N>`)**: Fetches inline GitHub PR review threads and comments, classifying feedback into actionable items, suggestion blocks, and informational questions (with a 3-round anti-thrashing circuit breaker helper in `src/lib/triage.js`).
+- **Structured Review Verdict & `reviewedSha` Binding**: `asdlc lint` and `asdlc verify` now support YAML front-matter (`asdlc.review/1`) in `review.md` and validate `reviewedSha` against `HEAD` to prevent stale review reuse.
+
+### Changed & Fixed
+- **Truthful Merge Approval Provenance**: `asdlc approve` now records actual Git merge commit SHA and approver identity (`provenance: git-merge-sha`) instead of generating synthetic 6-dimension PASS scores when no prior `review.md` exists.
+- **Binary & Large File Semantics Immunity**: `batchAnalyzeFileSemantics` automatically skips binary/media extensions and files larger than 2MB, preventing stalls on archives or model weights.
+- **Acceptance Test Failure Diagnostics**: `asdlc verify` captures and displays the trailing failure summary when `acceptance-tests` fail.
+
 ## [1.9.2] - 2026-11-13
 
 ### Changed & Fixed

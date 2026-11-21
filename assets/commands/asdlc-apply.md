@@ -10,7 +10,7 @@ Launch task-level Test-Driven Development (TDD) loop from `tasks.md`.
 ## Usage
 
 ```bash
-asdlc apply <CHANGE_ID> [--auto-pr] [--target-branch <branch>]
+asdlc apply <CHANGE_ID> [--from-pr <pr>] [--auto-pr] [--target-branch <branch>]
 ```
 
 ## Behavior
