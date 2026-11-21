@@ -32,8 +32,6 @@ The engines (OpenSpec, Graphify) are installed by `asdlc init`, not by hand.
 ```bash
 cd your-repo
 asdlc init
-# or auto-discover Java/Python/Go/Rust/Node stack & test commands for brownfield repos:
-asdlc init --onboard
 ```
 
 This one command:
@@ -41,10 +39,10 @@ This one command:
 1. provides bundled OpenSpec (zero-intrusion into non-Node repos; no rogue package.json/node_modules) and Graphify (uv/pip)
 2. runs OpenSpec initialization and wires your agentic IDE (auto-detected)
 3. provides the managed schema centrally or statelessly — no per-repo copy
-4. installs bundled skills (`grilling`, `asdlc-apply`, `asdlc-spec-review`, `asdlc-impl-review`) and slash commands across all detected IDE tools
-5. writes `openspec/config.yaml` (governance rules + lint policy)
+4. installs bundled skills (`grilling`, `asdlc-intake`, `asdlc-apply`, `asdlc-spec-review`, `asdlc-impl-review`) and slash commands across all detected IDE tools
+5. writes `openspec/config.yaml` (governance rules + lint policy + auto-discovered `test.runner` for Java/Python/Go/Rust/Node)
 6. writes `.sdlc/policy.yaml` (platform-owned; protect with CODEOWNERS)
-7. writes `AGENTS.md` routing (workflow + system status from the code graph)
+7. writes `AGENTS.md` routing (workflow + system status from the code graph + discovered stack commands)
 
 ---
 

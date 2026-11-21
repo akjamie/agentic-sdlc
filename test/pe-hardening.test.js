@@ -588,7 +588,7 @@ test('PE P2 Nits: verify --json rendering, truth-table bypass prevention, and ta
 
 import { checkTestWeakening } from '../src/commands/verify.js';
 import { hasUnresolvedClarifications, verdictOf, reviewedShaOf } from '../src/commands/lint.js';
-import { discoverRepoStack } from '../src/commands/init.js';
+import { discoverRepoStack, initRepo } from '../src/commands/init.js';
 import { parseTicketSpec, fenceExternalTicketContent, ingestIntakeSources, extractIntakeContext } from '../src/lib/intake.js';
 
 test('WS-6: checkTestWeakening catches deleted test files and newly added skip/disable annotations across languages', () => {
@@ -638,13 +638,20 @@ test('WS-6: verdictOf and reviewedShaOf support both YAML front-matter and Markd
   assert.equal(reviewedShaOf(mdReview), 'deadbeef1234');
 });
 
-test('WS-6: discoverRepoStack detects Java Maven/Gradle, Python, Go, Rust, and Node stacks', () => {
+test('WS-6: discoverRepoStack detects Java Maven/Gradle, Python, Go, Rust, and Node stacks, and initRepo auto-onboards by default', () => {
   const javaRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'asdlc-stack-java-'));
   try {
     fs.writeFileSync(path.join(javaRepo, 'pom.xml'), '<project></project>');
     const stack = discoverRepoStack(javaRepo);
     assert.ok(stack.languages.includes('java/maven'));
     assert.equal(stack.testCommand, 'mvn test');
+
+    initRepo({ repoRoot: javaRepo, openspec: false, graph: false });
+    const cfgText = fs.readFileSync(path.join(javaRepo, 'openspec', 'config.yaml'), 'utf8');
+    assert.match(cfgText, /runner:\s*"mvn test"/);
+    const agentsText = fs.readFileSync(path.join(javaRepo, 'AGENTS.md'), 'utf8');
+    assert.match(agentsText, /Discovered Stack/);
+    assert.match(agentsText, /java\/maven/);
   } finally {
     fs.rmSync(javaRepo, { recursive: true, force: true });
   }

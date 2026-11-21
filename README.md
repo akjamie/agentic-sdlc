@@ -284,7 +284,7 @@ CLI (--mode) > Env (ASDLC_WORKFLOW_MODE) > Repo (.sdlc/policy.yaml) > Global (~/
 
 | Skill | Role in Agentic SDLC |
 | :--- | :--- |
-| [`asdlc-init`](assets/skills/asdlc-init/SKILL.md) | One-command bootstrapping of OpenSpec, Graphify AST, policies, and brownfield stack auto-discovery (`--onboard`). |
+| [`asdlc-init`](assets/skills/asdlc-init/SKILL.md) | One-command bootstrapping of OpenSpec, Graphify AST, policies, and automatic tech stack / test runner discovery. |
 | [`asdlc-intake`](assets/skills/asdlc-intake/SKILL.md) | Multi-source PRD/file (`--from-file`) and ticket (`--from-issue` for GitHub/Jira/Confluence) intake with prompt-injection fencing. |
 | [`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Scaffolds change, ingests files/tickets, queries AST hubs, runs conversational anti-fatigue `grill-me`. |
 | [`asdlc-lint`](assets/skills/asdlc-lint/SKILL.md) | Enforces deterministic BDD GIVEN/WHEN/THEN, R5 scenario-to-AC coverage, and `[OPEN]` clarification gates. |
@@ -348,7 +348,7 @@ flowchart TD
 ## 🛠️ CLI Reference
 
 ```bash
-asdlc init [--onboard]             # Scaffold repository with OpenSpec, Graphify, skills & stack auto-discovery
+asdlc init                         # Scaffold repository with OpenSpec, Graphify, skills & automatic stack discovery
 asdlc new "<intent>" [--from-file] # Scaffold change with AST explore, PRD/ticket intake (--from-issue) & grill-me
 asdlc lint <ID>                    # Validate BDD scenarios, AC rules, [OPEN] clarifications & coverage
 asdlc pr <ID> [target-branch]      # Smart PR creator (auto-handles Spec PR vs Impl PR + smart staging)

@@ -156,8 +156,8 @@ export function initRepo(opts = {}) {
   refreshAgents(repoRoot);
   log.ok('refreshed AGENTS.md (asdlc workflow + system status)');
 
-  // 6) Brownfield auto-discovery & stack onboarding (--onboard)
-  if (opts.onboard) {
+  // 6) Auto-discovery & stack onboarding (enabled by default; disable via --no-onboard)
+  if (opts.onboard !== false) {
     const stack = discoverRepoStack(repoRoot);
     if (stack.testCommand && exists(configDest)) {
       const cfgText = readText(configDest);
@@ -186,7 +186,9 @@ export function initRepo(opts = {}) {
         writeText(agentsPath, updatedAgents);
       }
     }
-    log.ok(`onboarded stack (${stack.languages.join(', ') || 'generic'}${stack.testCommand ? `; test: ${stack.testCommand}` : ''})`);
+    if (stack.languages.length > 0 || stack.testCommand || opts.onboard === true) {
+      log.ok(`onboarded stack (${stack.languages.join(', ') || 'generic'}${stack.testCommand ? `; test: ${stack.testCommand}` : ''})`);
+    }
   }
 
   log.info('');
@@ -205,7 +207,8 @@ export function register(program) {
     .option('--repo-root <path>', 'repository root (default: cwd)')
     .option('--tools <list>', 'OpenSpec agent tools (default: auto-detect)')
     .option('--headless', 'non-interactive bootstrap (initializes git if greenfield and skips animations)')
-    .option('--onboard', 'auto-discover tech stack and test/lint commands into openspec/config.yaml & AGENTS.md')
+    .option('--onboard', 'auto-discover tech stack and test/lint commands into openspec/config.yaml & AGENTS.md (default: enabled)')
+    .option('--no-onboard', 'skip automatic tech stack and test/lint command discovery')
     .option('--no-graph', 'skip graphify install/build')
     .option('--no-openspec', 'skip the openspec CLI step')
     .option('--force', 'overwrite existing governance config')
