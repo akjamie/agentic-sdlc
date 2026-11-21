@@ -12,14 +12,49 @@ import { log, dim } from '../lib/log.js';
 //   - the review record (review.md) exists, verdict APPROVE, no blocking findings
 //   - BDD + Acceptance-Criteria quality
 export function verdictOf(text) {
-  const m = text.match(/##\s*Verdict[^\n]*\n+\s*([A-Za-z_]+)/);
+  const s = String(text ?? '');
+  const fm = s.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (fm) {
+    const vm = fm[1].match(/^\s*verdict\s*:\s*['"]?([A-Za-z_]+)['"]?\s*$/mi);
+    if (vm) return vm[1].toUpperCase();
+  }
+  const m = s.match(/##\s*Verdict[^\n]*\n+\s*([A-Za-z_]+)/);
   return m ? m[1].toUpperCase() : null;
 }
 
+export function reviewedShaOf(text) {
+  const s = String(text ?? '');
+  const fm = s.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (fm) {
+    const sm = fm[1].match(/^\s*reviewedSha\s*:\s*['"]?([0-9a-f]{7,40})['"]?\s*$/mi);
+    if (sm) return sm[1];
+  }
+  const m = s.match(/-\s*reviewedSha\s*:\s*`?([0-9a-f]{7,40})`?/i);
+  return m ? m[1] : null;
+}
+
 export function hasBlockingFindings(text) {
-  const m = text.match(/##\s*Blocking Findings[^\n]*\n([\s\S]*?)(?:\n##\s|\s*$)/i);
+  const s = String(text ?? '');
+  const fm = s.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (fm && /\bseverity\s*:\s*['"]?blocker['"]?/i.test(fm[1])) {
+    return true;
+  }
+  const m = s.match(/##\s*Blocking Findings[^\n]*\n([\s\S]*?)(?:\n##\s|\s*$)/i);
   if (!m) return false;
   const body = m[1].replace(/<!--[\s\S]*?-->/g, '').trim();
+  return Boolean(body) && !/^\(?\s*none\s*\)?\.?$/i.test(body);
+}
+
+/**
+ * Returns true if clarifications.md still contains unresolved [OPEN] markers
+ * or non-empty questions under `## Open questions` (outside HTML comments).
+ */
+export function hasUnresolvedClarifications(text) {
+  const stripped = String(text ?? '').replace(/<!--[\s\S]*?-->/g, '');
+  if (/\[OPEN\]/i.test(stripped)) return true;
+  const m = stripped.match(/##\s*Open questions[^\n]*\n([\s\S]*?)(?:\n##\s|\s*$)/i);
+  if (!m) return false;
+  const body = m[1].trim();
   return Boolean(body) && !/^\(?\s*none\s*\)?\.?$/i.test(body);
 }
 
@@ -100,6 +135,13 @@ export function runLint(changeId, opts = {}) {
     const verdict = verdictOf(text);
     add('review verdict', verdict === 'APPROVE' ? 'pass' : 'fail', verdict ? `verdict: ${verdict}` : 'no verdict found');
     add('blocking findings', hasBlockingFindings(text) ? 'fail' : 'pass', hasBlockingFindings(text) ? 'blocking findings present' : '');
+  }
+
+  const clarPath = path.join(cdir, 'clarifications.md');
+  if (exists(clarPath)) {
+    const clarText = readText(clarPath);
+    const unresolved = hasUnresolvedClarifications(clarText);
+    add('clarifications', unresolved ? 'fail' : 'pass', unresolved ? 'unresolved [OPEN] questions in clarifications.md' : 'all clarifications settled');
   }
 
   // Spec-stage risk assessment: ground in artifacts and sync level/workflow mode

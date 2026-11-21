@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { exists, readText, writeText } from '../lib/fs.js';
 import { changeDir } from '../lib/paths.js';
 import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
@@ -8,6 +9,7 @@ import { log } from '../lib/log.js';
 import { isSinglePrLevel, readEffectiveLevel } from '../lib/level.js';
 import { resolveWorkflowMode } from '../lib/config.js';
 import { assess } from '../assess/index.js';
+import { triagePullRequest, PULL_REQUEST_THREADS_QUERY } from '../lib/triage.js';
 
 // Guard before implementing: the spec must be APPROVED on the target branch
 // (i.e. the Spec PR has been merged into targetBranch, locking proposal.md & specs/**).
@@ -183,6 +185,59 @@ export function applyGuard(changeId, opts = {}) {
   const isAutoPr = opts.autoPr === true || (opts.autoPr === undefined && meta.autoPr === 'true');
   const shaDisplay = approvedSha ? ` (specSha: ${approvedSha.slice(0, 8)}, state: ready_for_impl)` : ` (state: ready_for_impl)`;
   log.ok(`${slug} is READY FOR IMPLEMENTATION on ${branch}${shaDisplay}`);
+
+  if (opts.fromPr) {
+    const prRef = String(opts.fromPr).replace(/^#/, '');
+    const prNum = Number(prRef);
+    let prCtx = opts.prContext || null;
+    if (!prCtx) {
+      let reviewThreads = [];
+      let reviewDecision = null;
+      const remoteUrl = git(['remote', 'get-url', 'origin'], repoRoot, { allowFail: true }) || '';
+      const repoMatch = remoteUrl.match(/[:/]([^/:\s]+)\/([^/:\s]+?)(?:\.git)?$/);
+      if (repoMatch && Number.isFinite(prNum) && prNum > 0) {
+        const gql = spawnSync('gh', [
+          'api', 'graphql',
+          '-F', `owner=${repoMatch[1]}`,
+          '-F', `repo=${repoMatch[2]}`,
+          '-F', `number=${prNum}`,
+          '-f', `query=${PULL_REQUEST_THREADS_QUERY}`,
+        ], { cwd: repoRoot, encoding: 'utf8', timeout: 8000 });
+        if (gql.status === 0 && gql.stdout) {
+          try {
+            const parsedGql = JSON.parse(gql.stdout);
+            const prNode = parsedGql?.data?.repository?.pullRequest;
+            reviewThreads = prNode?.reviewThreads?.nodes || [];
+            reviewDecision = prNode?.reviewDecision || null;
+          } catch {
+            // fallback to view
+          }
+        }
+      }
+      const gh = spawnSync('gh', ['pr', 'view', prRef, '--json', 'comments,reviews,reviewDecision'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        timeout: 8000,
+      });
+      if (gh.status === 0 && gh.stdout) {
+        try {
+          const parsed = JSON.parse(gh.stdout);
+          prCtx = {
+            reviewThreads,
+            issueComments: parsed.comments || [],
+            reviewDecision: reviewDecision || parsed.reviewDecision || null,
+          };
+        } catch {
+          prCtx = { reviewThreads, reviewDecision };
+        }
+      } else if (reviewThreads.length > 0) {
+        prCtx = { reviewThreads, issueComments: [], reviewDecision };
+      }
+    }
+    const triage = triagePullRequest(prCtx || {});
+    log.info(`[PR #${prRef}] Triaged review feedback: ${triage.actionableThreads.length} actionable, ${triage.questionThreads.length} question(s), ${triage.suggestionThreads.length} suggestion(s).`);
+  }
+
   if (isAutoPr) {
     log.info(`Auto-PR delegation: ENABLED (agent is authorized to open Implementation PR once tasks & verify pass).`);
   } else {
@@ -199,6 +254,7 @@ export function register(program) {
     .option('--protected-branch <ref>', 'branch the approved spec must be merged into', 'origin/main')
     .option('--target-branch <ref>', 'target branch to merge into')
     .option('--mode <mode>', 'workflow mode: supervised (default) | spec-first | auto')
+    .option('--from-pr <pr>', 'triage review comments from a GitHub PR number or #N')
     .option('--auto-pr', 'explicitly delegate authority to automatically open Implementation PR after verification passes')
     .option('--no-auto-pr', 'disable automatic Implementation PR creation (default)')
     .option('--repo-root <path>')

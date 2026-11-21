@@ -311,6 +311,22 @@ export function analyzeFileSemantics({ filePath, content, oldContent, allChanged
   };
 }
 
+export const BINARY_OR_MEDIA_EXTS = new Set([
+  '.zip', '.gz', '.tar', '.tgz', '.bz2', '.xz', '.7z', '.rar',
+  '.bin', '.exe', '.dll', '.so', '.dylib', '.iso',
+  '.onnx', '.safetensors', '.pt', '.pth', '.pkl', '.h5', '.tflite',
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.svg', '.mp4', '.mov', '.mp3', '.wav',
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.woff', '.woff2', '.ttf', '.eot', '.otf',
+]);
+
+export function isBinaryOrMediaFile(filePath) {
+  const norm = String(filePath || '').replace(/\\/g, '/');
+  if (/\.(zip(\.[0-9]+)?|tar(\.[a-z0-9]+)?|bin|gz|onnx|safetensors|pt|pth|pkl)$/i.test(norm)) return true;
+  const ext = path.extname(norm).toLowerCase();
+  return BINARY_OR_MEDIA_EXTS.has(ext);
+}
+
 /**
  * Batches file reading and static semantics analysis for a set of changed files,
  * eliminating redundant disk I/O and git subprocess spawns across vectors.
@@ -319,14 +335,14 @@ export function batchAnalyzeFileSemantics(changedFiles = [], { repoRoot = null, 
   const cache = new Map();
   if (!Array.isArray(changedFiles) || changedFiles.length === 0) return cache;
 
-  const substantive = changedFiles.filter((f) => !isTestOrDocFile(f));
+  const substantive = changedFiles.filter((f) => !isTestOrDocFile(f) && !isBinaryOrMediaFile(f));
   let baseFilesMap = new Map();
   if (repoRoot && baseRef && substantive.length > 0) {
     baseFilesMap = getBatchGitFiles(repoRoot, baseRef, substantive);
   }
 
   for (const f of changedFiles) {
-    if (isTestOrDocFile(f)) {
+    if (isTestOrDocFile(f) || isBinaryOrMediaFile(f)) {
       cache.set(f, {
         filePath: f,
         headContent: null,
@@ -343,7 +359,10 @@ export function batchAnalyzeFileSemantics(changedFiles = [], { repoRoot = null, 
     let headContent = null;
     if (fs.existsSync(fullPath)) {
       try {
-        headContent = fs.readFileSync(fullPath, 'utf8');
+        const stat = fs.statSync(fullPath);
+        if (stat.isFile() && stat.size <= 2 * 1024 * 1024) {
+          headContent = fs.readFileSync(fullPath, 'utf8');
+        }
       } catch { /* binary or unreadable */ }
     }
 

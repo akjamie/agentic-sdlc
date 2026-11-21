@@ -39,10 +39,10 @@ This one command:
 1. provides bundled OpenSpec (zero-intrusion into non-Node repos; no rogue package.json/node_modules) and Graphify (uv/pip)
 2. runs OpenSpec initialization and wires your agentic IDE (auto-detected)
 3. provides the managed schema centrally or statelessly — no per-repo copy
-4. installs bundled skills (`grilling`, `asdlc-apply`, `asdlc-spec-review`, `asdlc-impl-review`) and slash commands across all detected IDE tools
-5. writes `openspec/config.yaml` (governance rules + lint policy)
+4. installs bundled skills (`grilling`, `asdlc-intake`, `asdlc-apply`, `asdlc-spec-review`, `asdlc-impl-review`) and slash commands across all detected IDE tools
+5. writes `openspec/config.yaml` (governance rules + lint policy + auto-discovered `test.runner` for Java/Python/Go/Rust/Node)
 6. writes `.sdlc/policy.yaml` (platform-owned; protect with CODEOWNERS)
-7. writes `AGENTS.md` routing (workflow + system status from the code graph)
+7. writes `AGENTS.md` routing (workflow + system status from the code graph + discovered stack commands)
 
 ---
 
@@ -83,8 +83,8 @@ This one command:
 
 ```bash
 asdlc new "i want to build jwt authentication for payment api"
-# or with a Jira ticket:
-asdlc new "TECH-1234: add rate limiting"
+# or snapshot local PRD/design docs and external Jira/GitHub/Confluence tickets:
+asdlc new "add rate limiting" --from-file ./docs/prd.md --from-issue TECH-1234
 # or with explicit ID override:
 asdlc new "add rate limiting" --id tech-1234
 ```
@@ -135,6 +135,8 @@ asdlc approve TECH-1234
 
 ```bash
 asdlc apply TECH-1234
+# or triage review comments & threads from an open GitHub PR:
+asdlc apply TECH-1234 --from-pr #42
 ```
 
 Refuses if the spec is not approved. Then implement with `/opsx-apply` in your

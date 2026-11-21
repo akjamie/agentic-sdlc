@@ -1,10 +1,10 @@
 # agentic-sdlc
 
 [![npm version](https://img.shields.io/npm/v/@akjamie/agentic-sdlc?color=6366f1&label=npm)](https://www.npmjs.com/package/@akjamie/agentic-sdlc)
-[![version: v1.9.2](https://img.shields.io/badge/version-v1.9.2-6366f1.svg)](package.json)
+[![version: v1.10.0](https://img.shields.io/badge/version-v1.10.0-6366f1.svg)](package.json)
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-10b981.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20.19.0-38bdf8.svg)](https://nodejs.org/)
-[![tests](https://img.shields.io/badge/tests-213%20passing-10b981.svg)](#development--verification)
+[![tests](https://img.shields.io/badge/tests-225%20passing-10b981.svg)](#development--verification)
 [![architecture](https://img.shields.io/badge/governance-L0--L3%20Adaptive%20Dual--Track-f59e0b.svg)](#adaptive-risk-tiered-governance-l0l3)
 
 > **The Intelligent Governance Engine for Autonomous AI Coding.**
@@ -134,9 +134,9 @@ Enterprise teams rely on deterministic code, not agent compliance or prompt enth
 | **2** | **Git-Anchored Anti-Tamper (`spec-tamper`)** | Implementation diffs must NOT modify locked spec files once approved on `main`. | 🚫 **Instant Rejection** — Agents cannot alter requirements to make failing tests pass. |
 | **3** | **Anti-Gaming Hash Chain** | Every level transition is sealed in an append-only, SHA-256 hash-chained `risk-history.jsonl`. | 🚫 **Integrity Breach** — Manual downgrades (`L2 -> L1`) are detected and blocked. |
 | **4** | **AI Classifier Invariant Defense** | AI semantic classifier output is validated against hard mathematical expectations. | 🚫 **Evasion Shield** — Prompts claiming a `DROP TABLE` is "just a test" are vetoed to L3. |
-| **5** | **Zero Untested Code (`test-presence`)** | Any change touching production source code (`src/**`, `app/**`) requires test diffs. | 🚫 **Rejection** — Stops AI "code dumps" without corresponding test coverage. |
+| **5** | **Zero Untested Code & Anti-Weakening (`test-presence` / `anti-test-weakening`)** | Any change touching production source code (`src/**`, `app/**`) requires test diffs; deleting tests or adding `.skip` / `@Disabled` / `@pytest.mark.skip` is blocked. | 🚫 **Rejection** — Stops AI "code dumps" and test-disabling reward hacks. |
 | **6** | **Deterministic AC Assertions (`asdlc test`)** | Parses `- [ ] ACn: (test: <path>)` annotations and runs native test suites. | 🚫 **Fake Claim Gate** — Unimplemented acceptance criteria immediately fail CI. |
-| **7** | **Player ≠ Referee Isolation** | Independent review agent sessions (`asdlc-spec-review`, `asdlc-impl-review`) evaluate contracts and diffs in fresh sessions. | 🚫 **Audit Integrity** — Authoring agents can never grade their own exam. |
+| **7** | **Player ≠ Referee Isolation & SHA-Bound Verdicts** | Independent review agent sessions (`asdlc-spec-review`, `asdlc-impl-review`) evaluate contracts and diffs in fresh sessions, binding `reviewedSha` to `HEAD`. | 🚫 **Audit Integrity** — Authoring agents can never grade their own exam or reuse stale approvals. |
 | **8** | **Humane In-Place Scope Escalation** | If an L1 change touches an API during implementation, single PR is preserved with mandatory human sign-off. |  **Safe Convergence** — No messy branch rebases; human stays in control. |
 
 ---
@@ -284,13 +284,14 @@ CLI (--mode) > Env (ASDLC_WORKFLOW_MODE) > Repo (.sdlc/policy.yaml) > Global (~/
 
 | Skill | Role in Agentic SDLC |
 | :--- | :--- |
-| [`asdlc-init`](assets/skills/asdlc-init/SKILL.md) | One-command bootstrapping of OpenSpec, Graphify AST, policies, and git hooks. |
-| [`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Scaffolds change, queries AST hubs, runs conversational anti-fatigue `grill-me`. |
-| [`asdlc-lint`](assets/skills/asdlc-lint/SKILL.md) | Enforces deterministic BDD GIVEN/WHEN/THEN and R5 scenario-to-AC coverage. |
+| [`asdlc-init`](assets/skills/asdlc-init/SKILL.md) | One-command bootstrapping of OpenSpec, Graphify AST, policies, and automatic tech stack / test runner discovery. |
+| [`asdlc-intake`](assets/skills/asdlc-intake/SKILL.md) | Multi-source PRD/file (`--from-file`) and ticket (`--from-issue` for GitHub/Jira/Confluence) intake with prompt-injection fencing. |
+| [`asdlc-new`](assets/skills/asdlc-new/SKILL.md) | Scaffolds change, ingests files/tickets, queries AST hubs, runs conversational anti-fatigue `grill-me`. |
+| [`asdlc-lint`](assets/skills/asdlc-lint/SKILL.md) | Enforces deterministic BDD GIVEN/WHEN/THEN, R5 scenario-to-AC coverage, and `[OPEN]` clarification gates. |
 | [`asdlc-pr`](assets/skills/asdlc-pr/SKILL.md) | Smart PR dispatcher: automatically handles Spec PR vs. Implementation PR. |
-| [`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md) | Stamps Git `specSha` lock upon Spec PR merge (Track A Dual-PR; waived for Track B Single-PR). |
-| [`asdlc-apply`](assets/skills/asdlc-apply/SKILL.md) | Strict task-level TDD engine (`Red -> Green -> Refactor -> Evidence -> Converge`). |
-| [`asdlc-verify`](assets/skills/asdlc-verify/SKILL.md) | Pre-flight audit across 12 gates (test presence, evidence, tamper guard, schema). |
+| [`asdlc-approve`](assets/skills/asdlc-approve/SKILL.md) | Stamps Git `specSha` lock and truthful merge provenance upon Spec PR merge (Track A Dual-PR; waived for Track B Single-PR). |
+| [`asdlc-apply`](assets/skills/asdlc-apply/SKILL.md) | Strict task-level TDD engine (`Red -> Green -> Refactor -> Evidence -> Converge`) with PR review triage (`--from-pr`). |
+| [`asdlc-verify`](assets/skills/asdlc-verify/SKILL.md) | Pre-flight audit across 13 gates (test presence, anti-test-weakening, evidence, tamper guard, schema). |
 | [`asdlc-spec-review`](assets/skills/asdlc-spec-review/SKILL.md) | Independent review agent: 6-dimensional spec review before human lead approval. |
 | [`asdlc-impl-review`](assets/skills/asdlc-impl-review/SKILL.md) | Independent review agent: Player ≠ Referee verification with test execution and Anthropic convergence rules. |
 | [`asdlc-archive`](assets/skills/asdlc-archive/SKILL.md) | Syncs specs to living catalog, refreshes AST graph, and updates system status. |
@@ -316,6 +317,7 @@ flowchart TD
 
     subgraph TIER2 ["Tier 2 · Code & Test Fidelity (TDD Invariants)"]
         G_PRESENCE["<b>test-presence</b><br/>Code changes mandate test changes"]
+        G_WEAKEN["<b>anti-test-weakening</b><br/>Blocks deleted or newly skipped tests"]
         G_TDD["<b>tdd-evidence</b><br/>Recorded test execution logs"]
         G_BDD["<b>BDD + AC Traceability</b><br/>GIVEN/WHEN/THEN + (test: path)"]
         G_TASKS["<b>tasks-complete</b><br/>All tasks checked off in tasks.md"]
@@ -338,7 +340,7 @@ flowchart TD
 
     class V rootStyle;
     class TIER1,TIER2,TIER3 tierStyle;
-    class G_APPROVED,G_TAMPER,G_LEVEL,G_ARTIFACTS,G_PRESENCE,G_TDD,G_BDD,G_TASKS,G_ESCAPE,G_HUMAN,G_PR,G_SCHEMA gateStyle;
+    class G_APPROVED,G_TAMPER,G_LEVEL,G_ARTIFACTS,G_PRESENCE,G_WEAKEN,G_TDD,G_BDD,G_TASKS,G_ESCAPE,G_HUMAN,G_PR,G_SCHEMA gateStyle;
 ```
 
 ---
@@ -346,14 +348,14 @@ flowchart TD
 ## 🛠️ CLI Reference
 
 ```bash
-asdlc init                         # Scaffold repository with OpenSpec, Graphify, and skills
-asdlc new "<intent>"               # Scaffold change with AST explore + grill-me interview
-asdlc lint <ID>                    # Validate BDD scenarios, AC rules, and coverage (docs/spec-format.md)
-asdlc pr <ID> <target-branch>      # Smart PR creator (auto-handles Spec PR vs Impl PR + smart staging)
-asdlc approve <ID>                 # Record approvedSha & ready_for_impl (Track A; idempotent no-op in Single-PR)
-asdlc apply <ID>                   # Guarded implementation launcher (checks approvedSha)
+asdlc init                         # Scaffold repository with OpenSpec, Graphify, skills & automatic stack discovery
+asdlc new "<intent>" [--from-file] # Scaffold change with AST explore, PRD/ticket intake (--from-issue) & grill-me
+asdlc lint <ID>                    # Validate BDD scenarios, AC rules, [OPEN] clarifications & coverage
+asdlc pr <ID> [target-branch]      # Smart PR creator (auto-handles Spec PR vs Impl PR + smart staging)
+asdlc approve <ID>                 # Record approvedSha & truthful merge provenance (Track A; no-op in Single-PR)
+asdlc apply <ID> [--from-pr #<N>]  # Guarded implementation launcher (checks approvedSha & triages PR review threads)
 asdlc test <ID> [--json]           # Execute real test runners mapped to AC annotations
-asdlc verify <ID>                  # Audit diff against all 12 quality gates
+asdlc verify <ID>                  # Audit diff against all 13 quality gates (including anti-test-weakening)
 asdlc archive [<ID> | --merged]    # Post-merge compaction: sync living specs & refresh code graph
 asdlc doctor [--fix]               # 12-point toolchain & governance health check
 asdlc status [<ID>]                # Change progress orientation or portfolio dashboard
@@ -371,7 +373,7 @@ git clone https://github.com/akjamie/agentic-sdlc.git
 cd agentic-sdlc
 npm install
 
-# Run complete test suite (213 tests passing, 100% pass rate)
+# Run complete test suite (225 tests passing, 100% pass rate)
 npm test
 
 # Run end-to-end multi-language simulation tests

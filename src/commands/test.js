@@ -107,6 +107,11 @@ export function runTests(changeId, opts = {}) {
   const passed = res.status === 0;
 
   if (opts.silent) {
+    if (opts.captureOutput && typeof opts.captureOutput === 'object') {
+      opts.captureOutput.stdout = res.stdout;
+      opts.captureOutput.stderr = res.stderr;
+      opts.captureOutput.status = res.status;
+    }
     return passed ? 0 : 1;
   }
 
