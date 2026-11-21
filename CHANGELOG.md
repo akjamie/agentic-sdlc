@@ -2,6 +2,15 @@
 
 All notable changes to `@akjamie/agentic-sdlc` are documented in this file.
 
+## [1.11.0] - 2026-11-21
+
+### Added
+- **Harness Observability & Gate Friction Telemetry (`asdlc status --metrics`)**: Local friction tracking in `.sdlc/events.jsonl` (with automatic `.sdlc/.gitignore` maintenance, 5MB log rotation, and smart staging exclusion).
+- **Git-Native Team Metrics Dashboard**: Aggregates 30-day velocity, P50/P90 stage lead times, risk level distribution, and autonomous PR review round convergence directly from Git history and `openspec/changes/archive/`.
+- **CI Native Step Summaries**: Direct integration with `$GITHUB_STEP_SUMMARY` in `verify` and `lint` stages with detailed gate evaluation tables, iteration indicators, and addressed review thread references.
+- **Player ≠ Referee Review Governance Guard**: `buildThreadResolutionPlan()` blocks author agents from auto-resolving review comments when disputing requested changes, tagging with `asdlc:needs-human-arbitration`.
+- **Resilient Review Round Calculation**: `computeReviewRound()` counts formal hidden anchors (`<!-- asdlc:review-round:N -->`) or commit trailer batches `(ref: #PRRT_...)`.
+
 ## [1.10.0] - 2026-11-21
 
 ### Added
