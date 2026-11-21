@@ -2,7 +2,7 @@
 
 All notable changes to `@akjamie/agentic-sdlc` are documented in this file.
 
-## [1.9.4] - 2026-11-21
+## [1.10.0] - 2026-11-21
 
 ### Added
 - **Anti-Test-Weakening Gate (`anti-test-weakening`)**: `asdlc verify` now detects and blocks diffs that delete test files or introduce new skip/disable annotations (`.skip(`, `xit`/`xdescribe`, `@pytest.mark.skip`, `@Disabled`, `#[ignore]`) across Java, Python, Go, Rust, and JS/TS.
