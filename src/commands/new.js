@@ -11,6 +11,7 @@ import { Option } from 'commander';
 import { inferInitialLevel } from '../lib/level.js';
 import { resolveWorkflowMode } from '../lib/config.js';
 import { ingestIntakeSources, extractIntakeContext } from '../lib/intake.js';
+import { recordEvent } from '../lib/telemetry.js';
 
 function collectOption(val, prev = []) {
   return [...prev, val];
@@ -305,6 +306,12 @@ ${intakeSectionMd}
     log.info('  ▶ [API DESIGN] Follow `api-design` skill (RESTful nouns, Stripe-style / RFC 7807 errors, idempotency, cursor pagination).');
     log.info('  ▶ [UI/UX DESIGN] Ground visual specs in `frontend-design` (Anthropic) & Vercel Web Interface Guidelines.');
   }
+  recordEvent('change.created', {
+    stage: 'new',
+    change: slug,
+    level: level || null,
+  }, { repoRoot });
+
   log.info(`  ▶ Run \`asdlc lint ${slug}\`.`);
   return slug;
 }

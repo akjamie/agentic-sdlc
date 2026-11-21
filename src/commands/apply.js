@@ -10,6 +10,7 @@ import { isSinglePrLevel, readEffectiveLevel } from '../lib/level.js';
 import { resolveWorkflowMode } from '../lib/config.js';
 import { assess } from '../assess/index.js';
 import { triagePullRequest, PULL_REQUEST_THREADS_QUERY } from '../lib/triage.js';
+import { recordEvent } from '../lib/telemetry.js';
 
 // Guard before implementing: the spec must be APPROVED on the target branch
 // (i.e. the Spec PR has been merged into targetBranch, locking proposal.md & specs/**).
@@ -234,8 +235,28 @@ export function applyGuard(changeId, opts = {}) {
         prCtx = { reviewThreads, issueComments: [], reviewDecision };
       }
     }
-    const triage = triagePullRequest(prCtx || {});
-    log.info(`[PR #${prRef}] Triaged review feedback: ${triage.actionableThreads.length} actionable, ${triage.questionThreads.length} question(s), ${triage.suggestionThreads.length} suggestion(s).`);
+    let commitMessages = [];
+    try {
+      const recentLog = git(['log', '-n', '20', '--format=%B'], repoRoot, { allowFail: true }) || '';
+      commitMessages = recentLog.split(/\r?\n\r?\n/).filter(Boolean);
+    } catch {}
+    const triage = triagePullRequest(prCtx || {}, { commitMessages });
+    log.info(`[PR #${prRef}] Triaged review feedback (Round ${triage.round}/${triage.maxRounds}): ${triage.actionableThreads.length} actionable, ${triage.questionThreads.length} question(s), ${triage.suggestionThreads.length} suggestion(s).`);
+    recordEvent('pr.triage', {
+      stage: 'apply',
+      change: slug,
+      pr: prNum,
+      reviewDecision: triage.reviewDecision || null,
+      unaddressedThreads: triage.unaddressedCount,
+      actionableThreads: triage.actionableThreads.length,
+      suggestionThreads: triage.suggestionThreads.length,
+      questionThreads: triage.questionThreads.length,
+      actionableCount: triage.actionableThreads.length,
+      questionCount: triage.questionThreads.length,
+      suggestionCount: triage.suggestionThreads.length,
+      round: triage.round,
+      maxRounds: triage.maxRounds,
+    }, { repoRoot });
   }
 
   if (isAutoPr) {

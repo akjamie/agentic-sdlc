@@ -18,6 +18,8 @@ import { checkTestPresence, checkTaskEvidence } from '../lib/tdd.js';
 import { runTests, parseSpecAcceptanceCriteria } from './test.js';
 import { verdictOf, reviewedShaOf, hasBlockingFindings } from './lint.js';
 import { log, dim } from '../lib/log.js';
+import { recordEvent, getChangeIteration, writeGitHubStepSummary } from '../lib/telemetry.js';
+import { extractAddressedThreadIds } from '../lib/triage.js';
 
 // THE implementation check (v10: gate absorbed verify). Deterministic checks
 // first, then - if a verifier is configured - independent AI verification
@@ -81,6 +83,56 @@ function finish(results, policy, opts = {}) {
     if (status === 'fail') failed += 1;
     return { ...r, status };
   });
+
+  // Telemetry Fail-Silent Logging (Harness Observability)
+  try {
+    for (const r of processed) {
+      if (r.status === 'fail') {
+        recordEvent('gate.evaluated', {
+          stage: 'verify',
+          gate: r.name,
+          status: 'fail',
+          detail: r.detail,
+          change: opts.changeId || null,
+          iteration: opts.iteration || 1,
+        }, { repoRoot: opts.repoRoot });
+      }
+    }
+    recordEvent('gate.verified', {
+      stage: 'verify',
+      change: opts.changeId || null,
+      status: failed === 0 ? 'pass' : 'fail',
+      verdict: failed === 0 ? 'pass' : 'fail',
+      totalGates: processed.length,
+      passedGates: processed.length - failed,
+      passed: processed.length - failed,
+      failed,
+      iteration: opts.iteration || 1,
+      durationMs: opts.startTime ? (Date.now() - opts.startTime) : null,
+      addressedThreadIds: opts.addressedThreadIds || [],
+    }, { repoRoot: opts.repoRoot });
+
+    if (process.env.GITHUB_STEP_SUMMARY) {
+      const tableRows = processed.map((r) => {
+        const icon = { pass: '✅ PASS', fail: '❌ FAIL', warn: '⚠️ WARN', skip: '⏭️ SKIP' }[r.status] || r.status;
+        return `| \`${r.name}\` | ${icon} | ${r.detail || ''} |`;
+      }).join('\n');
+      const verdictBadge = failed === 0 ? '✅ PASS' : '❌ FAIL';
+      const addressedRow = (opts.addressedThreadIds && opts.addressedThreadIds.length > 0)
+        ? `\n- **Addressed Review Threads**: ${opts.addressedThreadIds.map((id) => `\`#${id}\``).join(', ')}`
+        : '';
+      const md = `### 🏛️ ASDLC Gate Results: \`${opts.changeId || 'unknown'}\`
+- **Verdict**: ${verdictBadge} (${processed.length - failed}/${processed.length} Passed, Iteration ${opts.iteration || 1})${addressedRow}
+
+| Gate | Status | Detail |
+| :--- | :--- | :--- |
+${tableRows}
+`;
+      writeGitHubStepSummary(md);
+    }
+  } catch {
+    // Fail-silent contract: Telemetry never throws or interferes with gate results
+  }
 
   if (opts.json) {
     jsonOut({
@@ -243,6 +295,7 @@ export function checkTestWeakening(repoRoot, base, head, changedFiles = [], opts
 }
 
 export function runVerify(changeId, opts = {}) {
+  const startTime = Date.now();
   const results = [];
   const add = (name, status, detail) => results.push({ name, status, detail });
 
@@ -258,6 +311,12 @@ export function runVerify(changeId, opts = {}) {
   const branch = opts.protectedBranch ?? resolveDefaultBranch(repoRoot);
 
   const slug = toChangeSlug(changeId);
+  const iteration = getChangeIteration(repoRoot, slug);
+  let addressedThreadIds = [];
+  try {
+    const recentLog = git(['log', '-n', '20', '--format=%B'], repoRoot, { allowFail: true }) || '';
+    addressedThreadIds = Array.from(extractAddressedThreadIds(recentLog.split(/\r?\n\r?\n/)));
+  } catch { /* fail-silent */ }
   const base = opts.base ?? branch;
   const head = opts.head ?? 'HEAD';
   const policy = loadPolicy(repoRoot, { baseRef: base });
@@ -265,7 +324,14 @@ export function runVerify(changeId, opts = {}) {
   const cdir = changeDir(repoRoot, slug);
   if (!exists(cdir)) {
     add('change', 'fail', `change '${slug}' not found`);
-    return finish(results, policy, opts);
+    return finish(results, policy, {
+      ...opts,
+      repoRoot,
+      changeId: slug,
+      iteration,
+      startTime,
+      addressedThreadIds,
+    });
   }
   add('change', 'pass', slug);
   const effLevel = readEffectiveLevel(repoRoot, changeId, { baseRef: base });
@@ -508,7 +574,14 @@ export function runVerify(changeId, opts = {}) {
     add('AI verification', ok ? 'pass' : 'fail', String(report.summary ?? '').slice(0, 300));
   }
 
-  return finish(results, policy, opts);
+  return finish(results, policy, {
+    ...opts,
+    repoRoot,
+    changeId: slug,
+    iteration,
+    startTime,
+    addressedThreadIds,
+  });
 }
 
 export function register(program) {

@@ -6,6 +6,7 @@ import { lintSpecText, countBlockers } from '../lib/speclint.js';
 import { assess } from '../assess/index.js';
 import { resolveWorkflowMode } from '../lib/config.js';
 import { log, dim } from '../lib/log.js';
+import { recordEvent, getChangeIteration, writeGitHubStepSummary } from '../lib/telemetry.js';
 
 // THE spec check (v10: lint absorbed review). Deterministic:
 //   - required artifacts (explore.md + proposal.md + >=1 spec delta)
@@ -58,8 +59,53 @@ export function hasUnresolvedClarifications(text) {
   return Boolean(body) && !/^\(?\s*none\s*\)?\.?$/i.test(body);
 }
 
-function finish(results, { json, changeId }) {
+function finish(results, { json, changeId, repoRoot, startTime, iteration }) {
   const blockers = results.filter((r) => r.status === 'fail');
+
+  // Telemetry Fail-Silent Logging (Harness Observability)
+  try {
+    for (const r of blockers) {
+      recordEvent('gate.evaluated', {
+        stage: 'lint',
+        gate: r.name,
+        status: 'fail',
+        detail: r.detail,
+        change: changeId || null,
+        iteration: iteration || 1,
+      }, { repoRoot });
+    }
+    recordEvent('gate.verified', {
+      stage: 'lint',
+      change: changeId || null,
+      status: blockers.length === 0 ? 'pass' : 'fail',
+      verdict: blockers.length === 0 ? 'pass' : 'fail',
+      totalGates: results.length,
+      passedGates: results.length - blockers.length,
+      passed: results.length - blockers.length,
+      failed: blockers.length,
+      iteration: iteration || 1,
+      durationMs: startTime ? (Date.now() - startTime) : null,
+    }, { repoRoot });
+
+    if (process.env.GITHUB_STEP_SUMMARY) {
+      const tableRows = results.map((r) => {
+        const icon = { pass: '✅ PASS', fail: '❌ FAIL', skip: '⏭️ SKIP' }[r.status] || r.status;
+        return `| \`${r.name}\` | ${icon} | ${r.detail || ''} |`;
+      }).join('\n');
+      const verdictBadge = blockers.length === 0 ? '✅ PASS' : '❌ FAIL';
+      const md = `### 🏛️ ASDLC Lint Results: \`${changeId || 'unknown'}\`
+| Gate | Status | Detail |
+| :--- | :--- | :--- |
+${tableRows}
+
+**Verdict: ${verdictBadge} (${results.length - blockers.length}/${results.length} Passed)**
+`;
+      writeGitHubStepSummary(md);
+    }
+  } catch {
+    // Fail-silent contract: Telemetry never throws or interferes with lint results
+  }
+
   if (json) {
     jsonOut({ changeId, pass: blockers.length === 0, results });
     return blockers.length ? 1 : 0;
@@ -80,15 +126,17 @@ function finish(results, { json, changeId }) {
 }
 
 export function runLint(changeId, opts = {}) {
+  const startTime = Date.now();
   const repoRoot = requireRepo(opts);
   const slug = toChangeSlug(changeId);
+  const iteration = getChangeIteration(repoRoot, slug, 'lint');
   const cdir = changeDir(repoRoot, slug);
   const results = [];
   const add = (name, status, detail) => results.push({ name, status, detail });
 
   if (!exists(cdir)) {
     add('change', 'fail', `change '${slug}' not found`);
-    return finish(results, { json: opts.json, changeId });
+    return finish(results, { json: opts.json, changeId: slug, repoRoot, startTime, iteration });
   }
   add('change', 'pass', slug);
   add('explore.md (stage 1)', exists(path.join(cdir, 'explore.md')) ? 'pass' : 'fail',
@@ -194,7 +242,7 @@ export function runLint(changeId, opts = {}) {
   }
   add('BDD + acceptance criteria', blockers === 0 ? 'pass' : 'fail', bddDetail);
 
-  return finish(results, { json: opts.json, changeId });
+  return finish(results, { json: opts.json, changeId: slug, repoRoot, startTime, iteration });
 }
 
 export function register(program) {
