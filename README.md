@@ -359,7 +359,7 @@ asdlc test <ID> [--json]           # Execute real test runners mapped to AC anno
 asdlc verify <ID>                  # Audit diff against all 13 quality gates (including anti-test-weakening)
 asdlc archive [<ID> | --merged]    # Post-merge compaction: sync living specs & refresh code graph
 asdlc doctor [--fix]               # 12-point toolchain & governance health check
-asdlc status [<ID>]                # Change progress orientation or portfolio dashboard
+asdlc status [<ID> | --metrics]    # Change progress, portfolio dashboard, or 30-day team observability metrics
 asdlc upgrade [--global]           # Seamless upgrade of CLI, engine, and schemas
 ```
 
@@ -374,7 +374,7 @@ git clone https://github.com/akjamie/agentic-sdlc.git
 cd agentic-sdlc
 npm install
 
-# Run complete test suite (225 tests passing, 100% pass rate)
+# Run complete test suite (237 tests passing, 100% pass rate)
 npm test
 
 # Run end-to-end multi-language simulation tests
@@ -387,6 +387,7 @@ node --test test/simulation.test.js
  
 Explore the complete documentation in the [`docs/`](docs/) directory:
  
+- 🤝 [**Enterprise Operating Model & Collaboration Playbook**](docs/operating-model.md): How Developers, Pre-Lead AI Review Bots, Tech Leads, and managed Jenkins nodes collaborate with 3-round autonomous convergence.
 - ⏱️ [**30-Minute Getting Started Guide**](docs/getting-started.md): Frictionless step-by-step tutorial from install to first Spec PR.
 - 📐 [**Spec Format & Lint Reference**](docs/spec-format.md): Human-readable guide to R0–R8 lint rules with pass/fail examples.
 - 🌐 [**Quickstart Guide (Bilingual)**](docs/quickstart.md): End-to-end walkthrough covering the complete 7-stage lifecycle.

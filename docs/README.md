@@ -9,6 +9,7 @@
 
 | 文档 / Document | 目标受众 | 核心内容 |
 | :--- | :--- | :--- |
+| **[operating-model.md](./operating-model.md)** | **全体开发者 / Tech Lead / 架构师** | **企业团队运行模式与协作手册**：Developer · 前置 Review Bot · Tech Lead · 受控 Jenkins 四方物理隔离架构、3 轮自治收敛时序图与角色 SOP。 |
 | **[getting-started.md](./getting-started.md)** | **新加入团队的开发者 / AI** | **30 分钟保姆级极速入门**：零基础全流程演练，从安装、`init`、`new`、盘问收敛到发起首个 Spec PR。 |
 | **[quickstart.md](./quickstart.md)** | **快速上手全功能者** | **中英双语端到端实战**：覆盖 7 阶段全流程与双轨生命周期的综合实战参考。 |
 | **[spec-format.md](./spec-format.md)** | **Spec 编写者 / 开发者 / AI** | **规范格式与校验规则指南**：R0–R8 校验门禁、BDD 场景、可测试 AC 实例对比与排错手册。 |
