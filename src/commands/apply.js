@@ -1,8 +1,9 @@
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { Option } from 'commander';
 import { exists, readText, writeText } from '../lib/fs.js';
 import { changeDir } from '../lib/paths.js';
-import { requireRepo, toChangeSlug } from '../lib/cliutil.js';
+import { requireRepo, toChangeSlug, requireAgentRuntime } from '../lib/cliutil.js';
 import { lastCommitTouching, git, resolveDefaultBranch } from '../lib/git.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
@@ -278,8 +279,11 @@ export function register(program) {
     .option('--from-pr <pr>', 'triage review comments from a GitHub PR number or #N')
     .option('--auto-pr', 'explicitly delegate authority to automatically open Implementation PR after verification passes')
     .option('--no-auto-pr', 'disable automatic Implementation PR creation (default)')
+    .option('--guard-only', 'only run pre-implementation guard checks in terminal without starting the AI TDD loop')
+    .addOption(new Option('--agent', 'internal agent runtime marker').hideHelp())
     .option('--repo-root <path>')
     .action((changeId, opts) => {
+      requireAgentRuntime('apply', opts);
       process.exitCode = applyGuard(changeId, opts);
     });
 }
