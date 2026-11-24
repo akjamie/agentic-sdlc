@@ -106,18 +106,11 @@ const AGENT_ONLY_COMMANDS = {
   },
 };
 
-function firstSubcommand(args) {
-  for (const token of args) {
-    if (!token.startsWith('-')) return token;
-  }
-  return null;
-}
-
 export async function run(argv = process.argv) {
   const program = buildCli();
   program.exitOverride();
-  try {
-    const subcmd = firstSubcommand(argv.slice(2));
+  program.on('command:*', (operands) => {
+    const subcmd = operands?.[0];
     if (subcmd && Object.prototype.hasOwnProperty.call(AGENT_ONLY_COMMANDS, subcmd)) {
       const entry = AGENT_ONLY_COMMANDS[subcmd];
       throw new AsdlcError(entry.message, {
@@ -126,6 +119,8 @@ export async function run(argv = process.argv) {
         hint: entry.hint,
       });
     }
+  });
+  try {
     await program.parseAsync(argv);
     return process.exitCode ?? 0;
   } catch (err) {

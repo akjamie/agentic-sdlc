@@ -112,10 +112,9 @@ export function isAgentRuntime(opts = {}) {
     agent = false,
     scaffoldOnly = false,
     guardOnly = false,
-    check = false,
   } = opts;
 
-  const explicitOverride = Boolean(agent || scaffoldOnly || guardOnly || check);
+  const explicitOverride = Boolean(agent || scaffoldOnly || guardOnly);
   const explicitAgentEnv = env.ASDLC_AGENT === '1' || env.ASDLC_AGENT === 'true';
 
   if (env.ASDLC_FORCE_INTERACTIVE_TERMINAL === '1') {
