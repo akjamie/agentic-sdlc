@@ -49,16 +49,18 @@ export function buildCli() {
   registerConfig(program); // manage machine global configuration (~/.asdlc/config.yaml)
 
   program.addHelpText('after', `
-The flow:
-  asdlc init                     set up the repo (installs OpenSpec + Graphify, wires CI)
-  asdlc new "<requirement>"     start a spec: scaffold + refresh graph + explore.md + grilling
-  asdlc lint <ID>                check the spec (artifacts + BDD + acceptance criteria)
-  asdlc pr <ID> <targetBranch>   open the Spec PR (pushes branch + auto-creates PR via CLI or API)
-  asdlc approve <ID>             record approval (on PR / merge / in-place) + mark READY_FOR_IMPL
-  asdlc apply <ID>               guard, then /opsx-apply (task-level TDD loop)
-  asdlc test <ID>                run acceptance tests mapped from change specs (TDD & CI gate)
-  asdlc verify <ID>              check the implementation (artifacts, tasks, tests, AI)
-  asdlc archive <ID>             finish: archive change + sync living specs to openspec/specs/
+The flow ([CLI] runs standalone; [Agent] runs inside OpenCode / Claude Code / Antigravity / Cursor):
+  [CLI]        asdlc init                     set up the repo (installs OpenSpec + Graphify, wires CI)
+  [Agent]      /asdlc-new "<requirement>"     start a spec: scaffold + graph + explore.md + grilling (CLI: --scaffold-only)
+  [Agent]      /asdlc-spec-review <ID|PR>     independent AI spec review (Player != Referee)
+  [CLI]        asdlc lint <ID>                check the spec (artifacts + BDD + acceptance criteria)
+  [CLI]        asdlc pr <ID> [targetBranch]   open the Spec/Impl PR (pushes branch + attaches review labels)
+  [CLI]        asdlc approve <ID>             record approval (on PR / merge / in-place) + mark READY_FOR_IMPL
+  [Agent]      /asdlc-apply <ID>              guard + task-level TDD loop / fix PR comments (CLI: --guard-only)
+  [CLI]        asdlc test <ID>                run acceptance tests mapped from change specs (TDD & CI gate)
+  [CLI]        asdlc verify <ID>              check the implementation (artifacts, tasks, tests, AI)
+  [Agent]      /asdlc-impl-review <ID|PR>     independent AI implementation review (Player != Referee)
+  [CLI]        asdlc archive <ID>             finish: archive change + sync living specs to openspec/specs/
 
 Navigation, health & maintenance:
   asdlc status [ID]              where a change is in the 7 stages (or portfolio overview if omitted)
@@ -73,9 +75,51 @@ A bad spec is not edited: close it and run \`asdlc new\` again.`);
   return program;
 }
 
+const REVIEW_ENTRY = (subcmd) => ({
+  message: `'asdlc ${subcmd}' cannot run in a terminal — independent Implementation/Spec Review requires an AI Agent session (Player ≠ Referee).`,
+  hint: 'Open an independent AI Agent session (OpenCode, Claude Code, Antigravity, Cursor) and run: /asdlc-impl-review <changeId_or_PR> (or /asdlc-spec-review <changeId_or_PR>)',
+});
+
+const GRILL_ENTRY = (subcmd) => ({
+  message: `'asdlc ${subcmd}' cannot run in a terminal — interactive design grilling requires an AI Agent session.`,
+  hint: 'Run \'/asdlc-new "<requirement>"\' or \'/grill-me\' inside your AI Agent (OpenCode, Claude Code, Antigravity, Cursor).',
+});
+
+const AGENT_ONLY_COMMANDS = {
+  'spec-review': {
+    message: "'asdlc spec-review' cannot run in a terminal — independent Spec Review requires an AI Agent session (Player ≠ Referee).",
+    hint: 'Open an independent AI Agent session (OpenCode, Claude Code, Antigravity, Cursor) and run: /asdlc-spec-review <changeId_or_PR>',
+  },
+  'impl-review': REVIEW_ENTRY('impl-review'),
+  'pr-review': REVIEW_ENTRY('pr-review'),
+  review: REVIEW_ENTRY('review'),
+  grill: GRILL_ENTRY('grill'),
+  'grill-me': GRILL_ENTRY('grill-me'),
+  'batch-grill-me': GRILL_ENTRY('batch-grill-me'),
+  intake: {
+    message: "'asdlc intake' cannot run standalone in a terminal — external ticket resolution requires an AI Agent session.",
+    hint: 'Run \'/asdlc-new "<requirement>" --from-issue <TICKET>\' inside your AI Agent.',
+  },
+  run: {
+    message: "'asdlc run' is not a standalone CLI command — autonomous stage execution must be driven inside an AI Agent session.",
+    hint: "For PR review, run '/asdlc-impl-review <PR_URL>' in your AI Agent; for local verification gates, run 'asdlc verify <changeId>'.",
+  },
+};
+
 export async function run(argv = process.argv) {
   const program = buildCli();
   program.exitOverride();
+  program.on('command:*', (operands) => {
+    const subcmd = operands?.[0];
+    if (subcmd && Object.prototype.hasOwnProperty.call(AGENT_ONLY_COMMANDS, subcmd)) {
+      const entry = AGENT_ONLY_COMMANDS[subcmd];
+      throw new AsdlcError(entry.message, {
+        code: 'AGENT_RUNTIME_REQUIRED',
+        exitCode: 1,
+        hint: entry.hint,
+      });
+    }
+  });
   try {
     await program.parseAsync(argv);
     return process.exitCode ?? 0;

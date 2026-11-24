@@ -99,3 +99,72 @@ export function readLintConfig(repoRoot) {
     return empty;
   }
 }
+
+/**
+ * Detect whether CLI execution is happening inside an AI Coding Agent, CI, test runner,
+ * or non-interactive piped runtime rather than a bare interactive human terminal.
+ */
+export function isAgentRuntime(opts = {}) {
+  const {
+    env = process.env,
+    stdinIsTTY = Boolean(process.stdin?.isTTY),
+    stdoutIsTTY = Boolean(process.stdout?.isTTY),
+    agent = false,
+    scaffoldOnly = false,
+    guardOnly = false,
+  } = opts;
+
+  const explicitOverride = Boolean(agent || scaffoldOnly || guardOnly);
+  const explicitAgentEnv = env.ASDLC_AGENT === '1' || env.ASDLC_AGENT === 'true';
+
+  if (env.ASDLC_FORCE_INTERACTIVE_TERMINAL === '1') {
+    return explicitOverride || explicitAgentEnv;
+  }
+
+  if (explicitOverride || explicitAgentEnv) return true;
+
+  const hasDedicatedRuntimeEnv = Boolean(
+    env.CLAUDECODE === '1'
+    || env.CLAUDE_CODE_ENTRYPOINT
+    || env.OPENCODE === '1'
+    || env.OPENCODE_AGENT
+    || env.OPENCODE_SESSION
+    || env.CURSOR_AGENT === '1'
+    || env.CI === 'true'
+    || env.CI === '1'
+    || env.GITHUB_ACTIONS === 'true'
+    || env.NODE_TEST_CONTEXT
+  );
+  if (hasDedicatedRuntimeEnv) return true;
+
+  return !stdinIsTTY || !stdoutIsTTY;
+}
+
+const AGENT_REQUIRED_HINTS = {
+  new: {
+    message: "'asdlc new' cannot complete standalone in a bare terminal — spec grilling and authoring require an AI Coding Agent.",
+    hint: `Run '/asdlc-new "<requirement>"' inside your AI Agent (e.g. OpenCode, Claude Code, Antigravity, Cursor), or pass '--scaffold-only' to only scaffold the directory.`,
+  },
+  apply: {
+    message: "'asdlc apply' cannot complete standalone in a bare terminal — the TDD implementation loop and PR comment fixes require an AI Coding Agent.",
+    hint: "Run '/asdlc-apply <changeId>' (or prompt 'fix comments on PR #<N>') inside your AI Agent, or pass '--guard-only' to only check pre-implementation guards.",
+  },
+};
+
+/**
+ * Hard-block hybrid CLI commands when invoked directly in a bare interactive terminal
+ * without an AI Agent runtime or explicit standalone flag.
+ */
+export function requireAgentRuntime(commandName, opts = {}) {
+  if (isAgentRuntime(opts)) return true;
+
+  const entry = AGENT_REQUIRED_HINTS[commandName] ?? {
+    message: `'asdlc ${commandName}' requires an AI Coding Agent session and cannot run standalone in a bare terminal.`,
+    hint: `Run '/asdlc-${commandName}' inside your AI Agent (e.g. OpenCode, Claude Code, Antigravity, Cursor).`,
+  };
+
+  fail(entry.message, {
+    code: 'AGENT_RUNTIME_REQUIRED',
+    hint: entry.hint,
+  });
+}
