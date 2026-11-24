@@ -2,6 +2,13 @@
 
 All notable changes to `@akjamie/agentic-sdlc` are documented in this file.
 
+## [1.11.1] - 2026-11-24
+
+### Added & Changed
+- **Hard-Block Agent-Dependent Commands in Bare Terminal (`AGENT_RUNTIME_REQUIRED`)**: `asdlc new` and `asdlc apply` now detect bare interactive human terminal invocations (`isAgentRuntime()` / `requireAgentRuntime()`) and fail fast with exit code `1` and actionable slash-command hints (`/asdlc-new`, `/asdlc-apply`) unless explicit standalone flags (`--scaffold-only`, `--guard-only`, `--agent`) or an AI Agent/CI/piped runtime are active.
+- **Agent-Only Subcommand Interception**: Intercepts `spec-review`, `impl-review`, `pr-review`, `review`, `grill`, `grill-me`, `batch-grill-me`, `intake`, and `run` via Commander's `command:*` listener with clear Agent guidance while keeping `buildCli().commands` minimal.
+- **CLI vs. Agent Help Clarity**: Tagged the `asdlc --help` flow summary with `[CLI]` vs `[Agent]` markers.
+
 ## [1.11.0] - 2026-11-21
 
 ### Added
