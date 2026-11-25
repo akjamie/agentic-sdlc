@@ -141,9 +141,10 @@ EOF
 
 - **If reviewing locally** (`<CHANGE_ID>` only, no PR): **Print the formatted review markdown directly** in your response and skip `gh pr comment` and Step 6.
 
-Format the comment body strictly as:
+Format the comment body strictly as (keeping the hidden `<!-- asdlc:review-round:<round> -->` anchor on line 1 for deterministic round tracking):
 
 ~~~markdown
+<!-- asdlc:review-round:<round> -->
 ## 🤖 AI Spec Review — `<CHANGE_ID>`
 
 > **Reviewer**: AI Independent Spec Reviewer (`asdlc-spec-review`)

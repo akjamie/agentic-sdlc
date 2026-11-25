@@ -25,7 +25,7 @@ asdlc pr <CHANGE_ID> [targetBranch]
 | PR Type | Track & Moment | Pre-Flight Guard | Auto Labels | Review Automation Trigger |
 | :--- | :--- | :--- | :--- | :--- |
 | **Spec PR** | **Track A** Stage 3 (L2/L3/`spec-first` after drafting proposal & specs) | **`asdlc lint <ID>`**<br>(0 blocking BDD/AC issues) | `asdlc:spec-review`<br>`spec` | Runs `asdlc lint` + routes to **Independent Spec AI Review** (`asdlc-spec-review`) |
-| **Impl / Single PR** | **Track A** Stage 6.5 or **Track B** (L0/L1 Single-PR after TDD & tasks complete) | **`asdlc verify <ID>`**<br>(12 deterministic gates pass) | `asdlc:impl-review`<br>`impl` | Runs `asdlc verify` + routes to **Independent Impl AI Review** (`asdlc-impl-review`) |
+| **Impl / Single PR** | **Track A** Stage 6.5 or **Track B** (L0/L1 Single-PR after TDD & tasks complete) | **`asdlc verify <ID>`**<br>(all verification gates pass) | `asdlc:impl-review`<br>`impl` | Runs `asdlc verify` + routes to **Independent Impl AI Review** (`asdlc-impl-review`) |
 
 ---
 
@@ -44,7 +44,7 @@ asdlc pr <CHANGE_ID> [targetBranch]
 
 2. **Pre-flight Quality Gate**:
    - **Spec PR**: runs `asdlc lint <ID>`. Fails fast if any blocking BDD or acceptance criteria findings exist.
-   - **Impl PR**: runs `asdlc verify <ID>`. Fails fast if any of the 12 verification checks fail.
+   - **Impl PR**: runs `asdlc verify <ID>`. Fails fast if any verification checks fail.
 
 3. **Title & Body Extraction**:
    - **Spec PR**: derives clean title (`spec(<slug>): <title>`) and embeds proposal intent.

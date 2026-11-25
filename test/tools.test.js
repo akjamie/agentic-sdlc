@@ -167,6 +167,33 @@ test('tools: installCommands installs slash commands with tool-native extensions
   const geminiContent = fs.readFileSync(geminiCmd, 'utf8');
   assert.ok(geminiContent.includes('description ='));
   assert.ok(geminiContent.includes('prompt ='));
+
+  // 7. Review slash commands installed across tools
+  assert.ok(fs.existsSync(path.join(repo, '.claude', 'commands', 'asdlc-spec-review.md')));
+  assert.ok(fs.existsSync(path.join(repo, '.claude', 'commands', 'asdlc-impl-review.md')));
+  assert.ok(fs.existsSync(path.join(repo, '.opencode', 'commands', 'asdlc-spec-review.md')));
+  assert.ok(fs.existsSync(path.join(repo, '.opencode', 'commands', 'asdlc-impl-review.md')));
+  assert.ok(fs.existsSync(path.join(repo, '.github', 'prompts', 'asdlc-impl-review.prompt.md')));
+  assert.ok(fs.existsSync(path.join(repo, '.gemini', 'commands', 'asdlc', 'asdlc-impl-review.toml')));
+});
+
+test('tools: bundled skills & commands align with --agent, --from-pr, review-round anchor, --metrics, and anti-test-weakening', () => {
+  const root = path.resolve('.');
+  const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
+
+  assert.match(read('assets/skills/asdlc-new/SKILL.md'), /--agent/);
+  assert.match(read('assets/commands/asdlc-new.md'), /--agent/);
+  assert.match(read('assets/skills/asdlc-apply/SKILL.md'), /--agent/);
+  assert.match(read('assets/skills/asdlc-apply/SKILL.md'), /--from-pr/);
+  assert.match(read('assets/skills/asdlc-apply/SKILL.md'), /asdlc:needs-human-arbitration/);
+  assert.match(read('assets/commands/asdlc-apply.md'), /--agent/);
+  assert.match(read('assets/commands/asdlc-apply.md'), /--from-pr/);
+  assert.match(read('assets/skills/asdlc-impl-review/SKILL.md'), /<!-- asdlc:review-round:<round> -->/);
+  assert.match(read('assets/skills/asdlc-spec-review/SKILL.md'), /<!-- asdlc:review-round:<round> -->/);
+  assert.match(read('assets/skills/asdlc-status/SKILL.md'), /--metrics/);
+  assert.match(read('assets/commands/asdlc-status.md'), /--metrics/);
+  assert.match(read('assets/skills/asdlc-verify/SKILL.md'), /anti-test-weakening/);
+  assert.match(read('assets/commands/asdlc-verify.md'), /anti-test-weakening/);
 });
 
 test('tools: checkToolHealth audits skills and slash commands presence', () => {

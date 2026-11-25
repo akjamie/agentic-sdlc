@@ -10,7 +10,7 @@ Start a new spec-driven change in the repository using the Agentic SDLC workflow
 ## Usage
 
 ```bash
-asdlc new "<requirement>" [--from-file <path>] [--from-issue <id> | --ticket <id>] [--batch-grill] [--no-grill]
+asdlc new "<requirement>" --agent [--from-file <path>] [--from-issue <id> | --ticket <id>] [--batch-grill] [--no-grill]
 ```
 
 ## Workflow Sequence

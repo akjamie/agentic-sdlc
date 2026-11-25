@@ -15,9 +15,13 @@ asdlc status [--json]
 
 # Single change status
 asdlc status <CHANGE_ID> [--json]
+
+# Team governance & gate friction metrics (last 30 days by default)
+asdlc status --metrics [--days <count>] [--json]
 ```
 
 ## Output
 
 - In portfolio mode: outputs compact single-line table with `CHANGE`, `LEVEL`, `STAGE`, and `NEXT COMMAND` (strictly excludes archived changes).
 - In single-change mode: outputs completed artifacts, stage progression, and next exact command.
+- In `--metrics` mode: outputs local gate friction leaderboard (`.sdlc/events.jsonl`), 3-round PR convergence rates, stage lead times (P50/P90), and L0–L3 risk tier breakdown.
