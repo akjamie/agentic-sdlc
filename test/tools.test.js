@@ -247,3 +247,37 @@ test('doctor: reports per-tool status and remediates with --fix', () => {
     process.stdout.write = origWrite;
   }
 });
+
+test('WP4 checkToolHealth: detects missing commands and stale SKILL.md while ignoring CRLF vs LF differences', () => {
+  const repo = tmpRepo();
+  fs.mkdirSync(path.join(repo, '.claude'));
+  installSkills(repo, ['claude']);
+  installCommands(repo, ['claude']);
+
+  // 1. Healthy baseline
+  const clean = checkToolHealth(repo, 'claude');
+  assert.equal(clean.status, 'pass');
+  assert.deepEqual(clean.drift.missingCommands, []);
+  assert.deepEqual(clean.drift.staleSkills, []);
+
+  // 2. CRLF line-ending differences must NOT trigger false-positive drift
+  const installedApply = path.join(repo, '.claude', 'skills', 'asdlc-apply', 'SKILL.md');
+  const crlfText = fs.readFileSync(installedApply, 'utf8').replace(/\r?\n/g, '\r\n');
+  fs.writeFileSync(installedApply, crlfText);
+  assert.equal(checkToolHealth(repo, 'claude').status, 'pass');
+
+  // 3. Real content drift or missing slash command triggers warn
+  fs.writeFileSync(installedApply, '# Outdated SKILL.md\n');
+  fs.unlinkSync(path.join(repo, '.claude', 'commands', 'asdlc-impl-review.md'));
+  const drifted = checkToolHealth(repo, 'claude');
+  assert.equal(drifted.status, 'warn');
+  assert.ok(drifted.drift.staleSkills.includes('asdlc-apply'));
+  assert.ok(drifted.drift.missingCommands.includes('asdlc-impl-review.md'));
+});
+
+test('WP3 assets/templates/asdlc-ai-review.yml: exists as opt-in template for GitHub Actions', () => {
+  const wf = fs.readFileSync(path.resolve('assets', 'templates', 'asdlc-ai-review.yml'), 'utf8');
+  assert.match(wf, /asdlc:spec-review/);
+  assert.match(wf, /asdlc:impl-review/);
+  assert.match(wf, /asdlc verify/);
+});

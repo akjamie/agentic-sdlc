@@ -7,6 +7,7 @@ import { assess } from '../assess/index.js';
 import { resolveWorkflowMode } from '../lib/config.js';
 import { log, dim } from '../lib/log.js';
 import { recordEvent, getChangeIteration, writeGitHubStepSummary } from '../lib/telemetry.js';
+import { generateTasksFromSpecs } from '../lib/tasks-gen.js';
 
 // THE spec check (v10: lint absorbed review). Deterministic:
 //   - required artifacts (explore.md + proposal.md + >=1 spec delta)
@@ -242,6 +243,13 @@ export function runLint(changeId, opts = {}) {
   }
   add('BDD + acceptance criteria', blockers === 0 ? 'pass' : 'fail', bddDetail);
 
+  if (opts.genTasks && blockers === 0) {
+    const gen = generateTasksFromSpecs(repoRoot, slug);
+    if (gen.generated && !opts.json) {
+      log.ok(`generated tasks.md (${gen.taskCount} TDD tasks from ${gen.acCount} spec AC(s))`);
+    }
+  }
+
   return finish(results, { json: opts.json, changeId: slug, repoRoot, startTime, iteration });
 }
 
@@ -251,6 +259,7 @@ export function register(program) {
     .description('check the spec: artifacts + review record + BDD/acceptance criteria')
     .option('--repo-root <path>')
     .option('--mode <mode>', 'workflow mode: supervised (default) | spec-first | auto')
+    .option('--gen-tasks', 'auto-generate tasks.md from spec ACs if missing and lint passes')
     .option('--json', 'stable JSON output for CI')
     .action((changeId, opts) => {
       process.exitCode = runLint(changeId, opts);

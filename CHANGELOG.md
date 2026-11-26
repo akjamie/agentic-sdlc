@@ -2,12 +2,14 @@
 
 All notable changes to `@akjamie/agentic-sdlc` are documented in this file.
 
-## [1.11.2] - 2026-11-26
+## [1.12.0] - 2026-11-26
 
 ### Added & Changed
-- **Skills & Slash Commands Protocol Alignment**: Added `Workflow B: Autonomous PR Review Feedback Loop (--from-pr)` to `asdlc-apply`, embedded `<!-- asdlc:review-round:<round> -->` anchors and formal GitHub PR Review API guidance into `asdlc-impl-review` / `asdlc-spec-review`, and aligned `--agent` runtime flags in `asdlc-new` and `asdlc-apply`.
-- **New Review Slash Commands**: Added `assets/commands/asdlc-spec-review.md` and `assets/commands/asdlc-impl-review.md` across supported AI tools.
-- **Docs & Gates Sync**: Added `asdlc status --metrics` documentation to `asdlc-status`, updated `asdlc-verify` and `asdlc-pr` to reflect `anti-test-weakening` and `acceptance-tests` gates, and fixed `asdlc-new` frontmatter description.
+- **Spec-to-Tasks Auto-Compiler (WP1)**: Extracted shared `parseSpecAcceptanceCriteria` into `src/lib/tasks-gen.js` and added `generateTasksFromSpecs()` (`asdlc lint --gen-tasks` and fallback in `asdlc apply`), compiling `[TEST]`/`[IMPL]` TDD pairs and UI foundation tasks from spec ACs while preserving existing non-empty `tasks.md` files.
+- **CLI PR Triage & Circuit Breaker Execution (WP2)**: Wired `checkAntiThrashingCircuitBreaker()` (`exitCode = 2` on `round > 3` with synthesis report & `asdlc:needs-human-arbitration`), structured thread output, `--json`, and `--resolve-thread` / `--dispute` GraphQL execution into `asdlc apply --from-pr`.
+- **Formal GitHub PR Review Payload & CI Reference Template (WP3)**: Added `gh api .../reviews --input -` inline-comment JSON payload to `asdlc-impl-review` and added `assets/templates/asdlc-ai-review.yml` reference workflow.
+- **Skill & Command Drift Detection (WP4)**: Enhanced `checkToolHealth()` in `src/lib/tools.js` to detect missing commands, missing/stale `SKILL.md` (CRLF-normalized), and deprecated skills for `asdlc doctor` / `asdlc doctor --fix`.
+- **Skills & Slash Commands Protocol Alignment**: Added `Workflow B (--from-pr)` to `asdlc-apply`, embedded `<!-- asdlc:review-round:<round> -->` anchors in review templates, aligned `--agent` flags, added `asdlc-spec-review.md` & `asdlc-impl-review.md` slash commands, and documented `asdlc status --metrics` and `anti-test-weakening`.
 
 ## [1.11.1] - 2026-11-24
 

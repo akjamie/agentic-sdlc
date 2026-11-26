@@ -1,0 +1,55 @@
+name: ASDLC Governance & AI Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, labeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+jobs:
+  asdlc-gates:
+    name: ASDLC Deterministic Gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Install agentic-sdlc
+        run: npm install -g @akjamie/agentic-sdlc@latest
+
+      - name: Detect active change and run Spec/Impl gates
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          LABELS='${{ join(github.event.pull_request.labels.*.name, ',') }}'
+          CHANGE_ID=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -oE 'openspec/changes/[^/]+' | grep -v '/archive$' | head -n1 | cut -d/ -f3 || true)
+          if [ -z "$CHANGE_ID" ]; then
+            echo "No openspec/changes/<id> touched; skipping asdlc gate."
+            exit 0
+          fi
+          if echo "$LABELS" | grep -q "asdlc:spec-review"; then
+            asdlc lint "$CHANGE_ID"
+          fi
+          if echo "$LABELS" | grep -q "asdlc:impl-review"; then
+            asdlc verify "$CHANGE_ID" --protected-branch "origin/${{ github.base_ref }}"
+          fi
+
+      # Optional: configure repository variable ASDLC_AI_REVIEW_CMD + LLM secret to run a headless review agent
+      - name: Optional Headless AI Review Runner
+        if: ${{ vars.ASDLC_AI_REVIEW_CMD != '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          ${{ vars.ASDLC_AI_REVIEW_CMD }}

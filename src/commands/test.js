@@ -6,30 +6,9 @@ import { runShell } from '../lib/exec.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
 import { readYaml } from '../lib/yaml.js';
+import { parseSpecAcceptanceCriteria } from '../lib/tasks-gen.js';
 
-export function parseSpecAcceptanceCriteria(specText) {
-  const acs = [];
-  const lines = specText.split('\n');
-  let currentReq = '';
-
-  for (const line of lines) {
-    const reqMatch = line.match(/^###\s+Requirement:\s*(.+?)\s*$/);
-    if (reqMatch) {
-      currentReq = reqMatch[1];
-      continue;
-    }
-    const acMatch = line.match(/^\s*-\s*\[[ xX]\]\s*(AC\d+)\s*:\s*(.+)$/);
-    if (!acMatch) continue;
-    const testMatch = line.match(/\(test:\s*([^)]+?)\s*\)/i);
-    acs.push({
-      id: acMatch[1],
-      requirement: currentReq,
-      text: acMatch[2].replace(/\(test:.*$/i, '').trim(),
-      testPath: testMatch ? testMatch[1].trim() : null,
-    });
-  }
-  return acs;
-}
+export { parseSpecAcceptanceCriteria };
 
 export function runTests(changeId, opts = {}) {
   const repoRoot = requireRepo(opts);
