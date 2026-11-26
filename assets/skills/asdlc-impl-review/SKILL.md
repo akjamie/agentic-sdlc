@@ -227,7 +227,27 @@ Every finding must follow a structured schema with explicit defect attribution s
 
 Compose the review using the markdown format below, then deliver it according to the invocation mode:
 
-- **If reviewing a PR** (PR URL, PR number, or CI PR trigger): **Post the comment directly** without asking the user for confirmation:
+- **If reviewing a PR** (PR URL, PR number, or CI PR trigger): **Post the review directly** without asking the user for confirmation:
+  - **Preferred (when inline file/line findings exist or reviewing a teammate's PR)**: Submit a formal GitHub PR Review via `gh api repos/$REPO/pulls/$PR_NUMBER/reviews --input -` (note: GitHub forbids `APPROVE`/`REQUEST_CHANGES` on your own PR — in that case, use `event: "COMMENT"` or fall back to `gh pr comment`):
+
+```bash
+gh api repos/$REPO/pulls/$PR_NUMBER/reviews --input - <<'EOF'
+{
+  "commit_id": "<headRefOid>",
+  "event": "REQUEST_CHANGES",
+  "body": "<!-- asdlc:review-round:<round> -->\n## 🤖 AI Implementation Review — `<CHANGE_ID>`\n...",
+  "comments": [
+    {
+      "path": "src/example.js",
+      "line": 42,
+      "side": "RIGHT",
+      "body": "**[Blocker: Introduced]** `R<round>-#1`: <defect and required fix>"
+    }
+  ]
+}
+EOF
+```
+  - **Standard / Fallback**: Post the structured review as a PR comment:
 
 ```bash
 gh pr comment $PR_NUMBER --repo $REPO --body "$(cat <<'EOF'
@@ -238,9 +258,10 @@ EOF
 
 - **If reviewing locally** (`<CHANGE_ID>` only, no PR): **Print the formatted review markdown directly** in your response and skip `gh pr comment` and Step 6.
 
-Format the comment body strictly as:
+Format the comment body strictly as (keeping the hidden `<!-- asdlc:review-round:<round> -->` anchor on line 1 for deterministic triage round tracking):
 
 ~~~markdown
+<!-- asdlc:review-round:<round> -->
 ## 🤖 AI Implementation Review — `<CHANGE_ID>`
 
 > **Reviewer**: AI Independent Implementation Reviewer (`asdlc-impl-review`)

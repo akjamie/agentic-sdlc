@@ -1,6 +1,6 @@
 ---
 name: asdlc-new
-description: "Start a new spec-driven change: derives change slug from natural language requirement, grounds in knowledge graph (explore.md), runs batch-grill-me interview, and drafts initial proposal, technical design (design.md), and spec deltas."
+description: "Start a new spec-driven change: derives change slug from natural language requirement, grounds in knowledge graph (explore.md), runs grill-me (or --batch-grill) interview, and drafts initial proposal, technical design (design.md), and spec deltas."
 ---
 
 # /asdlc:new - Start Feature & Batch-Grill Author
@@ -33,7 +33,7 @@ When the user invokes `/asdlc:new` or provides a task with `--from-file`/`--file
 When the grounded requirement is established:
 
 ```powershell
-asdlc new "<requirement>" [--from-file <path>] [--from-issue <id> | --ticket <id>] [--batch-grill] [--no-grill]
+asdlc new "<requirement>" --agent [--from-file <path>] [--from-issue <id> | --ticket <id>] [--batch-grill] [--no-grill]
 ```
 
 The CLI:

@@ -167,6 +167,33 @@ test('tools: installCommands installs slash commands with tool-native extensions
   const geminiContent = fs.readFileSync(geminiCmd, 'utf8');
   assert.ok(geminiContent.includes('description ='));
   assert.ok(geminiContent.includes('prompt ='));
+
+  // 7. Review slash commands installed across tools
+  assert.ok(fs.existsSync(path.join(repo, '.claude', 'commands', 'asdlc-spec-review.md')));
+  assert.ok(fs.existsSync(path.join(repo, '.claude', 'commands', 'asdlc-impl-review.md')));
+  assert.ok(fs.existsSync(path.join(repo, '.opencode', 'commands', 'asdlc-spec-review.md')));
+  assert.ok(fs.existsSync(path.join(repo, '.opencode', 'commands', 'asdlc-impl-review.md')));
+  assert.ok(fs.existsSync(path.join(repo, '.github', 'prompts', 'asdlc-impl-review.prompt.md')));
+  assert.ok(fs.existsSync(path.join(repo, '.gemini', 'commands', 'asdlc', 'asdlc-impl-review.toml')));
+});
+
+test('tools: bundled skills & commands align with --agent, --from-pr, review-round anchor, --metrics, and anti-test-weakening', () => {
+  const root = path.resolve('.');
+  const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
+
+  assert.match(read('assets/skills/asdlc-new/SKILL.md'), /--agent/);
+  assert.match(read('assets/commands/asdlc-new.md'), /--agent/);
+  assert.match(read('assets/skills/asdlc-apply/SKILL.md'), /--agent/);
+  assert.match(read('assets/skills/asdlc-apply/SKILL.md'), /--from-pr/);
+  assert.match(read('assets/skills/asdlc-apply/SKILL.md'), /asdlc:needs-human-arbitration/);
+  assert.match(read('assets/commands/asdlc-apply.md'), /--agent/);
+  assert.match(read('assets/commands/asdlc-apply.md'), /--from-pr/);
+  assert.match(read('assets/skills/asdlc-impl-review/SKILL.md'), /<!-- asdlc:review-round:<round> -->/);
+  assert.match(read('assets/skills/asdlc-spec-review/SKILL.md'), /<!-- asdlc:review-round:<round> -->/);
+  assert.match(read('assets/skills/asdlc-status/SKILL.md'), /--metrics/);
+  assert.match(read('assets/commands/asdlc-status.md'), /--metrics/);
+  assert.match(read('assets/skills/asdlc-verify/SKILL.md'), /anti-test-weakening/);
+  assert.match(read('assets/commands/asdlc-verify.md'), /anti-test-weakening/);
 });
 
 test('tools: checkToolHealth audits skills and slash commands presence', () => {
@@ -219,4 +246,38 @@ test('doctor: reports per-tool status and remediates with --fix', () => {
   } finally {
     process.stdout.write = origWrite;
   }
+});
+
+test('WP4 checkToolHealth: detects missing commands and stale SKILL.md while ignoring CRLF vs LF differences', () => {
+  const repo = tmpRepo();
+  fs.mkdirSync(path.join(repo, '.claude'));
+  installSkills(repo, ['claude']);
+  installCommands(repo, ['claude']);
+
+  // 1. Healthy baseline
+  const clean = checkToolHealth(repo, 'claude');
+  assert.equal(clean.status, 'pass');
+  assert.deepEqual(clean.drift.missingCommands, []);
+  assert.deepEqual(clean.drift.staleSkills, []);
+
+  // 2. CRLF line-ending differences must NOT trigger false-positive drift
+  const installedApply = path.join(repo, '.claude', 'skills', 'asdlc-apply', 'SKILL.md');
+  const crlfText = fs.readFileSync(installedApply, 'utf8').replace(/\r?\n/g, '\r\n');
+  fs.writeFileSync(installedApply, crlfText);
+  assert.equal(checkToolHealth(repo, 'claude').status, 'pass');
+
+  // 3. Real content drift or missing slash command triggers warn
+  fs.writeFileSync(installedApply, '# Outdated SKILL.md\n');
+  fs.unlinkSync(path.join(repo, '.claude', 'commands', 'asdlc-impl-review.md'));
+  const drifted = checkToolHealth(repo, 'claude');
+  assert.equal(drifted.status, 'warn');
+  assert.ok(drifted.drift.staleSkills.includes('asdlc-apply'));
+  assert.ok(drifted.drift.missingCommands.includes('asdlc-impl-review.md'));
+});
+
+test('WP3 assets/templates/asdlc-ai-review.yml: exists as opt-in template for GitHub Actions', () => {
+  const wf = fs.readFileSync(path.resolve('assets', 'templates', 'asdlc-ai-review.yml'), 'utf8');
+  assert.match(wf, /asdlc:spec-review/);
+  assert.match(wf, /asdlc:impl-review/);
+  assert.match(wf, /asdlc verify/);
 });

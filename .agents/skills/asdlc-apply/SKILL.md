@@ -22,7 +22,7 @@ This skill executes **Stage 5 (Apply)** of the Agentic SDLC. It enforces strict 
 Before editing any implementation or test code, run the apply guard:
 
 ```powershell
-asdlc apply <CHANGE_ID> [--auto-pr] [--target-branch <ref>]
+asdlc apply <CHANGE_ID> [--auto-pr] [--target-branch <ref>] --agent
 ```
 
 `asdlc apply` deterministically verifies Git-anchored preconditions:
@@ -123,7 +123,7 @@ If any check fails, resolve the issue locally within the TDD loop and re-run `as
 
 ### Step 5: Implementation Complete & Submission Protocol (Dual-Mode Authority)
 
-Once all tasks in `tasks.md` are marked complete with captured evidence and local `asdlc verify <CHANGE_ID>` passes (all 12 verification gates exit 0), determine the submission path based on explicit authority:
+Once all tasks in `tasks.md` are marked complete with captured evidence and local `asdlc verify <CHANGE_ID>` passes (all verification gates exit 0), determine the submission path based on explicit authority:
 
 #### Path A: Default Local Mode (Safe Default, `autoPr: false` or unspecified)
 > [!CAUTION]
@@ -151,3 +151,24 @@ Once all tasks in `tasks.md` are marked complete with captured evidence and loca
 >    asdlc pr <CHANGE_ID> <targetBranch>
 >    ```
 > 3. Provide the resulting PR link to the user and announce readiness for AI / Human Implementation Review.
+
+---
+
+## Workflow B: Autonomous PR Review Feedback Loop (`--from-pr`)
+
+When the user asks to fix PR review comments (e.g., `"fix comments on PR #44"` or `/asdlc:apply <CHANGE_ID> --from-pr 44`), execute the 4-way semantic triage protocol:
+
+1. **Fetch & Triage Unresolved Threads**:
+   ```powershell
+   asdlc apply <CHANGE_ID> --from-pr #<PR_NUMBER> --agent
+   ```
+   This fetches GraphQL `reviewThreads`, PR comments, and `reviewDecision`, and computes the current round (`Round <N> of 3`) from `<!-- asdlc:review-round:<N> -->` anchors and `(ref: #PRRT_...)` commit trailers.
+2. **Execute Per-Category Actions**:
+   - **`SUGGESTION_BLOCK` (Category B)**: Apply the exact ```suggestion diff, run tests, commit with `fix(review): <summary> (ref: #<threadId>)`, and resolve the thread with the commit SHA.
+   - **`ACTION_REQUIRED` (Category A)**: Enter the TDD loop (add/update test assertions, fix implementation, run `asdlc verify <CHANGE_ID>`), commit with `(ref: #<threadId>)`, and reply with the commit SHA before resolving.
+   - **`INFORMATIONAL_QUESTION` (Category C)**: Formulate a technical answer grounded in `design.md` / `specs/**` and reply directly to the thread. **Do NOT mutate code and do NOT resolve the thread.**
+   - **`NON_ACTIONABLE` (Category D)**: Safely ignore pure praise/acknowledgments without empty commits.
+3. **Constitutional Guard (`SPEC_CONFLICT` / Disputed Threads)**:
+   - If a review comment contradicts the locked (`specSha`) specification in `proposal.md` or `specs/**`:
+   - **STRICTLY FORBIDDEN** from editing locked specs or self-resolving the thread (`Player != Referee`).
+   - Reply citing the exact approved spec section, leave the thread **unresolved** (`disputed: true`), and attach the `asdlc:needs-human-arbitration` label so the human Tech Lead arbitrates.

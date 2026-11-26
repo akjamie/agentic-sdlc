@@ -2,6 +2,15 @@
 
 All notable changes to `@akjamie/agentic-sdlc` are documented in this file.
 
+## [1.12.0] - 2026-11-26
+
+### Added & Changed
+- **Spec-to-Tasks Auto-Compiler (WP1)**: Extracted shared `parseSpecAcceptanceCriteria` into `src/lib/tasks-gen.js` and added `generateTasksFromSpecs()` (`asdlc lint --gen-tasks` and fallback in `asdlc apply`), compiling `[TEST]`/`[IMPL]` TDD pairs and UI foundation tasks from spec ACs while preserving existing non-empty `tasks.md` files.
+- **CLI PR Triage & Circuit Breaker Execution (WP2)**: Wired `checkAntiThrashingCircuitBreaker()` (`exitCode = 2` on `round > 3` with synthesis report & `asdlc:needs-human-arbitration`), structured thread output, `--json`, and `--resolve-thread` / `--dispute` GraphQL execution into `asdlc apply --from-pr`.
+- **Formal GitHub PR Review Payload & CI Reference Template (WP3)**: Added `gh api .../reviews --input -` inline-comment JSON payload to `asdlc-impl-review` and added `assets/templates/asdlc-ai-review.yml` reference workflow.
+- **Skill & Command Drift Detection (WP4)**: Enhanced `checkToolHealth()` in `src/lib/tools.js` to detect missing commands, missing/stale `SKILL.md` (CRLF-normalized), and deprecated skills for `asdlc doctor` / `asdlc doctor --fix`.
+- **Skills & Slash Commands Protocol Alignment**: Added `Workflow B (--from-pr)` to `asdlc-apply`, embedded `<!-- asdlc:review-round:<round> -->` anchors in review templates, aligned `--agent` flags, added `asdlc-spec-review.md` & `asdlc-impl-review.md` slash commands, and documented `asdlc status --metrics` and `anti-test-weakening`.
+
 ## [1.11.1] - 2026-11-24
 
 ### Added & Changed

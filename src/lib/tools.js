@@ -285,8 +285,12 @@ export function installCommands(repoRoot, tools = []) {
   }
 }
 
+function normalizeLf(text) {
+  return String(text ?? '').replace(/\r\n/g, '\n');
+}
+
 /**
- * Audit tool health for asdlc doctor
+ * Audit tool health for asdlc doctor (checks presence and normalized skill/command drift)
  */
 export function checkToolHealth(repoRoot, toolId) {
   const def = TOOL_REGISTRY[toolId];
@@ -295,21 +299,63 @@ export function checkToolHealth(repoRoot, toolId) {
   const skillsPath = path.join(repoRoot, def.skillsDir);
   const commandsPath = path.join(repoRoot, def.commandsDir);
 
-  const skillsOk = exists(skillsPath) && listDir(skillsPath).length > 0;
-  const commandsOk = exists(commandsPath) && listDir(commandsPath).length > 0;
+  const missingCommands = [];
+  if (exists(commandsAssetDir)) {
+    const bundledCommands = listDir(commandsAssetDir).filter((f) => !f.isDirectory() && f.name.endsWith('.md'));
+    for (const cmd of bundledCommands) {
+      const baseName = cmd.name.replace(/\.md$/, '');
+      if (!exists(path.join(commandsPath, `${baseName}${def.commandExt}`))) {
+        missingCommands.push(`${baseName}${def.commandExt}`);
+      }
+    }
+  }
+
+  const missingSkills = [];
+  const staleSkills = [];
+  const deprecatedSkills = [];
+  if (exists(skillsAssetDir)) {
+    const bundledSkills = listDir(skillsAssetDir).filter((d) => d.isDirectory()).map((d) => d.name);
+    for (const skillName of bundledSkills) {
+      const bundledFile = path.join(skillsAssetDir, skillName, 'SKILL.md');
+      const installedFile = path.join(skillsPath, skillName, 'SKILL.md');
+      if (!exists(installedFile)) {
+        missingSkills.push(skillName);
+      } else if (exists(bundledFile) && normalizeLf(readText(installedFile)) !== normalizeLf(readText(bundledFile))) {
+        staleSkills.push(skillName);
+      }
+    }
+    for (const dep of DEPRECATED_SKILLS) {
+      if (exists(path.join(skillsPath, dep))) {
+        deprecatedSkills.push(dep);
+      }
+    }
+  }
+
+  const hasSkillsDir = exists(skillsPath) && listDir(skillsPath).length > 0;
+  const hasCommandsDir = exists(commandsPath) && listDir(commandsPath).length > 0;
+  const skillsOk = hasSkillsDir && missingSkills.length === 0 && staleSkills.length === 0 && deprecatedSkills.length === 0;
+  const commandsOk = hasCommandsDir && missingCommands.length === 0;
 
   let status = 'pass';
   let detail = `skills + commands installed (${def.commandsDir})`;
 
-  if (!skillsOk && !commandsOk) {
+  if (!hasSkillsDir && !hasCommandsDir) {
     status = 'warn';
     detail = 'missing skills and commands (run `asdlc init`)';
-  } else if (!skillsOk) {
+  } else if (!hasSkillsDir) {
     status = 'warn';
     detail = `missing skills in ${def.skillsDir} (run 'asdlc init')`;
-  } else if (!commandsOk) {
+  } else if (!hasCommandsDir) {
     status = 'warn';
     detail = `missing commands in ${def.commandsDir} (run 'asdlc init')`;
+  } else if (!skillsOk || !commandsOk) {
+    status = 'warn';
+    const reasons = [];
+    if (missingCommands.length > 0) reasons.push(`${missingCommands.length} missing command(s)`);
+    if (missingSkills.length > 0) reasons.push(`${missingSkills.length} missing skill(s)`);
+    if (staleSkills.length > 0) reasons.push(`${staleSkills.length} stale skill(s)`);
+    if (deprecatedSkills.length > 0) reasons.push(`${deprecatedSkills.length} deprecated skill(s)`);
+    detail = `stale or missing skills/commands (${reasons.join(', ')}; run 'asdlc update' or 'asdlc doctor --fix')`;
   }
 
   return {
@@ -319,5 +365,6 @@ export function checkToolHealth(repoRoot, toolId) {
     detail,
     skillsOk,
     commandsOk,
+    drift: { missingCommands, missingSkills, staleSkills, deprecatedSkills },
   };
 }

@@ -205,3 +205,74 @@ test('§6.3 computeReviewRound: parses formal review anchors and falls back to c
   // 3. Clean default
   assert.equal(computeReviewRound(), 1);
 });
+
+test('WP2 applyGuard --from-pr: trips Anti-Thrashing Circuit Breaker with exitCode 2 when round > 3, and supports --resolve-thread / --dispute', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { execFileSync } = await import('node:child_process');
+  const { applyGuard } = await import('../src/commands/apply.js');
+
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'asdlc-wp2-'));
+  execFileSync('git', ['init', '-b', 'main'], { cwd: repo });
+  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repo });
+  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repo });
+  const cdir = path.join(repo, 'openspec', 'changes', 'fix-pr');
+  fs.mkdirSync(path.join(cdir, 'specs', 'core'), { recursive: true });
+  fs.writeFileSync(path.join(cdir, '.openspec.yaml'), 'schema: agentic-repo-change\nlevel: L1\nstatus: ready_for_impl\n');
+  fs.writeFileSync(path.join(cdir, 'tasks.md'), '- [x] 1.1 Done\n');
+  execFileSync('git', ['add', '.'], { cwd: repo });
+  execFileSync('git', ['commit', '-m', 'init'], { cwd: repo });
+
+  const prContext = {
+    reviewDecision: 'CHANGES_REQUESTED',
+    issueComments: [{ body: '<!-- asdlc:review-round:4 -->' }],
+    reviewThreads: [
+      {
+        id: 'PRRT_99',
+        isResolved: false,
+        path: 'src/app.js',
+        line: 10,
+        comments: { nodes: [{ author: { login: 'reviewer' }, body: 'Please fix null check' }] },
+      },
+    ],
+  };
+
+  let out = '';
+  const origOut = process.stdout.write;
+  const origErr = process.stderr.write;
+  try {
+    process.stdout.write = (c) => { out += c; return true; };
+    process.stderr.write = (c) => { out += c; return true; };
+    const exitBreaker = applyGuard('fix-pr', {
+      repoRoot: repo,
+      protectedBranch: 'main',
+      fromPr: '44',
+      prContext,
+      json: true,
+    });
+    assert.equal(exitBreaker, 2);
+    const parsed = JSON.parse(out);
+    assert.equal(parsed.circuitBreaker.tripped, true);
+    assert.equal(parsed.circuitBreaker.label, 'asdlc:needs-human-arbitration');
+
+    out = '';
+    const exitDispute = applyGuard('fix-pr', {
+      repoRoot: repo,
+      protectedBranch: 'main',
+      fromPr: '44',
+      prContext,
+      resolveThread: 'PRRT_99',
+      dispute: 'Spec AC1 mandates null rejection',
+      dryRun: true,
+      json: true,
+    });
+    assert.equal(exitDispute, 0);
+    const disputeJson = JSON.parse(out);
+    assert.equal(disputeJson.resolutionPlan.shouldResolve, false);
+    assert.equal(disputeJson.resolutionPlan.resolveMutation, null);
+  } finally {
+    process.stdout.write = origOut;
+    process.stderr.write = origErr;
+  }
+});

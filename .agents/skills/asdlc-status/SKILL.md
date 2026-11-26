@@ -47,3 +47,18 @@ Render a dashboard of all active changes:
 ```
 
 Offer to drill down into any change or start a new one with `/asdlc:new "<requirement>"`.
+
+---
+
+### Case C: Team Governance & Observability Metrics (`/asdlc:status --metrics`)
+Run:
+
+```powershell
+asdlc status --metrics [--days 30] [--json]
+```
+
+Displays the **ASDLC Harness Observability** dashboard:
+1. **Gate Friction Leaderboard**: Top local gate failures & failure patterns from `.sdlc/events.jsonl`.
+2. **Autonomous PR Convergence (3-Round Cap)**: Round 1/2/3 pass rates and human escalations derived from Git archive history and `(ref: #PRRT_...)` commit trailers.
+3. **Stage Lead Time (P50 / P90)**: Spec phase (`new -> approve`) and TDD phase (`apply -> verify`) durations via Git provenance.
+4. **Risk Tier Breakdown**: Count of `L0`–`L3` changes tracked over the selected window.

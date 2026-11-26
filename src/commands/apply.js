@@ -3,15 +3,60 @@ import { spawnSync } from 'node:child_process';
 import { Option } from 'commander';
 import { exists, readText, writeText } from '../lib/fs.js';
 import { changeDir } from '../lib/paths.js';
-import { requireRepo, toChangeSlug, requireAgentRuntime } from '../lib/cliutil.js';
-import { lastCommitTouching, git, resolveDefaultBranch } from '../lib/git.js';
+import { requireRepo, toChangeSlug, requireAgentRuntime, jsonOut } from '../lib/cliutil.js';
+import { lastCommitTouching, git, resolveDefaultBranch, headSha } from '../lib/git.js';
 import { fail } from '../lib/errors.js';
 import { log } from '../lib/log.js';
 import { isSinglePrLevel, readEffectiveLevel } from '../lib/level.js';
 import { resolveWorkflowMode } from '../lib/config.js';
 import { assess } from '../assess/index.js';
-import { triagePullRequest, PULL_REQUEST_THREADS_QUERY } from '../lib/triage.js';
+import {
+  triagePullRequest,
+  PULL_REQUEST_THREADS_QUERY,
+  checkAntiThrashingCircuitBreaker,
+  buildThreadResolutionPlan,
+} from '../lib/triage.js';
 import { recordEvent } from '../lib/telemetry.js';
+import { generateTasksFromSpecs } from '../lib/tasks-gen.js';
+
+function runGhGraphql(repoRoot, mutation) {
+  return spawnSync('gh', [
+    'api', 'graphql',
+    '-f', `query=${mutation.query}`,
+    ...Object.entries(mutation.variables || {}).flatMap(([k, v]) => ['-F', `${k}=${v}`]),
+  ], { cwd: repoRoot, encoding: 'utf8', timeout: 8000 });
+}
+
+function postBreakerEscalation(repoRoot, prRef, breaker) {
+  spawnSync('gh', ['pr', 'comment', prRef, '--body', breaker.synthesisReport], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    timeout: 8000,
+  });
+  spawnSync('gh', ['pr', 'edit', prRef, '--add-label', breaker.label], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    timeout: 8000,
+  });
+}
+
+function printTriageThreads(triage, prRef) {
+  const sections = [
+    ['SUGGESTION_BLOCK', triage.suggestionThreads],
+    ['ACTION_REQUIRED', triage.actionableThreads],
+    ['INFORMATIONAL_QUESTION', triage.questionThreads],
+  ];
+  for (const [label, threads] of sections) {
+    for (const t of threads) {
+      const loc = t.path ? `${t.path}${t.line ? `:${t.line}` : ''}` : 'PR';
+      const snippet = String(t.latestBody || t.body || '').replace(/\s+/g, ' ').slice(0, 140);
+      log.info(`  [${label}] ${t.id || 'n/a'} (${loc}) @${t.latestAuthor || 'reviewer'}: ${snippet}`);
+    }
+  }
+  if (triage.unaddressedCount > 0) {
+    log.info(`  -> After fixing & committing with '(ref: #<threadId>)', resolve via: asdlc apply <ID> --from-pr ${prRef} --resolve-thread <threadId>`);
+  }
+}
 
 // Guard before implementing: the spec must be APPROVED on the target branch
 // (i.e. the Spec PR has been merged into targetBranch, locking proposal.md & specs/**).
@@ -84,6 +129,7 @@ export function applyGuard(changeId, opts = {}) {
     }
   }
 
+  const emit = (fn, msg) => { if (!opts.json) fn(msg); };
   const isSinglePr = isSinglePrLevel(effectiveLevel) && resolvedMode !== 'spec-first' && meta.workflowMode !== 'spec-first';
   let approvedSha = null;
 
@@ -98,9 +144,9 @@ export function applyGuard(changeId, opts = {}) {
       };
       metaText = upsertKey(metaText, 'status', 'ready_for_impl');
       writeText(metaPath, metaText);
-      log.ok(`${slug}: marked status=ready_for_impl (no separate Spec PR in Single-PR mode; human sign-off happens on the final PR)`);
+      emit(log.ok, `${slug}: marked status=ready_for_impl (no separate Spec PR in Single-PR mode; human sign-off happens on the final PR)`);
     }
-    log.ok(`${slug}: governance level is ${effectiveLevel} (Single PR mode: direct local implementation permitted)`);
+    emit(log.ok, `${slug}: governance level is ${effectiveLevel} (Single PR mode: direct local implementation permitted)`);
   } else {
     // L2 / L3 Two-phase Spec-first flow
     // 2. Multi-tenant path-isolated approval detection
@@ -150,7 +196,7 @@ export function applyGuard(changeId, opts = {}) {
         }
         writeText(metaPath, metaText);
       }
-      log.ok(`${slug}: recognized PR approval on ${branch} (synced state to ready_for_impl @ ${approvedSha.slice(0, 8)})`);
+      emit(log.ok, `${slug}: recognized PR approval on ${branch} (synced state to ready_for_impl @ ${approvedSha.slice(0, 8)})`);
     }
   }
 
@@ -175,18 +221,23 @@ export function applyGuard(changeId, opts = {}) {
     writeText(metaPath, metaText);
   }
 
-  // 7. Tasks checklist presence
+  // 7. Tasks checklist presence (auto-compile from spec ACs if missing)
   const tasksPath = path.join(cdir, 'tasks.md');
   if (!exists(tasksPath)) {
-    fail(`'${slug}' missing tasks.md`, {
-      code: 'TASKS_MISSING',
-      hint: 'author tasks.md with TDD verification tasks before running apply',
-    });
+    const gen = generateTasksFromSpecs(repoRoot, slug);
+    if (gen.generated) {
+      emit(log.ok, `auto-generated tasks.md (${gen.taskCount} TDD tasks from ${gen.acCount} spec AC(s))`);
+    } else {
+      fail(`'${slug}' missing tasks.md`, {
+        code: 'TASKS_MISSING',
+        hint: 'author tasks.md with TDD verification tasks (or add AC<n>: ... (test: <path>) to specs) before running apply',
+      });
+    }
   }
 
   const isAutoPr = opts.autoPr === true || (opts.autoPr === undefined && meta.autoPr === 'true');
   const shaDisplay = approvedSha ? ` (specSha: ${approvedSha.slice(0, 8)}, state: ready_for_impl)` : ` (state: ready_for_impl)`;
-  log.ok(`${slug} is READY FOR IMPLEMENTATION on ${branch}${shaDisplay}`);
+  emit(log.ok, `${slug} is READY FOR IMPLEMENTATION on ${branch}${shaDisplay}`);
 
   if (opts.fromPr) {
     const prRef = String(opts.fromPr).replace(/^#/, '');
@@ -242,7 +293,19 @@ export function applyGuard(changeId, opts = {}) {
       commitMessages = recentLog.split(/\r?\n\r?\n/).filter(Boolean);
     } catch {}
     const triage = triagePullRequest(prCtx || {}, { commitMessages });
-    log.info(`[PR #${prRef}] Triaged review feedback (Round ${triage.round}/${triage.maxRounds}): ${triage.actionableThreads.length} actionable, ${triage.questionThreads.length} question(s), ${triage.suggestionThreads.length} suggestion(s).`);
+    const unresolvedThreads = [
+      ...triage.actionableThreads,
+      ...triage.suggestionThreads,
+      ...triage.questionThreads,
+    ];
+    const breaker = checkAntiThrashingCircuitBreaker({
+      currentRound: triage.round,
+      maxRounds: triage.maxRounds,
+      unresolvedThreads,
+      changeId: slug,
+      prNumber: Number.isFinite(prNum) ? prNum : null,
+    });
+
     recordEvent('pr.triage', {
       stage: 'apply',
       change: slug,
@@ -257,7 +320,59 @@ export function applyGuard(changeId, opts = {}) {
       suggestionCount: triage.suggestionThreads.length,
       round: triage.round,
       maxRounds: triage.maxRounds,
+      circuitBreakerTripped: breaker.tripped,
     }, { repoRoot });
+
+    if (opts.resolveThread) {
+      const matchedThread = unresolvedThreads.find((t) => t.id === opts.resolveThread) || { id: opts.resolveThread };
+      const plan = buildThreadResolutionPlan(matchedThread, {
+        commitSha: opts.commit || headSha(repoRoot) || 'HEAD',
+        summary: opts.reply || '',
+        disputed: Boolean(opts.dispute),
+        specRef: typeof opts.dispute === 'string' ? opts.dispute : null,
+      });
+      if (!opts.dryRun && !opts.prContext) {
+        if (plan.replyMutation) runGhGraphql(repoRoot, plan.replyMutation);
+        if (plan.shouldResolve && plan.resolveMutation) {
+          runGhGraphql(repoRoot, plan.resolveMutation);
+        } else if (plan.disputed) {
+          spawnSync('gh', ['pr', 'edit', prRef, '--add-label', 'asdlc:needs-human-arbitration'], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            timeout: 8000,
+          });
+        }
+      }
+      if (opts.json) {
+        jsonOut({ changeId: slug, pr: prNum, resolutionPlan: plan });
+      } else {
+        log.ok(plan.shouldResolve
+          ? `[PR #${prRef}] Thread ${opts.resolveThread} replied & resolved (${plan.commitMessage}).`
+          : `[PR #${prRef}] Thread ${opts.resolveThread} marked DISPUTED — escalated for human arbitration (resolve blocked).`);
+      }
+      return 0;
+    }
+
+    if (breaker.tripped) {
+      if (!opts.dryRun && !opts.prContext) {
+        postBreakerEscalation(repoRoot, prRef, breaker);
+      }
+      if (opts.json) {
+        jsonOut({ changeId: slug, pr: prNum, triage, circuitBreaker: breaker });
+      } else {
+        log.error(`[PR #${prRef}] Anti-Thrashing Circuit Breaker tripped (Round ${triage.round}/${triage.maxRounds}). Automated edits halted.`);
+        log.info(breaker.synthesisReport);
+      }
+      return breaker.exitCode;
+    }
+
+    if (opts.json) {
+      jsonOut({ changeId: slug, pr: prNum, triage, circuitBreaker: breaker });
+      return 0;
+    }
+
+    log.info(`[PR #${prRef}] Triaged review feedback (Round ${triage.round}/${triage.maxRounds}): ${triage.actionableThreads.length} actionable, ${triage.questionThreads.length} question(s), ${triage.suggestionThreads.length} suggestion(s).`);
+    printTriageThreads(triage, prRef);
   }
 
   if (isAutoPr) {
@@ -277,6 +392,12 @@ export function register(program) {
     .option('--target-branch <ref>', 'target branch to merge into')
     .option('--mode <mode>', 'workflow mode: supervised (default) | spec-first | auto')
     .option('--from-pr <pr>', 'triage review comments from a GitHub PR number or #N')
+    .option('--resolve-thread <threadId>', 'reply and resolve a PR review thread (or escalate via --dispute)')
+    .option('--commit <sha>', 'commit SHA to cite when resolving a review thread')
+    .option('--reply <text>', 'reply summary when resolving a review thread')
+    .option('--dispute <reason>', 'mark thread as spec-conflict (forbids auto-resolve and attaches human arbitration label)')
+    .option('--dry-run', 'compute triage or resolution plan without calling gh mutations')
+    .option('--json', 'output triage or resolution plan as structured JSON')
     .option('--auto-pr', 'explicitly delegate authority to automatically open Implementation PR after verification passes')
     .option('--no-auto-pr', 'disable automatic Implementation PR creation (default)')
     .option('--guard-only', 'only run pre-implementation guard checks in terminal without starting the AI TDD loop')
