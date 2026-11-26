@@ -2,6 +2,13 @@
 
 All notable changes to `@akjamie/agentic-sdlc` are documented in this file.
 
+## [1.11.2] - 2026-11-26
+
+### Added & Changed
+- **Skills & Slash Commands Protocol Alignment**: Added `Workflow B: Autonomous PR Review Feedback Loop (--from-pr)` to `asdlc-apply`, embedded `<!-- asdlc:review-round:<round> -->` anchors and formal GitHub PR Review API guidance into `asdlc-impl-review` / `asdlc-spec-review`, and aligned `--agent` runtime flags in `asdlc-new` and `asdlc-apply`.
+- **New Review Slash Commands**: Added `assets/commands/asdlc-spec-review.md` and `assets/commands/asdlc-impl-review.md` across supported AI tools.
+- **Docs & Gates Sync**: Added `asdlc status --metrics` documentation to `asdlc-status`, updated `asdlc-verify` and `asdlc-pr` to reflect `anti-test-weakening` and `acceptance-tests` gates, and fixed `asdlc-new` frontmatter description.
+
 ## [1.11.1] - 2026-11-24
 
 ### Added & Changed
